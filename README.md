@@ -14,6 +14,10 @@ Survive 100 Days in the Arctic — a Roblox survival game. Design doc lives outs
 
 `default.project.json` is a Rojo project file that maps these folders into the tree above. Copy-pasting the folders into Studio by hand works too.
 
+## Sync rules
+
+- **Rojo sync is narrow on purpose.** `default.project.json` maps only `ReplicatedStorage/Modules`, `ServerStorage/Modules`, and the two runtime scripts (`SurvivalServer`, `SurvivalClient`). Everything else in Studio — the `Assets` folder, spare models, anything you add by hand — is outside Rojo's reach and never gets deleted by a sync.
+
 ## Architecture rules
 
 - **One clock per server.** `DayNightClock` and `Temperature` are singletons — the server script creates exactly one of each and every player's `SurvivalPlayer` shares them. Day, night, day count, multiplier and weather are identical for everyone; per-player clocks would desync the yeti, storms and night events.
