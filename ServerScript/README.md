@@ -1,5 +1,5 @@
 # ServerScript
 
-Maps to **ServerScriptService** in Studio. Server entry-point scripts go here.
+Maps to **ServerScriptService** in Studio.
 
-Phase 1 is modules only — the first server script (the one that creates the clock and ticks every player's SurvivalPlayer) lands in the next step.
+- `SurvivalServer.server.lua` — the Phase 1 runtime. Builds the seeded world (terrain + placeholder pines + spawn campfire), creates the ONE server-wide `DayNightClock` and `Temperature`, hands every player a `SurvivalPlayer` bound to them, drives Lighting from the clock, rolls weather on phase changes, and ticks survival every 0.25s. Also creates the starter Axe in StarterPack, the chopping logic, the campfire feed prompt (1 wood = +45s of fire), and the `Remotes/SetSprinting` event the client fires.
