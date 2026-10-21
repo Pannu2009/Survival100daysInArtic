@@ -14,6 +14,11 @@ Survive 100 Days in the Arctic — a Roblox survival game. Design doc lives outs
 
 `default.project.json` is a Rojo project file that maps these folders into the tree above. Copy-pasting the folders into Studio by hand works too.
 
+## Architecture rules
+
+- **One clock per server.** `DayNightClock` and `Temperature` are singletons — the server script creates exactly one of each and every player's `SurvivalPlayer` shares them. Day, night, day count, multiplier and weather are identical for everyone; per-player clocks would desync the yeti, storms and night events.
+- **Only bodies are per-player.** Health, warmth, hunger and sickness live in `SurvivalPlayer`, one instance per player.
+
 ## Status
 
 **Phase 1 — Core clock (modules only).** No server or client scripts yet; the modules below are pure logic, driven by `:Update(dt)` calls a future server script will make every frame/tick.
