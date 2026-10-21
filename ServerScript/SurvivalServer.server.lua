@@ -542,3 +542,4 @@ while true do
 
 	updateWorldState()
 end
+print("Hello")
