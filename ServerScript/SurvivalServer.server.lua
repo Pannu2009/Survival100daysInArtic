@@ -53,8 +53,12 @@ if baseplate then
 	baseplate:Destroy()
 end
 
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Include
+groundParams.FilterDescendantsInstances = { workspace:WaitForChild("Terrain") }
+
 local function groundY(x, z)
-	local result = workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0))
+	local result = workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0), groundParams)
 	if result then
 		return result.Position.Y
 	end
@@ -65,19 +69,54 @@ local treesFolder = Instance.new("Folder")
 treesFolder.Name = "Trees"
 treesFolder.Parent = workspace
 
+local logsFolder = Instance.new("Folder")
+logsFolder.Name = "Logs"
+logsFolder.Parent = workspace
+
+local dragging = {}
+
+local assets = ReplicatedStorage:FindFirstChild("Assets")
+local treeTemplate = assets and assets:FindFirstChild("Tree")
+local woodLogTemplate = assets and assets:FindFirstChild("WoodLog")
+if treeTemplate then
+	print("[Arctic] Planting with Assets.Tree")
+end
+if woodLogTemplate then
+	print("[Arctic] Felling drops Assets.WoodLog")
+end
+
 local trunkColor = Color3.fromRGB(92, 64, 42)
 local pineColor = Color3.fromRGB(38, 64, 48)
 
-for _, spot in ipairs(layout.Trees) do
-	local y = groundY(spot.X, spot.Z)
+local function snapToGround(model, x, z)
+	local pivot = model:GetPivot()
+	model:PivotTo(CFrame.new(x, 0, z) * pivot.Rotation)
+	local cf, size = model:GetBoundingBox()
+	local dy = groundY(x, z) - (cf.Position.Y - size.Y / 2)
+	if dy ~= 0 then
+		model:PivotTo(model:GetPivot() + Vector3.new(0, dy, 0))
+	end
+end
+
+local function findWoodPart(model)
+	return model:FindFirstChild("WoodPart", true)
+		or model:FindFirstChild("Trunk", true)
+		or model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function logWeight(logPart)
+	local size = logPart.Size
+	return math.floor(size.X * size.Y * size.Z * Config.Log.WeightPerVolume + 0.5)
+end
+
+local function buildPlaceholderTree()
 	local model = Instance.new("Model")
 	model.Name = "Tree"
 
 	local trunk = Instance.new("Part")
 	trunk.Name = "Trunk"
 	trunk.Size = Vector3.new(1.6, 9, 1.6)
-	trunk.CFrame = CFrame.new(spot.X, y + 4.5, spot.Z)
-	trunk.Anchored = true
+	trunk.CFrame = CFrame.new(0, 4.5, 0)
 	trunk.Material = Enum.Material.Wood
 	trunk.Color = trunkColor
 	trunk.Parent = model
@@ -86,15 +125,32 @@ for _, spot in ipairs(layout.Trees) do
 	top.Name = "Top"
 	top.Shape = Enum.PartType.Ball
 	top.Size = Vector3.new(7.5, 11, 7.5)
-	top.CFrame = CFrame.new(spot.X, y + 11, spot.Z)
-	top.Anchored = true
+	top.CFrame = CFrame.new(0, 11, 0)
 	top.Material = Enum.Material.SmoothPlastic
 	top.Color = pineColor
 	top.Parent = model
 
 	model.PrimaryPart = trunk
+	return model
+end
+
+for _, spot in ipairs(layout.Trees) do
+	local model
+	if treeTemplate then
+		model = treeTemplate:Clone()
+	else
+		model = buildPlaceholderTree()
+	end
+	model.Name = "Tree"
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+		end
+	end
 	model:SetAttribute("Health", Config.Tree.Health)
 	model.Parent = treesFolder
+	model:PivotTo(model:GetPivot() * CFrame.Angles(0, math.random() * math.pi * 2, 0))
+	snapToGround(model, spot.X, spot.Z)
 end
 
 local campfire = Instance.new("Model")
@@ -167,6 +223,129 @@ weld.Parent = axeHead
 
 axe.Parent = StarterPack
 
+local function spawnLog(treeModel)
+	local woodPart = findWoodPart(treeModel)
+	if not woodPart then
+		return
+	end
+	local woodSize = woodPart.Size
+	local spot = treeModel:GetPivot().Position
+
+	local log
+	local logPart
+	if woodLogTemplate then
+		log = woodLogTemplate:Clone()
+		logPart = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
+	else
+		log = Instance.new("Model")
+		logPart = Instance.new("Part")
+		logPart.Name = "Log"
+		logPart.Material = Enum.Material.Wood
+		logPart.Color = trunkColor
+		logPart.Parent = log
+		log.PrimaryPart = logPart
+	end
+	if not logPart then
+		return
+	end
+
+	log.Name = "WoodLog"
+	logPart.Size = woodSize
+	for _, part in ipairs(log:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+			part.CanCollide = true
+		end
+	end
+	log:SetAttribute("FullSize", woodSize)
+	log:SetAttribute("PiecesLeft", Config.Log.PiecesPerLog)
+	log:SetAttribute("PieceHits", 0)
+	log:SetAttribute("Weight", logWeight(logPart))
+	log.Parent = logsFolder
+
+	if woodSize.Y >= woodSize.X and woodSize.Y >= woodSize.Z then
+		log:PivotTo(log:GetPivot() * CFrame.Angles(0, 0, math.rad(90)))
+	end
+	snapToGround(log, spot.X, spot.Z)
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Drag"
+	prompt.ObjectText = "WoodLog " .. log:GetAttribute("Weight") .. "kg"
+	prompt.HoldDuration = 0.3
+	prompt.MaxActivationDistance = 10
+	prompt.Parent = logPart
+	prompt.Triggered:Connect(function(player)
+		if log:GetAttribute("DraggedBy") == player.UserId then
+			log:SetAttribute("DraggedBy", nil)
+			if dragging[player] == log then
+				dragging[player] = nil
+			end
+			prompt.ActionText = "Drag"
+		elseif log:GetAttribute("DraggedBy") == nil then
+			local previous = dragging[player]
+			if previous and previous ~= log then
+				previous:SetAttribute("DraggedBy", nil)
+				local prevPart = previous:FindFirstChild("Log", true)
+				local prevPrompt = prevPart and prevPart:FindFirstChildOfClass("ProximityPrompt")
+				if prevPrompt then
+					prevPrompt.ActionText = "Drag"
+				end
+			end
+			log:SetAttribute("DraggedBy", player.UserId)
+			dragging[player] = log
+			prompt.ActionText = "Drop"
+		end
+	end)
+end
+
+local function cutLog(player, log)
+	local logPart = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
+	if not logPart then
+		return
+	end
+
+	local hits = (log:GetAttribute("PieceHits") or 0) + 1
+	if hits < Config.Log.HitsPerPiece then
+		log:SetAttribute("PieceHits", hits)
+		return
+	end
+	log:SetAttribute("PieceHits", 0)
+
+	local piecesLeft = (log:GetAttribute("PiecesLeft") or Config.Log.PiecesPerLog) - 1
+	wood[player] = (wood[player] or 0) + Config.Log.WoodPerPiece
+	player:SetAttribute("Wood", wood[player])
+
+	if piecesLeft <= 0 then
+		if dragging[player] == log then
+			dragging[player] = nil
+		end
+		log:Destroy()
+		return
+	end
+	log:SetAttribute("PiecesLeft", piecesLeft)
+
+	local full = log:GetAttribute("FullSize") or logPart.Size
+	local fraction = piecesLeft / Config.Log.PiecesPerLog
+	local newSize
+	if full.Y >= full.X and full.Y >= full.Z then
+		newSize = Vector3.new(full.X, full.Y * fraction, full.Z)
+	elseif full.X >= full.Z then
+		newSize = Vector3.new(full.X * fraction, full.Y, full.Z)
+	else
+		newSize = Vector3.new(full.X, full.Y, full.Z * fraction)
+	end
+	logPart.Size = newSize
+	log:SetAttribute("Weight", logWeight(logPart))
+
+	local spot = log:GetPivot().Position
+	snapToGround(log, spot.X, spot.Z)
+
+	local prompt = logPart:FindFirstChildOfClass("ProximityPrompt")
+	if prompt then
+		prompt.ObjectText = "WoodLog " .. log:GetAttribute("Weight") .. "kg"
+	end
+end
+
 local function onAxeActivated(player)
 	local character = player.Character
 	if not character then
@@ -177,43 +356,49 @@ local function onAxeActivated(player)
 		return
 	end
 
-	local nearest = nil
+	local target = nil
+	local targetIsLog = false
 	local nearestDistance = Config.Tree.ChopRange
+
 	for _, tree in ipairs(treesFolder:GetChildren()) do
 		local pivot = tree:GetPivot().Position
 		local dx = pivot.X - root.Position.X
 		local dz = pivot.Z - root.Position.Z
 		local distance = math.sqrt(dx * dx + dz * dz)
 		if distance < nearestDistance then
-			nearest = tree
+			target = tree
+			targetIsLog = false
 			nearestDistance = distance
 		end
 	end
-	if not nearest then
+	for _, log in ipairs(logsFolder:GetChildren()) do
+		local pivot = log:GetPivot().Position
+		local dx = pivot.X - root.Position.X
+		local dz = pivot.Z - root.Position.Z
+		local distance = math.sqrt(dx * dx + dz * dz)
+		if distance < nearestDistance then
+			target = log
+			targetIsLog = true
+			nearestDistance = distance
+		end
+	end
+	if not target then
 		return
 	end
 
-	local remaining = (nearest:GetAttribute("Health") or Config.Tree.Health) - 1
+	if targetIsLog then
+		cutLog(player, target)
+		return
+	end
+
+	local remaining = (target:GetAttribute("Health") or Config.Tree.Health) - 1
 	if remaining > 0 then
-		nearest:SetAttribute("Health", remaining)
+		target:SetAttribute("Health", remaining)
 		return
 	end
 
-	wood[player] = (wood[player] or 0) + Config.Tree.WoodPerTree
-	player:SetAttribute("Wood", wood[player])
-
-	for _, part in ipairs(nearest:GetChildren()) do
-		if part:IsA("BasePart") then
-			part.CanCollide = false
-		end
-	end
-	local pivot = nearest:GetPivot()
-	nearest:PivotTo(pivot * CFrame.Angles(0, 0, math.rad(75)))
-	task.delay(2.5, function()
-		if nearest.Parent then
-			nearest:Destroy()
-		end
-	end)
+	spawnLog(target)
+	target:Destroy()
 end
 
 local function syncAttributes(player, survival)
@@ -236,7 +421,22 @@ local function makeSurvival(player)
 	return survival
 end
 
+local function releaseLogs(player)
+	for _, log in ipairs(logsFolder:GetChildren()) do
+		if log:GetAttribute("DraggedBy") == player.UserId then
+			log:SetAttribute("DraggedBy", nil)
+			local logPart = log:FindFirstChild("Log", true)
+			local prompt = logPart and logPart:FindFirstChildOfClass("ProximityPrompt")
+			if prompt then
+				prompt.ActionText = "Drag"
+			end
+		end
+	end
+	dragging[player] = nil
+end
+
 local function onCharacter(player, character)
+	releaseLogs(player)
 	survivals[player] = makeSurvival(player)
 	wood[player] = 0
 	sprinting[player] = false
@@ -277,6 +477,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerRemoving:Connect(function(player)
+	releaseLogs(player)
 	survivals[player] = nil
 	sprinting[player] = nil
 	wood[player] = nil
@@ -284,15 +485,6 @@ end)
 
 setSprinting.OnServerEvent:Connect(function(player, value)
 	sprinting[player] = value == true
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		if sprinting[player] then
-			humanoid.WalkSpeed = Config.Survival.SprintSpeed
-		else
-			humanoid.WalkSpeed = Config.Survival.WalkSpeed
-		end
-	end
 end)
 
 clock.OnPhaseChanged:Connect(function(phase, day)
@@ -344,6 +536,34 @@ while true do
 		local context = { IsSprinting = sprinting[player] == true }
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
+
+		local log = dragging[player]
+		if log and (not log.Parent or log:GetAttribute("DraggedBy") ~= player.UserId) then
+			dragging[player] = nil
+			log = nil
+		end
+
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			local baseSpeed = sprinting[player] and Config.Survival.SprintSpeed or Config.Survival.WalkSpeed
+			local factor = 1
+			if log then
+				local w = log:GetAttribute("Weight") or 0
+				factor = math.clamp(1 - w * Config.Log.DragSlowPerWeight, Config.Log.MinDragSpeedFactor, 1)
+			end
+			humanoid.WalkSpeed = baseSpeed * factor
+		end
+
+		if log and root then
+			local look = root.CFrame.LookVector
+			local tx = root.Position.X - look.X * Config.Log.DragDistance
+			local tz = root.Position.Z - look.Z * Config.Log.DragDistance
+			local pivotPos = log:GetPivot().Position
+			local nx = pivotPos.X + (tx - pivotPos.X) * 0.4
+			local nz = pivotPos.Z + (tz - pivotPos.Z) * 0.4
+			snapToGround(log, nx, nz)
+		end
+
 		if root and campfireFuel > 0 then
 			local dx = root.Position.X - fireCore.Position.X
 			local dz = root.Position.Z - fireCore.Position.Z
