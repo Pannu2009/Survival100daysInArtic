@@ -1,5 +1,5 @@
 # PlayerScripts
 
-Maps to **StarterPlayer > StarterPlayerScripts** in Studio. Client scripts go here — HUD, input, sprint detection, camera effects.
+Maps to **StarterPlayer > StarterPlayerScripts** in Studio.
 
-Phase 1 is server modules only; client scripts arrive with the HUD work.
+- `SurvivalClient.client.lua` — builds the HUD in code (no manual GUI work): day / phase / temperature / multiplier / wood / campfire fuel / seed panel and Health-Warmth-Hunger bars, all in the game palette (aubergine `#3A0F34`, ice silver `#DDE3E7`, marigold `#EAA000`). Reads state from attributes the server sets — no polling remotes for display. Also handles sprint: hold the on-screen SPRINT button (touch) or Left Shift, which fires `Remotes/SetSprinting` to the server.
