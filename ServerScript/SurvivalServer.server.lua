@@ -80,13 +80,14 @@ local treeTemplate = assets and assets:FindFirstChild("Tree")
 local woodLogTemplate = assets and assets:FindFirstChild("WoodLog")
 if treeTemplate then
 	print("[Arctic] Planting with Assets.Tree")
+else
+	warn("[Arctic] Assets.Tree not found - no trees will be planted")
 end
 if woodLogTemplate then
 	print("[Arctic] Felling drops Assets.WoodLog")
+else
+	warn("[Arctic] Assets.WoodLog not found - felled trees will drop no log")
 end
-
-local trunkColor = Color3.fromRGB(92, 64, 42)
-local pineColor = Color3.fromRGB(38, 64, 48)
 
 local function snapToGround(model, x, z)
 	local pivot = model:GetPivot()
@@ -109,38 +110,11 @@ local function logWeight(logPart)
 	return math.floor(size.X * size.Y * size.Z * Config.Log.WeightPerVolume + 0.5)
 end
 
-local function buildPlaceholderTree()
-	local model = Instance.new("Model")
-	model.Name = "Tree"
-
-	local trunk = Instance.new("Part")
-	trunk.Name = "Trunk"
-	trunk.Size = Vector3.new(1.6, 9, 1.6)
-	trunk.CFrame = CFrame.new(0, 4.5, 0)
-	trunk.Material = Enum.Material.Wood
-	trunk.Color = trunkColor
-	trunk.Parent = model
-
-	local top = Instance.new("Part")
-	top.Name = "Top"
-	top.Shape = Enum.PartType.Ball
-	top.Size = Vector3.new(7.5, 11, 7.5)
-	top.CFrame = CFrame.new(0, 11, 0)
-	top.Material = Enum.Material.SmoothPlastic
-	top.Color = pineColor
-	top.Parent = model
-
-	model.PrimaryPart = trunk
-	return model
-end
-
 for _, spot in ipairs(layout.Trees) do
-	local model
-	if treeTemplate then
-		model = treeTemplate:Clone()
-	else
-		model = buildPlaceholderTree()
+	if not treeTemplate then
+		break
 	end
+	local model = treeTemplate:Clone()
 	model.Name = "Tree"
 	for _, part in ipairs(model:GetDescendants()) do
 		if part:IsA("BasePart") then
@@ -231,20 +205,11 @@ local function spawnLog(treeModel)
 	local woodSize = woodPart.Size
 	local spot = treeModel:GetPivot().Position
 
-	local log
-	local logPart
-	if woodLogTemplate then
-		log = woodLogTemplate:Clone()
-		logPart = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
-	else
-		log = Instance.new("Model")
-		logPart = Instance.new("Part")
-		logPart.Name = "Log"
-		logPart.Material = Enum.Material.Wood
-		logPart.Color = trunkColor
-		logPart.Parent = log
-		log.PrimaryPart = logPart
+	if not woodLogTemplate then
+		return
 	end
+	local log = woodLogTemplate:Clone()
+	local logPart = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
 	if not logPart then
 		return
 	end
