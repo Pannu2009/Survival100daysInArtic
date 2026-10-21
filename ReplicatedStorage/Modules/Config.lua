@@ -41,6 +41,27 @@ Config.Sickness = {
 	CureSeconds = 20,
 }
 
+Config.World = {
+	Radius = 950,
+	MinSeedLength = 5,
+	MaxSeedLength = 8,
+	MountainMinDistance = 250,
+	MountainMaxDistance = 850,
+	MountainMinRadius = 200,
+	MountainMaxRadius = 380,
+	MountainMinHeight = 160,
+	MountainMaxHeight = 300,
+	LakeMinDistance = 200,
+	LakeMaxDistance = 800,
+	LakeMinRadius = 80,
+	LakeMaxRadius = 180,
+	ForestClusters = 7,
+	ClusterRadius = 130,
+	TreesPerCluster = 45,
+	CabinsMin = 3,
+	CabinsMax = 6,
+}
+
 Config.Food = {
 	RawMeat = 15,
 	CookedMeat = 40,

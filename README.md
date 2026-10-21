@@ -27,5 +27,8 @@ Survive 100 Days in the Arctic — a Roblox survival game. Design doc lives outs
 - `Temperature` — weather (Clear / Storm / Blizzard), ambient temperature, cold exposure rates.
 - `Hunger` — hunger value, drain (sprinting drains 2x), starving state.
 - `SurvivalPlayer` — one player's health / warmth / hunger / sickness, ticked together.
+- `Seed` — deterministic RNG from a 5–8 letter seed string. `Fork("lake")` gives each feature its own stream, so changing one feature never reshuffles the others. Same seed = same numbers, always.
+- `WorldGen` — turns a seed into a world layout (data only): mountain, frozen lake, tree spots, cabin spots, plus reserved coal and yeti-cave spots for later phases.
+- `TerrainBuilder` — paints a layout into Workspace Terrain: snow base, rock mountain with a snow cap, carved lake with a glacier surface.
 - `Config` — every tuning number in one place, including the animation ID table.
 - `Signal` — tiny event helper the modules use instead of BindableEvents.
