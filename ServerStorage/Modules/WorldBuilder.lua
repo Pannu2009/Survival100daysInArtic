@@ -42,6 +42,8 @@ function WorldBuilder.new(layout)
 	self.FireCore = nil
 	self.TreeTemplate = nil
 	self.WoodLogTemplate = nil
+	self.BonfireTemplate = nil
+	self._fireEmitters = {}
 	self._fire = nil
 	self._light = nil
 	self._groundParams = RaycastParams.new()
@@ -130,6 +132,11 @@ function WorldBuilder:TickFire(dt)
 	if self._light then
 		self._light.Enabled = lit
 	end
+	for _, emitter in ipairs(self._fireEmitters) do
+		if emitter.Parent then
+			emitter.Enabled = lit
+		end
+	end
 	return lit
 end
 
@@ -157,6 +164,12 @@ function WorldBuilder:Build()
 		print("[Arctic] Felling drops Assets.WoodLog")
 	else
 		warn("[Arctic] Assets.WoodLog not found - felled trees will drop no log")
+	end
+	self.BonfireTemplate = assets and (assets:FindFirstChild("BonFire") or assets:FindFirstChild("Bonfire"))
+	if self.BonfireTemplate then
+		print("[Arctic] Campfire uses Assets.BonFire")
+	else
+		warn("[Arctic] Assets.BonFire not found - campfire stays code-built")
 	end
 
 	self:_plantTrees()
@@ -190,28 +203,86 @@ function WorldBuilder:_plantTrees()
 end
 
 function WorldBuilder:_buildCampfire()
-	local campfire = Instance.new("Model")
-	campfire.Name = "Campfire"
+	local campfire
+	local fireCore
+	local groundY = self:GroundY(0, 0)
 
-	local fireCore = Instance.new("Part")
-	fireCore.Name = "Core"
-	fireCore.Size = Vector3.new(3, 1, 3)
-	fireCore.CFrame = CFrame.new(0, self:GroundY(0, 0) + 0.9, 0)
-	fireCore.Anchored = true
-	fireCore.Material = Enum.Material.Wood
-	fireCore.Color = Color3.fromRGB(70, 45, 28)
-	fireCore.Parent = campfire
+	if self.BonfireTemplate then
+		-- Ajay's BonFire model is the campfire visual. The game still
+		-- owns the fire state, so bundled scripts are stripped, every
+		-- part is anchored, and an invisible Core anchor at the model's
+		-- center carries the prompt, billboard, and fire state.
+		campfire = self.BonfireTemplate:Clone()
+		campfire.Name = "Campfire"
+		for _, obj in ipairs(campfire:GetDescendants()) do
+			if obj:IsA("BasePart") then
+				obj.Anchored = true
+			elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+				obj:Destroy()
+			end
+		end
+		campfire.Parent = workspace
+		if campfire:IsA("Model") then
+			self:SnapToGround(campfire, 0, 0)
+		end
 
-	local fire = Instance.new("Fire")
-	fire.Size = 6
-	fire.Heat = 12
-	fire.Parent = fireCore
+		local center = Vector3.new(0, groundY, 0)
+		if campfire:IsA("Model") then
+			center = campfire:GetBoundingBox().Position
+		elseif campfire:IsA("BasePart") then
+			center = campfire.Position
+		else
+			local firstPart = campfire:FindFirstChildWhichIsA("BasePart", true)
+			if firstPart then
+				center = firstPart.Position
+			end
+		end
+		fireCore = Instance.new("Part")
+		fireCore.Name = "Core"
+		fireCore.Size = Vector3.new(3, 1, 3)
+		fireCore.CFrame = CFrame.new(center.X, groundY + 0.9, center.Z)
+		fireCore.Anchored = true
+		fireCore.Transparency = 1
+		fireCore.CanCollide = false
+		fireCore.CanTouch = false
+		fireCore.Parent = campfire
 
-	local fireLight = Instance.new("PointLight")
-	fireLight.Color = Color3.fromRGB(255, 176, 66)
-	fireLight.Range = 20
-	fireLight.Brightness = 2
-	fireLight.Parent = fireCore
+		for _, obj in ipairs(campfire:GetDescendants()) do
+			if obj:IsA("ParticleEmitter") then
+				table.insert(self._fireEmitters, obj)
+			end
+		end
+	else
+		campfire = Instance.new("Model")
+		campfire.Name = "Campfire"
+
+		fireCore = Instance.new("Part")
+		fireCore.Name = "Core"
+		fireCore.Size = Vector3.new(3, 1, 3)
+		fireCore.CFrame = CFrame.new(0, groundY + 0.9, 0)
+		fireCore.Anchored = true
+		fireCore.Material = Enum.Material.Wood
+		fireCore.Color = Color3.fromRGB(70, 45, 28)
+		fireCore.Parent = campfire
+	end
+
+	local fire = campfire:FindFirstChildOfClass("Fire", true)
+	if not fire then
+		fire = Instance.new("Fire")
+		fire.Size = 6
+		fire.Heat = 12
+		fire.Parent = fireCore
+	end
+
+	local fireLight = fireCore:FindFirstChildOfClass("PointLight")
+		or campfire:FindFirstChildOfClass("PointLight", true)
+	if not fireLight then
+		fireLight = Instance.new("PointLight")
+		fireLight.Color = Color3.fromRGB(255, 176, 66)
+		fireLight.Range = 20
+		fireLight.Brightness = 2
+		fireLight.Parent = fireCore
+	end
 
 	local feedPrompt = Instance.new("ProximityPrompt")
 	feedPrompt.ActionText = "Feed log"
