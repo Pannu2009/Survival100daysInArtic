@@ -715,7 +715,11 @@ function Gameplay:_lightFire(player, fire)
 	end
 	self._lighterFuel[player] = fuel - Config.Lighter.LightCost
 	fire.Lit = true
-	self:_markTutorial(player, "Lit")
+	-- Lighting the campfire is the Day 1 finale: the tutorial
+	-- ends here, whatever order the steps happened in.
+	for _, key in ipairs(TUTORIAL_ORDER) do
+		self:_markTutorial(player, key)
+	end
 	return true
 end
 

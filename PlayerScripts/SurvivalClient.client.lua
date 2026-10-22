@@ -138,7 +138,6 @@ local OBJECTIVES = {
 	"Day 1: Dig a snow shelter",
 	"Day 1: Build a campfire (blueprint stick)",
 	"Day 1: Light the campfire with your lighter",
-	"Base ready - keep the fire fed",
 }
 
 -- Stat bars (Ajay's layout): each stat gets its OWN frame.
@@ -638,7 +637,13 @@ local function refreshPlayer()
 	end
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
 	lighterFuelLabel.Text = "Fuel: " .. tostring(player:GetAttribute("LighterFuel") or 0)
-	objectiveLabel.Text = OBJECTIVES[player:GetAttribute("TutorialStep") or 1] or OBJECTIVES[1]
+	-- The tutorial ends the moment the campfire is lit (step 5):
+	-- the banner goes away for good.
+	local tutorialStep = player:GetAttribute("TutorialStep") or 1
+	objectivePanel.Visible = tutorialStep < 5
+	if tutorialStep < 5 then
+		objectiveLabel.Text = OBJECTIVES[tutorialStep] or OBJECTIVES[1]
+	end
 	sickLabel.Visible = player:GetAttribute("IsSick") == true
 	refreshHotbar()
 end
