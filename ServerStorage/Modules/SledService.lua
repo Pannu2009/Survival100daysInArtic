@@ -251,6 +251,17 @@ function SledService:Start()
 
 	self:_makePrompts()
 
+	local remotes = ReplicatedStorage:WaitForChild("Remotes")
+	local storeRemote = remotes:FindFirstChild("StoreDraggedItem")
+	if not storeRemote then
+		storeRemote = Instance.new("RemoteEvent")
+		storeRemote.Name = "StoreDraggedItem"
+		storeRemote.Parent = remotes
+	end
+	storeRemote.OnServerEvent:Connect(function(player)
+		self:StoreDragged(player)
+	end)
+
 	Players.PlayerRemoving:Connect(function(player)
 		self:_releasePull(player)
 	end)
@@ -436,6 +447,50 @@ function SledService:_loadNearest(player)
 	if not best then
 		return
 	end
+	self:_loadPiece(player, best)
+end
+
+-- True while a world position sits over the cargo zone (with
+-- slack) — the same test the client uses to show its Store button.
+function SledService:_overCargo(position)
+	local cargo = self._cargoPart
+	if not cargo then
+		return false
+	end
+	local rel = cargo.CFrame:PointToObjectSpace(position)
+	local half = cargo.Size / 2 + Vector3.new(1.5, 2.5, 1.5)
+	return math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
+end
+
+-- Store button path: store the piece the player is dragging when it
+-- hovers over the cargo zone. Every check re-runs on the server.
+function SledService:StoreDragged(player)
+	local sled = self.Sled
+	if not sled or not self._cargoPart then
+		return
+	end
+	local root = playerRoot(player)
+	if not root then
+		return
+	end
+	if not withinRange(root, sled:GetPivot().Position, Config.Sled.InteractRange) then
+		return
+	end
+	local part = DragSystem.GetPlayerItem(player)
+	if not part then
+		return
+	end
+	local piece = part.Parent
+	if not piece or piece.Parent ~= self.Gameplay.LogsFolder or piece:GetAttribute("OnSled") then
+		return
+	end
+	if not self:_overCargo(part.Position) then
+		return
+	end
+	self:_loadPiece(player, piece)
+end
+
+function SledService:_loadPiece(player, best)
 	local logPart = getLogPart(best)
 	if not logPart then
 		return

@@ -17,6 +17,7 @@ local DragSystem = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChil
 DragSystem.InitClient()
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local setSprinting = remotes:WaitForChild("SetSprinting")
+local storeRemote = remotes:WaitForChild("StoreDraggedItem", 10)
 
 local AUBERGINE = Color3.fromHex("3A0F34")
 local SILVER = Color3.fromHex("DDE3E7")
@@ -120,6 +121,37 @@ local sprintCorner = Instance.new("UICorner")
 sprintCorner.CornerRadius = UDim.new(0, 12)
 sprintCorner.Parent = sprintButton
 
+-- Context action: appears while a dragged log hovers over the sled's
+-- cargo zone. Tappable on touch, clickable on PC, key-bound per
+-- platform (E on keyboard, X on gamepad).
+local storeButton = Instance.new("TextButton")
+storeButton.Name = "StoreButton"
+storeButton.Size = UDim2.fromOffset(132, 54)
+storeButton.Position = UDim2.new(1, -144, 1, -190)
+storeButton.BackgroundColor3 = MARIGOLD
+storeButton.Text = ""
+storeButton.AutoButtonColor = true
+storeButton.BorderSizePixel = 0
+storeButton.Visible = false
+storeButton.Parent = gui
+
+local storeCorner = Instance.new("UICorner")
+storeCorner.CornerRadius = UDim.new(0, 12)
+storeCorner.Parent = storeButton
+
+local storeTitle = makeLabel(storeButton, "STORE ITEM", UDim2.new(1, -8, 0, 22), UDim2.fromOffset(4, 6), AUBERGINE, 15)
+storeTitle.TextXAlignment = Enum.TextXAlignment.Center
+local storeHint = makeLabel(storeButton, "", UDim2.new(1, -8, 0, 16), UDim2.fromOffset(4, 31), AUBERGINE, 12)
+storeHint.TextXAlignment = Enum.TextXAlignment.Center
+
+local canStore = false
+local function tryStore()
+	if canStore and storeRemote then
+		storeRemote:FireServer()
+	end
+end
+storeButton.Activated:Connect(tryStore)
+
 local hotbar = Instance.new("Frame")
 hotbar.Name = "Hotbar"
 hotbar.Size = UDim2.fromOffset(154, 56)
@@ -135,6 +167,7 @@ hotbarCorner.Parent = hotbar
 
 local slotFrames = {}
 local slotLabels = {}
+local slotHints = {}
 local function toggleTool(toolName)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -174,8 +207,10 @@ local function makeSlot(index, name, isTool)
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	local value = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 24), MARIGOLD, 13)
 	value.TextXAlignment = Enum.TextXAlignment.Center
+	local hint = makeLabel(slot, "", UDim2.fromOffset(24, 14), UDim2.fromOffset(3, 2), AUBERGINE, 11)
 	slotFrames[name] = slot
 	slotLabels[name] = value
+	slotHints[name] = hint
 	if isTool then
 		slot.Activated:Connect(function()
 			toggleTool(name)
@@ -208,6 +243,43 @@ if player.Character then
 end
 player.CharacterAdded:Connect(hookCharacter)
 
+-- Platform control modes: the HUD and bindings follow the input the
+-- player is actually using and switch live when it changes (touch
+-- buttons on mobile, keys on PC, gamepad buttons on console).
+local inputMode = "Keyboard"
+local function detectMode()
+	local last = UserInputService:GetLastInputType()
+	if last == Enum.UserInputType.Touch then
+		return "Touch"
+	end
+	if last.Name:sub(1, 7) == "Gamepad" then
+		return "Gamepad"
+	end
+	if last == Enum.UserInputType.None then
+		if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+			return "Touch"
+		end
+		if UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
+			return "Gamepad"
+		end
+	end
+	return "Keyboard"
+end
+
+local function applyMode()
+	inputMode = detectMode()
+	sprintButton.Visible = inputMode == "Touch"
+	if slotHints["Axe"] then
+		slotHints["Axe"].Text = inputMode == "Keyboard" and "1" or inputMode == "Gamepad" and "◀" or ""
+	end
+	if slotHints["Shovel"] then
+		slotHints["Shovel"].Text = inputMode == "Keyboard" and "2" or inputMode == "Gamepad" and "▶" or ""
+	end
+	storeHint.Text = inputMode == "Keyboard" and "press E" or inputMode == "Gamepad" and "press X" or "tap"
+end
+UserInputService.LastInputTypeChanged:Connect(applyMode)
+applyMode()
+
 local isSprinting = false
 local function setSprint(value)
 	if value == isSprinting then
@@ -231,16 +303,30 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then
 		return
 	end
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		setSprint(true)
-	elseif input.KeyCode == Enum.KeyCode.One then
-		toggleTool("Axe")
-	elseif input.KeyCode == Enum.KeyCode.Two then
-		toggleTool("Shovel")
+	if inputMode == "Keyboard" then
+		if input.KeyCode == Enum.KeyCode.LeftShift then
+			setSprint(true)
+		elseif input.KeyCode == Enum.KeyCode.One then
+			toggleTool("Axe")
+		elseif input.KeyCode == Enum.KeyCode.Two then
+			toggleTool("Shovel")
+		elseif input.KeyCode == Enum.KeyCode.E then
+			tryStore()
+		end
+	elseif inputMode == "Gamepad" then
+		if input.KeyCode == Enum.KeyCode.ButtonL3 then
+			setSprint(true)
+		elseif input.KeyCode == Enum.KeyCode.DPadLeft then
+			toggleTool("Axe")
+		elseif input.KeyCode == Enum.KeyCode.DPadRight then
+			toggleTool("Shovel")
+		elseif input.KeyCode == Enum.KeyCode.ButtonX then
+			tryStore()
+		end
 	end
 end)
 UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.LeftShift then
+	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.ButtonL3 then
 		setSprint(false)
 	end
 end)
@@ -339,6 +425,21 @@ dotCorner.Parent = dragDot
 RunService.RenderStepped:Connect(function(dt)
 	local myPart = myDragPart
 	dragDot.Visible = myPart ~= nil
+
+	canStore = false
+	if myPart and myPart.Parent and not myPart.Parent:GetAttribute("OnSled") then
+		local sledModel = workspace:FindFirstChild("Sled")
+		local cargoPart = sledModel and (sledModel:FindFirstChild("CargoZone", true)
+			or sledModel:FindFirstChild("RedaPart", true)
+			or sledModel:FindFirstChild("Cargo", true))
+		if cargoPart then
+			local rel = cargoPart.CFrame:PointToObjectSpace(myPart.Position)
+			local half = cargoPart.Size / 2 + Vector3.new(1.5, 2.5, 1.5)
+			canStore = math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
+		end
+	end
+	storeButton.Visible = canStore
+
 	if not myPart then
 		return
 	end
