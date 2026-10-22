@@ -10,6 +10,7 @@ local WorldGen = require(ServerModules:WaitForChild("WorldGen"))
 local WorldBuilder = require(ServerModules:WaitForChild("WorldBuilder"))
 local Gameplay = require(ServerModules:WaitForChild("Gameplay"))
 local SledService = require(ServerModules:WaitForChild("SledService"))
+local DragSystem = require(SharedModules:WaitForChild("DragSystem"))
 
 local function randomSeed()
 	local letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -37,6 +38,7 @@ print("[Arctic] World seed: " .. layout.SeedString)
 
 local gameplay = Gameplay.new(world, clock, temperature)
 gameplay:Start()
+DragSystem.InitServer()
 
 local sleds = SledService.new(world, gameplay)
 sleds:Start()

@@ -13,6 +13,8 @@ task.spawn(function()
 	end
 end)
 local Config = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"))
+local DragSystem = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("DragSystem"))
+DragSystem.InitClient()
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local setSprinting = remotes:WaitForChild("SetSprinting")
 
@@ -273,3 +275,87 @@ ReplicatedStorage.AttributeChanged:Connect(refreshWorld)
 player.AttributeChanged:Connect(refreshPlayer)
 refreshWorld()
 refreshPlayer()
+
+-- Drag mover: as network owner, pull my dragged piece behind me on a
+-- rope (trailer follow, frame-smooth). The server only validates.
+local RunService = game:GetService("RunService")
+local logsFolder = workspace:WaitForChild("Logs")
+local dragRayParams = RaycastParams.new()
+dragRayParams.FilterType = Enum.RaycastFilterType.Include
+dragRayParams.FilterDescendantsInstances = { workspace:WaitForChild("Terrain") }
+dragRayParams.IgnoreWater = true
+
+local function dragLengthAxis(size)
+	if size.Y >= size.X and size.Y >= size.Z then
+		return Vector3.yAxis
+	elseif size.X >= size.Z then
+		return Vector3.xAxis
+	else
+		return Vector3.zAxis
+	end
+end
+
+local function dragHorizontal(v)
+	local h = Vector3.new(v.X, 0, v.Z)
+	if h.Magnitude < 0.01 then
+		return Vector3.xAxis
+	end
+	return h.Unit
+end
+
+RunService.RenderStepped:Connect(function(dt)
+	local myPart = nil
+	for _, log in ipairs(logsFolder:GetChildren()) do
+		local part = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
+		if part and part:GetAttribute("DraggedBy") == player.UserId then
+			myPart = part
+			break
+		end
+	end
+	if not myPart then
+		return
+	end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
+
+	local cf = myPart.CFrame
+	local pos = cf.Position
+	local toItem = Vector3.new(pos.X - root.Position.X, 0, pos.Z - root.Position.Z)
+
+	local axisVec = dragLengthAxis(myPart.Size)
+	local currentDir = dragHorizontal(cf:VectorToWorldSpace(axisVec))
+	local ropeDir = dragHorizontal(toItem)
+	if currentDir:Dot(ropeDir) < 0 then
+		ropeDir = -ropeDir
+	end
+	local crossY = currentDir.Z * ropeDir.X - currentDir.X * ropeDir.Z
+	local dot = currentDir.X * ropeDir.X + currentDir.Z * ropeDir.Z
+	local yawDelta = math.atan2(crossY, dot) * (1 - math.exp(-dt * 4))
+	if math.abs(yawDelta) > 0.0005 then
+		cf = CFrame.new(cf.Position) * CFrame.Angles(0, yawDelta, 0) * (cf - cf.Position)
+	end
+
+	local nx = pos.X
+	local nz = pos.Z
+	if toItem.Magnitude > Config.Log.DragDistance + 0.05 then
+		local target = root.Position + toItem.Unit * Config.Log.DragDistance
+		local factor = 1 - math.exp(-dt * 7)
+		nx = pos.X + (target.X - pos.X) * factor
+		nz = pos.Z + (target.Z - pos.Z) * factor
+	end
+
+	local hit = workspace:Raycast(Vector3.new(nx, 300, nz), Vector3.new(0, -600, 0), dragRayParams)
+	local ny = cf.Position.Y
+	if hit then
+		local size = myPart.Size
+		local halfY = (math.abs(cf.RightVector.Y) * size.X
+			+ math.abs(cf.UpVector.Y) * size.Y
+			+ math.abs(cf.LookVector.Y) * size.Z) / 2
+		ny = hit.Position.Y + halfY + 0.05
+	end
+
+	myPart.CFrame = CFrame.new(nx, ny, nz) * (cf - cf.Position)
+end)

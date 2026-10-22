@@ -273,7 +273,8 @@ function SledService:_loadNearest(player)
 	local best = nil
 	local bestDistance = Config.Sled.LoadRange
 	for _, log in ipairs(self.Gameplay.LogsFolder:GetChildren()) do
-		if not log:GetAttribute("OnSled") and log:GetAttribute("DraggedBy") == nil then
+		local lp = getLogPart(log)
+		if not log:GetAttribute("OnSled") and (not lp or lp:GetAttribute("DraggedBy") == nil) then
 			local pivot = log:GetPivot().Position
 			local dx = pivot.X - sledPos.X
 			local dz = pivot.Z - sledPos.Z
@@ -300,6 +301,9 @@ function SledService:_loadNearest(player)
 	local prompt = logPart and logPart:FindFirstChildOfClass("ProximityPrompt")
 	if prompt then
 		prompt:Destroy()
+	end
+	if logPart then
+		logPart:SetAttribute("Draggable", nil)
 	end
 
 	self:_placePiece(best, #self._cargo - 1)

@@ -4,6 +4,7 @@ local StarterPack = game:GetService("StarterPack")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
+local DragSystem = require(Modules:WaitForChild("DragSystem"))
 local SurvivalPlayer = require(script.Parent:WaitForChild("SurvivalPlayer"))
 
 local Gameplay = {}
@@ -58,7 +59,6 @@ function Gameplay.new(world, clock, temperature)
 	self._survivals = {}
 	self._sprinting = {}
 	self._wood = {}
-	self._dragging = {}
 	self._digReady = {}
 	self.LogsFolder = nil
 	self._setSprinting = nil
@@ -70,6 +70,17 @@ function Gameplay:Start()
 	logsFolder.Name = "Logs"
 	logsFolder.Parent = workspace
 	self.LogsFolder = logsFolder
+
+	DragSystem.OnStopped = function(item)
+		local model = item.Parent
+		if model and model:IsA("Model") then
+			self.World:SnapPartToGround(model, item, item.Position.X, item.Position.Z)
+		end
+		local prompt = item:FindFirstChildOfClass("ProximityPrompt")
+		if prompt then
+			prompt.ActionText = "Drag"
+		end
+	end
 
 	local remotes = Instance.new("Folder")
 	remotes.Name = "Remotes"
@@ -290,17 +301,7 @@ function Gameplay:_onCharacter(player, character)
 end
 
 function Gameplay:_releaseLogs(player)
-	for _, log in ipairs(self.LogsFolder:GetChildren()) do
-		if log:GetAttribute("DraggedBy") == player.UserId then
-			log:SetAttribute("DraggedBy", nil)
-			local logPart = getLogPart(log)
-			local prompt = logPart and logPart:FindFirstChildOfClass("ProximityPrompt")
-			if prompt then
-				prompt.ActionText = "Drag"
-			end
-		end
-	end
-	self._dragging[player] = nil
+	DragSystem.StopPlayer(player)
 end
 
 function Gameplay:AttachDragPrompt(log)
@@ -330,6 +331,7 @@ function Gameplay:_attachDragPrompt(log)
 		return
 	end
 	log:SetAttribute("Draggable", true)
+	logPart:SetAttribute("Draggable", true)
 	local existing = logPart:FindFirstChildOfClass("ProximityPrompt")
 	if existing then
 		existing:Destroy()
@@ -346,25 +348,12 @@ function Gameplay:_attachDragPrompt(log)
 		if log:GetAttribute("OnSled") then
 			return
 		end
-		if log:GetAttribute("DraggedBy") == player.UserId then
-			log:SetAttribute("DraggedBy", nil)
-			if self._dragging[player] == log then
-				self._dragging[player] = nil
+		if logPart:GetAttribute("DraggedBy") == player.UserId then
+			DragSystem.Stop(player, logPart)
+		elseif logPart:GetAttribute("DraggedBy") == nil then
+			if DragSystem.Start(player, logPart) then
+				prompt.ActionText = "Drop"
 			end
-			prompt.ActionText = "Drag"
-		elseif log:GetAttribute("DraggedBy") == nil then
-			local previous = self._dragging[player]
-			if previous and previous ~= log then
-				previous:SetAttribute("DraggedBy", nil)
-				local prevPart = getLogPart(previous)
-				local prevPrompt = prevPart and prevPart:FindFirstChildOfClass("ProximityPrompt")
-				if prevPrompt then
-					prevPrompt.ActionText = "Drag"
-				end
-			end
-			log:SetAttribute("DraggedBy", player.UserId)
-			self._dragging[player] = log
-			prompt.ActionText = "Drop"
 		end
 	end)
 end
@@ -395,8 +384,16 @@ function Gameplay:_dropLogPieces(treeModel, spotPos)
 			setLength(logPart, axisVec, pieceLength)
 			for _, part in ipairs(log:GetDescendants()) do
 				if part:IsA("BasePart") then
-					part.Anchored = true
 					part.CanCollide = true
+					if part == logPart then
+						part.Anchored = true
+					else
+						part.Anchored = false
+						local weld = Instance.new("WeldConstraint")
+						weld.Part0 = logPart
+						weld.Part1 = part
+						weld.Parent = part
+					end
 				end
 			end
 			log:SetAttribute("PieceHits", 0)
@@ -505,8 +502,8 @@ function Gameplay:_cutLog(player, log)
 	local woodAmount = math.max(1, math.floor(volume * Config.Log.WoodPerVolume + 0.5))
 	self._wood[player] = (self._wood[player] or 0) + woodAmount
 	player:SetAttribute("Wood", self._wood[player])
-	if self._dragging[player] == log then
-		self._dragging[player] = nil
+	if logPart:GetAttribute("DraggedBy") then
+		DragSystem.ForceStop(logPart)
 	end
 	log:Destroy()
 end
@@ -580,18 +577,14 @@ function Gameplay:Update(dt)
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 
-		local log = self._dragging[player]
-		if log and (not log.Parent or log:GetAttribute("DraggedBy") ~= player.UserId) then
-			self._dragging[player] = nil
-			log = nil
-		end
+		local dragItem = DragSystem.GetPlayerItem(player)
 
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			local baseSpeed = self._sprinting[player] and Config.Survival.SprintSpeed or Config.Survival.WalkSpeed
 			local factor = 1
-			if log then
-				local w = log:GetAttribute("Weight") or 0
+			if dragItem then
+				local w = logWeight(dragItem)
 				factor = math.clamp(1 - w * Config.Log.DragSlowPerWeight, Config.Log.MinDragSpeedFactor, 1)
 			end
 			if self.Sleds then
@@ -601,19 +594,6 @@ function Gameplay:Update(dt)
 				end
 			end
 			humanoid.WalkSpeed = baseSpeed * factor
-		end
-
-		if log and root then
-			local look = root.CFrame.LookVector
-			local tx = root.Position.X - look.X * Config.Log.DragDistance
-			local tz = root.Position.Z - look.Z * Config.Log.DragDistance
-			local pivotPos = log:GetPivot().Position
-			local nx = pivotPos.X + (tx - pivotPos.X) * 0.4
-			local nz = pivotPos.Z + (tz - pivotPos.Z) * 0.4
-			local logPart = getLogPart(log)
-			if logPart then
-				world:SnapPartToGround(log, logPart, nx, nz)
-			end
 		end
 
 		if root and world:IsLit() and world.FireCore then
