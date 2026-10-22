@@ -276,10 +276,9 @@ refreshPlayer()
 -- front of the camera (aim with the center dot). The server validates.
 local RunService = game:GetService("RunService")
 local logsFolder = workspace:WaitForChild("Logs")
-local dragRayParams = RaycastParams.new()
-dragRayParams.FilterType = Enum.RaycastFilterType.Include
-dragRayParams.FilterDescendantsInstances = { workspace:WaitForChild("Terrain") }
-dragRayParams.IgnoreWater = true
+local dragSurfaceParams = RaycastParams.new()
+dragSurfaceParams.FilterType = Enum.RaycastFilterType.Exclude
+dragSurfaceParams.IgnoreWater = true
 
 local function dragLengthAxis(size)
 	if size.Y >= size.X and size.Y >= size.Z then
@@ -383,12 +382,25 @@ RunService.RenderStepped:Connect(function(dt)
 		+ math.abs(cf.UpVector.Y) * size.Y
 		+ math.abs(cf.LookVector.Y) * size.Z) / 2
 
-	local hit = workspace:Raycast(Vector3.new(anchor.X, 300, anchor.Z), Vector3.new(0, -600, 0), dragRayParams)
+	-- Rest height comes from whatever solid surface is under the
+	-- aim point: terrain, the sled bed, or the campfire — trees and
+	-- other logs do not count, so canopies never lift the item.
+	local exclude = { character, myPart.Parent, logsFolder }
+	local treesFolder = workspace:FindFirstChild("Trees")
+	if treesFolder then
+		table.insert(exclude, treesFolder)
+	end
+	dragSurfaceParams.FilterDescendantsInstances = exclude
+	local hit = workspace:Raycast(Vector3.new(anchor.X, 300, anchor.Z), Vector3.new(0, -600, 0), dragSurfaceParams)
 	local minY = pos.Y
 	if hit then
 		minY = hit.Position.Y + halfY + 0.05
 	end
-	local targetY = math.clamp(anchor.Y, minY, root.Position.Y + Config.Log.DragMaxRise)
+	-- Carried items hover: looking level keeps them floating at the
+	-- aim height, looking down settles them to hover height (never a
+	-- ground scrape), looking up lifts toward the rise cap.
+	local desiredY = math.max(anchor.Y, minY + Config.Log.DragHover)
+	local targetY = math.clamp(desiredY, minY, root.Position.Y + Config.Log.DragMaxRise)
 	local target = Vector3.new(anchor.X, targetY, anchor.Z)
 
 	-- Close on the anchor fast, but stay inside the step speed the

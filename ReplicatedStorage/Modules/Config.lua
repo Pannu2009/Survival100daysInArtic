@@ -121,6 +121,7 @@ Config.Log = {
 	MinDragSpeedFactor = 0.35,
 	DragDistance = 7,
 	DragMaxRise = 6,
+	DragHover = 1.1,
 }
 
 Config.Food = {
