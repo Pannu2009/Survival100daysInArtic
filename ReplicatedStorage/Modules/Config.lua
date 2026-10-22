@@ -71,7 +71,6 @@ Config.Campfire = {
 	RadiusByLevel = { 18, 23, 28, 33, 38, 44, 50 },
 	LevelBurnUnits = { 0, 4, 10, 18, 28, 40, 55 },
 	WarmthRate = 2.4,
-	StartFuelSeconds = 240,
 	FuelPerBurnUnit = 45,
 	FuelDisplayMax = 600,
 	FeedRange = 10,
@@ -93,6 +92,17 @@ Config.Sled = {
 	MaxSpeed = 30,
 	YawResponse = 6,
 	YawDamp = 5,
+}
+
+Config.Blueprint = {
+	CampfireCostKg = 40,
+	PlaceRange = 25,
+	MinSpacing = 6,
+}
+
+Config.Lighter = {
+	StartFuel = 100,
+	LightCost = 5,
 }
 
 Config.Digging = {

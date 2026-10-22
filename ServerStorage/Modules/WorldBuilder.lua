@@ -28,24 +28,17 @@ end
 function WorldBuilder.new(layout)
 	local self = setmetatable({}, WorldBuilder)
 	self.Layout = layout
-	self.Fuel = Config.Campfire.StartFuelSeconds
-	self.Level = 1
-	self.TotalFed = 0
+	self.Fires = {}
+	self.Blueprints = {}
 	self.OnFeedAttempt = nil
-	self._ring = nil
-	self._ringLevel = nil
-	self._fireTitle = nil
-	self._fireFill = nil
-	self._fireState = nil
+	self.OnBlueprintAdd = nil
+	self.OnBlueprintBuilt = nil
+	self.OnLightAttempt = nil
 	self._publishedWorld = {}
 	self.TreesFolder = nil
-	self.FireCore = nil
 	self.TreeTemplate = nil
 	self.WoodLogTemplate = nil
 	self.BonfireTemplate = nil
-	self._fireEmitters = {}
-	self._fire = nil
-	self._light = nil
 	self._groundParams = RaycastParams.new()
 	self._groundParams.FilterType = Enum.RaycastFilterType.Include
 	self._groundParams.FilterDescendantsInstances = { workspace:WaitForChild("Terrain") }
@@ -96,48 +89,88 @@ function WorldBuilder:SnapPartToGround(model, part, x, z)
 	end
 end
 
-function WorldBuilder:IsLit()
-	return self.Fuel > 0
+-- Warmth is per-fire now: any lit, fueled fire warms its radius.
+function WorldBuilder:WarmthRateAt(position)
+	for _, fire in ipairs(self.Fires) do
+		if fire.Lit and fire.Fuel > 0 then
+			local radius = Config.Campfire.RadiusByLevel[fire.Level] or Config.Campfire.RadiusByLevel[1]
+			local dx = position.X - fire.Core.Position.X
+			local dz = position.Z - fire.Core.Position.Z
+			if dx * dx + dz * dz <= radius * radius then
+				return Config.Campfire.WarmthRate
+			end
+		end
+	end
+	return nil
 end
 
-function WorldBuilder:GetWarmthRadius()
-	return Config.Campfire.RadiusByLevel[self.Level] or Config.Campfire.RadiusByLevel[1]
+-- True when a point sits within `radius` of any fire or blueprint
+-- (digging protection, blueprint spacing).
+function WorldBuilder:IsNearStructure(x, z, radius)
+	local function near(position)
+		local dx = x - position.X
+		local dz = z - position.Z
+		return dx * dx + dz * dz < radius * radius
+	end
+	for _, fire in ipairs(self.Fires) do
+		if near(fire.Core.Position) then
+			return true
+		end
+	end
+	for _, bp in ipairs(self.Blueprints) do
+		if near(bp.Position) then
+			return true
+		end
+	end
+	return false
+end
+
+function WorldBuilder:FireRadius(fire)
+	return Config.Campfire.RadiusByLevel[fire.Level] or Config.Campfire.RadiusByLevel[1]
 end
 
 function WorldBuilder:TerrainRaycastDown(x, z)
 	return workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0), self._groundParams)
 end
 
-function WorldBuilder:_recalcLevel()
+function WorldBuilder:_recalcLevel(fire)
 	local level = 1
 	for i, needed in ipairs(Config.Campfire.LevelBurnUnits) do
-		if self.TotalFed >= needed then
+		if fire.TotalFed >= needed then
 			level = i
 		end
 	end
-	if level ~= self.Level then
-		self.Level = level
-		print(("[Arctic] Campfire reached level %d - warm radius %d studs"):format(level, self:GetWarmthRadius()))
+	fire.Level = level
+end
+
+function WorldBuilder:_refreshFireVisual(fire)
+	local burning = fire.Lit and fire.Fuel > 0
+	if fire.Fire then
+		fire.Fire.Enabled = burning
+	end
+	if fire.Light then
+		fire.Light.Enabled = burning
+	end
+	for _, emitter in ipairs(fire.Emitters) do
+		if emitter.Parent then
+			emitter.Enabled = burning
+		end
+	end
+	if fire.LightPrompt then
+		fire.LightPrompt.Enabled = not burning and fire.Fuel > 0
 	end
 end
 
 function WorldBuilder:TickFire(dt)
-	if self.Fuel > 0 then
-		self.Fuel = math.max(0, self.Fuel - dt)
-	end
-	local lit = self:IsLit()
-	if self._fire then
-		self._fire.Enabled = lit
-	end
-	if self._light then
-		self._light.Enabled = lit
-	end
-	for _, emitter in ipairs(self._fireEmitters) do
-		if emitter.Parent then
-			emitter.Enabled = lit
+	for _, fire in ipairs(self.Fires) do
+		if fire.Lit and fire.Fuel > 0 then
+			fire.Fuel = math.max(0, fire.Fuel - dt)
+			if fire.Fuel <= 0 then
+				fire.Lit = false
+			end
 		end
+		self:_refreshFireVisual(fire)
 	end
-	return lit
 end
 
 function WorldBuilder:Build()
@@ -173,7 +206,8 @@ function WorldBuilder:Build()
 	end
 
 	self:_plantTrees()
-	self:_buildCampfire()
+	-- No fixed campfire anymore: players build their own from
+	-- blueprints (open-world direction, 2026-10-22).
 end
 
 function WorldBuilder:_plantTrees()
@@ -202,16 +236,17 @@ function WorldBuilder:_plantTrees()
 	end
 end
 
-function WorldBuilder:_buildCampfire()
+function WorldBuilder:_createFire(x, z)
 	local campfire
 	local fireCore
-	local groundY = self:GroundY(0, 0)
+	local groundY = self:GroundY(x, z)
+	local emitters = {}
 
 	if self.BonfireTemplate then
-		-- Ajay's BonFire model is the campfire visual. The game still
-		-- owns the fire state, so bundled scripts are stripped, every
-		-- part is anchored, and an invisible Core anchor at the model's
-		-- center carries the prompt, billboard, and fire state.
+		-- Ajay's BonFire model is the campfire visual. The game owns
+		-- the fire state, so bundled scripts are stripped, every part
+		-- is anchored, and an invisible Core anchor at the model's
+		-- center carries the prompts, billboard, and fire state.
 		campfire = self.BonfireTemplate:Clone()
 		campfire.Name = "Campfire"
 		for _, obj in ipairs(campfire:GetDescendants()) do
@@ -223,10 +258,10 @@ function WorldBuilder:_buildCampfire()
 		end
 		campfire.Parent = workspace
 		if campfire:IsA("Model") then
-			self:SnapToGround(campfire, 0, 0)
+			self:SnapToGround(campfire, x, z)
 		end
 
-		local center = Vector3.new(0, groundY, 0)
+		local center = Vector3.new(x, groundY, z)
 		if campfire:IsA("Model") then
 			center = campfire:GetBoundingBox().Position
 		elseif campfire:IsA("BasePart") then
@@ -249,7 +284,7 @@ function WorldBuilder:_buildCampfire()
 
 		for _, obj in ipairs(campfire:GetDescendants()) do
 			if obj:IsA("ParticleEmitter") then
-				table.insert(self._fireEmitters, obj)
+				table.insert(emitters, obj)
 			end
 		end
 	else
@@ -259,20 +294,33 @@ function WorldBuilder:_buildCampfire()
 		fireCore = Instance.new("Part")
 		fireCore.Name = "Core"
 		fireCore.Size = Vector3.new(3, 1, 3)
-		fireCore.CFrame = CFrame.new(0, groundY + 0.9, 0)
+		fireCore.CFrame = CFrame.new(x, groundY + 0.9, z)
 		fireCore.Anchored = true
 		fireCore.Material = Enum.Material.Wood
 		fireCore.Color = Color3.fromRGB(70, 45, 28)
 		fireCore.Parent = campfire
+		campfire.Parent = workspace
 	end
 
-	local fire = campfire:FindFirstChildOfClass("Fire", true)
-	if not fire then
-		fire = Instance.new("Fire")
-		fire.Size = 6
-		fire.Heat = 12
-		fire.Parent = fireCore
+	local fire = {
+		Model = campfire,
+		Core = fireCore,
+		Fuel = 0,
+		TotalFed = 0,
+		Level = 1,
+		Lit = false,
+		Emitters = emitters,
+		RingLevel = 1,
+	}
+
+	local flame = campfire:FindFirstChildOfClass("Fire", true)
+	if not flame then
+		flame = Instance.new("Fire")
+		flame.Size = 6
+		flame.Heat = 12
+		flame.Parent = fireCore
 	end
+	fire.Fire = flame
 
 	local fireLight = fireCore:FindFirstChildOfClass("PointLight")
 		or campfire:FindFirstChildOfClass("PointLight", true)
@@ -283,6 +331,7 @@ function WorldBuilder:_buildCampfire()
 		fireLight.Brightness = 2
 		fireLight.Parent = fireCore
 	end
+	fire.Light = fireLight
 
 	local feedPrompt = Instance.new("ProximityPrompt")
 	feedPrompt.ActionText = "Feed log"
@@ -290,23 +339,31 @@ function WorldBuilder:_buildCampfire()
 	feedPrompt.HoldDuration = 0.4
 	feedPrompt.MaxActivationDistance = 10
 	feedPrompt.Parent = fireCore
-
-	campfire.Parent = workspace
-
-	self.FireCore = fireCore
-	self._fire = fire
-	self._light = fireLight
-
 	feedPrompt.Triggered:Connect(function(player)
-		local burnUnits = self.OnFeedAttempt and self.OnFeedAttempt(player)
+		local burnUnits = self.OnFeedAttempt and self.OnFeedAttempt(player, fire)
 		if burnUnits then
-			self.Fuel += burnUnits * Config.Campfire.FuelPerBurnUnit
-			self.TotalFed += burnUnits
-			self:_recalcLevel()
+			fire.Fuel += burnUnits * Config.Campfire.FuelPerBurnUnit
+			fire.TotalFed += burnUnits
+			self:_recalcLevel(fire)
+			self:_refreshFireVisual(fire)
 		end
 	end)
 
-	local radius = self:GetWarmthRadius()
+	local lightPrompt = Instance.new("ProximityPrompt")
+	lightPrompt.ActionText = "Light with lighter"
+	lightPrompt.ObjectText = "Campfire"
+	lightPrompt.HoldDuration = 0.3
+	lightPrompt.MaxActivationDistance = 10
+	lightPrompt.Enabled = false
+	lightPrompt.Parent = fireCore
+	lightPrompt.Triggered:Connect(function(player)
+		if self.OnLightAttempt and self.OnLightAttempt(player, fire) then
+			self:_refreshFireVisual(fire)
+		end
+	end)
+	fire.LightPrompt = lightPrompt
+
+	local radius = self:FireRadius(fire)
 	local ring = Instance.new("Part")
 	ring.Name = "WarmthRing"
 	ring.Shape = Enum.PartType.Cylinder
@@ -319,10 +376,9 @@ function WorldBuilder:_buildCampfire()
 	ring.CanTouch = false
 	ring.Material = Enum.Material.SmoothPlastic
 	ring.Color = MARIGOLD
-	ring.Transparency = 0.78
+	ring.Transparency = 0.93
 	ring.Parent = campfire
-	self._ring = ring
-	self._ringLevel = self.Level
+	fire.Ring = ring
 
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "CampfireGui"
@@ -351,7 +407,7 @@ function WorldBuilder:_buildCampfire()
 	title.Font = Enum.Font.GothamBold
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.Parent = bg
-	self._fireTitle = title
+	fire.Title = title
 
 	local track = Instance.new("Frame")
 	track.Size = UDim2.new(1, -12, 0, 10)
@@ -365,26 +421,166 @@ function WorldBuilder:_buildCampfire()
 	trackCorner.Parent = track
 
 	local fill = Instance.new("Frame")
-	fill.Size = UDim2.fromScale(0.4, 1)
+	fill.Size = UDim2.fromScale(0, 1)
 	fill.BackgroundColor3 = MARIGOLD
 	fill.BorderSizePixel = 0
 	fill.Parent = track
 	local fillCorner = Instance.new("UICorner")
 	fillCorner.CornerRadius = UDim.new(0, 5)
 	fillCorner.Parent = fill
-	self._fireFill = fill
+	fire.Fill = fill
 
 	local state = Instance.new("TextLabel")
 	state.Size = UDim2.new(1, -12, 0, 16)
 	state.Position = UDim2.fromOffset(6, 42)
 	state.BackgroundTransparency = 1
-	state.Text = "Fuel 240s"
+	state.Text = "OUT - feed a log, then light it"
 	state.TextColor3 = SILVER
 	state.TextSize = 12
 	state.Font = Enum.Font.Gotham
 	state.TextXAlignment = Enum.TextXAlignment.Left
 	state.Parent = bg
-	self._fireState = state
+	fire.State = state
+
+	table.insert(self.Fires, fire)
+	self:_refreshFireVisual(fire)
+	return fire
+end
+
+-- A placed blueprint: a ghost of the campfire players fill with
+-- logs (CampfireCostKg total) until it becomes a real fire.
+function WorldBuilder:PlaceBlueprint(x, z)
+	local hit = self:TerrainRaycastDown(x, z)
+	if not hit or hit.Material ~= Enum.Material.Snow then
+		return nil
+	end
+	if self:IsNearStructure(x, z, Config.Blueprint.MinSpacing) then
+		return nil
+	end
+	local groundY = self:GroundY(x, z)
+
+	local model
+	if self.BonfireTemplate then
+		model = self.BonfireTemplate:Clone()
+		model.Name = "CampfireBlueprint"
+		for _, obj in ipairs(model:GetDescendants()) do
+			if obj:IsA("BasePart") then
+				obj.Anchored = true
+				obj.CanCollide = false
+				obj.CanQuery = false
+				obj.Transparency = math.max(obj.Transparency, 0.55)
+			elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+				obj:Destroy()
+			elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("PointLight") then
+				obj.Enabled = false
+			end
+		end
+		model.Parent = workspace
+		if model:IsA("Model") then
+			self:SnapToGround(model, x, z)
+		end
+	else
+		model = Instance.new("Model")
+		model.Name = "CampfireBlueprint"
+		local marker = Instance.new("Part")
+		marker.Shape = Enum.PartType.Cylinder
+		marker.Size = Vector3.new(0.4, 6, 6)
+		marker.CFrame = CFrame.new(x, groundY + 0.2, z) * CFrame.Angles(0, 0, math.rad(90))
+		marker.Anchored = true
+		marker.CanCollide = false
+		marker.CanQuery = false
+		marker.Material = Enum.Material.SmoothPlastic
+		marker.Color = MARIGOLD
+		marker.Transparency = 0.5
+		marker.Parent = model
+		model.Parent = workspace
+	end
+
+	local core = Instance.new("Part")
+	core.Name = "BlueprintCore"
+	core.Size = Vector3.new(2, 2, 2)
+	core.CFrame = CFrame.new(x, groundY + 1, z)
+	core.Anchored = true
+	core.Transparency = 1
+	core.CanCollide = false
+	core.CanTouch = false
+	core.Parent = model
+
+	local bp = {
+		Model = model,
+		Core = core,
+		Position = Vector3.new(x, groundY, z),
+		FedKg = 0,
+		Contributors = {},
+	}
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Add log"
+	prompt.ObjectText = "Campfire blueprint"
+	prompt.HoldDuration = 0.3
+	prompt.MaxActivationDistance = 10
+	prompt.Parent = core
+	prompt.Triggered:Connect(function(player)
+		local kg = self.OnBlueprintAdd and self.OnBlueprintAdd(player, bp)
+		if kg then
+			bp.FedKg += kg
+			if bp.Label then
+				bp.Label.Text = ("CAMPFIRE %d/%dkg"):format(math.floor(bp.FedKg), Config.Blueprint.CampfireCostKg)
+			end
+			if bp.FedKg >= Config.Blueprint.CampfireCostKg then
+				self:CompleteBlueprint(bp)
+			end
+		end
+	end)
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "BlueprintGui"
+	billboard.Size = UDim2.fromOffset(170, 40)
+	billboard.StudsOffset = Vector3.new(0, 4, 0)
+	billboard.MaxDistance = 70
+	billboard.Parent = core
+
+	local bg = Instance.new("Frame")
+	bg.Size = UDim2.fromScale(1, 1)
+	bg.BackgroundColor3 = AUBERGINE
+	bg.BackgroundTransparency = 0.25
+	bg.BorderSizePixel = 0
+	bg.Parent = billboard
+	local bgCorner = Instance.new("UICorner")
+	bgCorner.CornerRadius = UDim.new(0, 8)
+	bgCorner.Parent = bg
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -12, 1, 0)
+	label.Position = UDim2.fromOffset(6, 0)
+	label.BackgroundTransparency = 1
+	label.Text = ("CAMPFIRE 0/%dkg"):format(Config.Blueprint.CampfireCostKg)
+	label.TextColor3 = MARIGOLD
+	label.TextSize = 15
+	label.Font = Enum.Font.GothamBold
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.Parent = bg
+	bp.Label = label
+
+	table.insert(self.Blueprints, bp)
+	return bp
+end
+
+function WorldBuilder:CompleteBlueprint(bp)
+	for i, other in ipairs(self.Blueprints) do
+		if other == bp then
+			table.remove(self.Blueprints, i)
+			break
+		end
+	end
+	if bp.Model then
+		bp.Model:Destroy()
+	end
+	local fire = self:_createFire(bp.Position.X, bp.Position.Z)
+	if self.OnBlueprintBuilt then
+		self.OnBlueprintBuilt(bp)
+	end
+	return fire
 end
 
 function WorldBuilder:UpdateState(clock, temperature)
@@ -412,31 +608,38 @@ function WorldBuilder:UpdateState(clock, temperature)
 	publish("Multiplier", clock:GetMultiplier())
 	publish("Weather", temperature:GetWeather())
 	publish("AmbientTempC", math.floor(temperature:GetAmbientTempC(clock:GetPhase())))
-	publish("CampfireFuel", math.floor(self.Fuel))
-	publish("CampfireLevel", self.Level)
-
-	if self._ring and self._ringLevel ~= self.Level then
-		self._ringLevel = self.Level
-		local radius = self:GetWarmthRadius()
-		self._ring.Size = Vector3.new(0.15, radius * 2, radius * 2)
-	end
-	if self._ring then
-		self._ring.Transparency = self:IsLit() and 0.78 or 0.93
-	end
-	if self._fireTitle then
-		self._fireTitle.Text = "CAMPFIRE Lv " .. self.Level
-	end
-	if self._fireFill then
-		local fraction = math.clamp(self.Fuel / Config.Campfire.FuelDisplayMax, 0, 1)
-		self._fireFill.Size = UDim2.fromScale(fraction, 1)
-	end
-	if self._fireState then
-		if self:IsLit() then
-			self._fireState.Text = "Fuel " .. math.floor(self.Fuel) .. "s · warm " .. self:GetWarmthRadius() .. " studs"
-		else
-			self._fireState.Text = "OUT - feed a log to relight"
+	local litCount = 0
+	for _, fire in ipairs(self.Fires) do
+		local burning = fire.Lit and fire.Fuel > 0
+		if burning then
+			litCount += 1
+		end
+		if fire.Ring and fire.RingLevel ~= fire.Level then
+			fire.RingLevel = fire.Level
+			local radius = self:FireRadius(fire)
+			fire.Ring.Size = Vector3.new(0.15, radius * 2, radius * 2)
+		end
+		if fire.Ring then
+			fire.Ring.Transparency = burning and 0.78 or 0.93
+		end
+		if fire.Title then
+			fire.Title.Text = "CAMPFIRE Lv " .. fire.Level
+		end
+		if fire.Fill then
+			local fraction = math.clamp(fire.Fuel / Config.Campfire.FuelDisplayMax, 0, 1)
+			fire.Fill.Size = UDim2.fromScale(fraction, 1)
+		end
+		if fire.State then
+			if burning then
+				fire.State.Text = "Fuel " .. math.floor(fire.Fuel) .. "s · warm " .. self:FireRadius(fire) .. " studs"
+			elseif fire.Fuel > 0 then
+				fire.State.Text = "Unlit - light it with a lighter"
+			else
+				fire.State.Text = "OUT - feed a log, then light it"
+			end
 		end
 	end
+	publish("LitFires", litCount)
 end
 
 return WorldBuilder

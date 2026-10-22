@@ -18,6 +18,8 @@ DragSystem.InitClient()
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local setSprinting = remotes:WaitForChild("SetSprinting")
 local storeRemote = remotes:WaitForChild("StoreDraggedItem", 10)
+local openBuildMenuRemote = remotes:WaitForChild("OpenBuildMenu")
+local placeBlueprintRemote = remotes:WaitForChild("PlaceBlueprint")
 
 local AUBERGINE = Color3.fromHex("3A0F34")
 local SILVER = Color3.fromHex("DDE3E7")
@@ -59,11 +61,35 @@ local dayLabel = makeLabel(topPanel, "DAY 1", UDim2.new(1, -16, 0, 26), UDim2.fr
 local phaseLabel = makeLabel(topPanel, "Day", UDim2.new(0.5, -8, 0, 20), UDim2.fromOffset(8, 36), SILVER, 15)
 local tempLabel = makeLabel(topPanel, "-12C", UDim2.new(0.5, -8, 0, 20), UDim2.new(0.5, 0, 0, 36), MARIGOLD, 15)
 local multLabel = makeLabel(topPanel, "x1", UDim2.new(0.5, -8, 0, 20), UDim2.fromOffset(8, 58), MARIGOLD, 15)
-local fuelLabel = makeLabel(topPanel, "Fire: 0s", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 80), SILVER, 13)
+local lighterLabel = makeLabel(topPanel, "Lighter: 100", UDim2.new(0.5, -8, 0, 20), UDim2.new(0.5, 0, 0, 58), SILVER, 15)
+local fuelLabel = makeLabel(topPanel, "Fires lit: 0", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 80), SILVER, 13)
 local seedLabel = makeLabel(topPanel, "Seed: ------", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 100), SILVER, 13)
 local sickLabel = makeLabel(topPanel, "SICK", UDim2.new(0, 60, 0, 20), UDim2.new(1, -66, 0, 6), MARIGOLD, 16)
 sickLabel.TextXAlignment = Enum.TextXAlignment.Right
 sickLabel.Visible = false
+
+-- Day 1 objective banner (top center).
+local objectivePanel = Instance.new("Frame")
+objectivePanel.Name = "ObjectivePanel"
+objectivePanel.Size = UDim2.fromOffset(330, 30)
+objectivePanel.Position = UDim2.new(0.5, -165, 0, 10)
+objectivePanel.BackgroundColor3 = AUBERGINE
+objectivePanel.BackgroundTransparency = 0.25
+objectivePanel.BorderSizePixel = 0
+objectivePanel.Parent = gui
+local objectiveCorner = Instance.new("UICorner")
+objectiveCorner.CornerRadius = UDim.new(0, 8)
+objectiveCorner.Parent = objectivePanel
+local objectiveLabel = makeLabel(objectivePanel, "Day 1: Fell a tree", UDim2.new(1, -12, 1, 0), UDim2.fromOffset(6, 0), SILVER, 13)
+objectiveLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+local OBJECTIVES = {
+	"Day 1: Fell a tree",
+	"Day 1: Dig a snow shelter",
+	"Day 1: Build a campfire (blueprint stick)",
+	"Day 1: Light the campfire with your lighter",
+	"Base ready - keep the fire fed",
+}
 
 local barPanel = Instance.new("Frame")
 barPanel.Name = "BarPanel"
@@ -151,6 +177,134 @@ local function tryStore()
 	end
 end
 storeButton.Activated:Connect(tryStore)
+
+-- Build menu (blueprint stick) + campfire placement mode.
+local buildMenu = Instance.new("Frame")
+buildMenu.Name = "BuildMenu"
+buildMenu.Size = UDim2.fromOffset(250, 148)
+buildMenu.Position = UDim2.new(0.5, -125, 0.5, -74)
+buildMenu.BackgroundColor3 = AUBERGINE
+buildMenu.BackgroundTransparency = 0.1
+buildMenu.BorderSizePixel = 0
+buildMenu.Visible = false
+buildMenu.Parent = gui
+local buildMenuCorner = Instance.new("UICorner")
+buildMenuCorner.CornerRadius = UDim.new(0, 12)
+buildMenuCorner.Parent = buildMenu
+local buildTitle = makeLabel(buildMenu, "BUILD", UDim2.new(1, -16, 0, 24), UDim2.fromOffset(8, 8), SILVER, 17)
+buildTitle.TextXAlignment = Enum.TextXAlignment.Center
+
+local campfireBuildButton = Instance.new("TextButton")
+campfireBuildButton.Size = UDim2.new(1, -24, 0, 46)
+campfireBuildButton.Position = UDim2.fromOffset(12, 42)
+campfireBuildButton.BackgroundColor3 = MARIGOLD
+campfireBuildButton.Text = "Campfire - 40kg of logs"
+campfireBuildButton.TextColor3 = AUBERGINE
+campfireBuildButton.TextSize = 15
+campfireBuildButton.Font = Enum.Font.GothamBold
+campfireBuildButton.BorderSizePixel = 0
+campfireBuildButton.Parent = buildMenu
+local campfireBuildCorner = Instance.new("UICorner")
+campfireBuildCorner.CornerRadius = UDim.new(0, 10)
+campfireBuildCorner.Parent = campfireBuildButton
+
+local buildCloseButton = Instance.new("TextButton")
+buildCloseButton.Size = UDim2.new(1, -24, 0, 34)
+buildCloseButton.Position = UDim2.fromOffset(12, 98)
+buildCloseButton.BackgroundColor3 = SILVER
+buildCloseButton.BackgroundTransparency = 0.4
+buildCloseButton.Text = "Close"
+buildCloseButton.TextColor3 = AUBERGINE
+buildCloseButton.TextSize = 14
+buildCloseButton.Font = Enum.Font.GothamBold
+buildCloseButton.BorderSizePixel = 0
+buildCloseButton.Parent = buildMenu
+local buildCloseCorner = Instance.new("UICorner")
+buildCloseCorner.CornerRadius = UDim.new(0, 10)
+buildCloseCorner.Parent = buildCloseButton
+buildCloseButton.Activated:Connect(function()
+	buildMenu.Visible = false
+end)
+
+openBuildMenuRemote.OnClientEvent:Connect(function()
+	buildMenu.Visible = true
+end)
+
+local placing = false
+local aimPosition = nil
+local buildGhost = nil
+
+local placeButton = Instance.new("TextButton")
+placeButton.Name = "PlaceButton"
+placeButton.Size = UDim2.fromOffset(150, 50)
+placeButton.Position = UDim2.new(0.5, -160, 1, -128)
+placeButton.BackgroundColor3 = MARIGOLD
+placeButton.Text = "PLACE HERE"
+placeButton.TextColor3 = AUBERGINE
+placeButton.TextSize = 16
+placeButton.Font = Enum.Font.GothamBold
+placeButton.BorderSizePixel = 0
+placeButton.Visible = false
+placeButton.Parent = gui
+local placeCorner = Instance.new("UICorner")
+placeCorner.CornerRadius = UDim.new(0, 12)
+placeCorner.Parent = placeButton
+
+local cancelPlaceButton = Instance.new("TextButton")
+cancelPlaceButton.Name = "CancelPlaceButton"
+cancelPlaceButton.Size = UDim2.fromOffset(110, 50)
+cancelPlaceButton.Position = UDim2.new(0.5, 2, 1, -128)
+cancelPlaceButton.BackgroundColor3 = SILVER
+cancelPlaceButton.BackgroundTransparency = 0.25
+cancelPlaceButton.Text = "Cancel"
+cancelPlaceButton.TextColor3 = AUBERGINE
+cancelPlaceButton.TextSize = 15
+cancelPlaceButton.Font = Enum.Font.GothamBold
+cancelPlaceButton.BorderSizePixel = 0
+cancelPlaceButton.Visible = false
+cancelPlaceButton.Parent = gui
+local cancelPlaceCorner = Instance.new("UICorner")
+cancelPlaceCorner.CornerRadius = UDim.new(0, 12)
+cancelPlaceCorner.Parent = cancelPlaceButton
+
+local function stopPlacing()
+	placing = false
+	placeButton.Visible = false
+	cancelPlaceButton.Visible = false
+	if buildGhost then
+		buildGhost.Parent = nil
+	end
+end
+
+local function startPlacing()
+	buildMenu.Visible = false
+	if not buildGhost then
+		buildGhost = Instance.new("Part")
+		buildGhost.Name = "BuildGhost"
+		buildGhost.Shape = Enum.PartType.Cylinder
+		buildGhost.Size = Vector3.new(0.4, 6.4, 6.4)
+		buildGhost.Anchored = true
+		buildGhost.CanCollide = false
+		buildGhost.CanQuery = false
+		buildGhost.CanTouch = false
+		buildGhost.Material = Enum.Material.SmoothPlastic
+		buildGhost.Color = MARIGOLD
+		buildGhost.Transparency = 0.45
+	end
+	buildGhost.Parent = workspace
+	placing = true
+	placeButton.Visible = true
+	cancelPlaceButton.Visible = true
+end
+
+campfireBuildButton.Activated:Connect(startPlacing)
+cancelPlaceButton.Activated:Connect(stopPlacing)
+placeButton.Activated:Connect(function()
+	if aimPosition then
+		placeBlueprintRemote:FireServer(aimPosition)
+	end
+	stopPlacing()
+end)
 
 local hotbar = Instance.new("Frame")
 hotbar.Name = "Hotbar"
@@ -336,7 +490,7 @@ local function refreshWorld()
 	phaseLabel.Text = tostring(ReplicatedStorage:GetAttribute("Phase") or "Day")
 	tempLabel.Text = tostring(ReplicatedStorage:GetAttribute("AmbientTempC") or 0) .. "C"
 	multLabel.Text = "x" .. tostring(ReplicatedStorage:GetAttribute("Multiplier") or 1)
-	fuelLabel.Text = "Fire Lv " .. tostring(ReplicatedStorage:GetAttribute("CampfireLevel") or 1) .. " · " .. tostring(ReplicatedStorage:GetAttribute("CampfireFuel") or 0) .. "s"
+	fuelLabel.Text = "Fires lit: " .. tostring(ReplicatedStorage:GetAttribute("LitFires") or 0)
 	seedLabel.Text = "Seed: " .. tostring(ReplicatedStorage:GetAttribute("WorldSeed") or "------")
 end
 
@@ -349,6 +503,8 @@ local function refreshPlayer()
 	setBar(healthFill, player:GetAttribute("Health"), Config.Survival.MaxHealth)
 	setBar(warmthFill, player:GetAttribute("Warmth"), Config.Survival.MaxWarmth)
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
+	lighterLabel.Text = "Lighter: " .. tostring(player:GetAttribute("LighterFuel") or 0)
+	objectiveLabel.Text = OBJECTIVES[player:GetAttribute("TutorialStep") or 1] or OBJECTIVES[1]
 	sickLabel.Visible = player:GetAttribute("IsSick") == true
 	refreshHotbar()
 end
@@ -523,5 +679,29 @@ RunService.RenderStepped:Connect(function(dt)
 	if now - lastDragSend >= 1 / 20 then
 		lastDragSend = now
 		DragSystem.SendUpdate(myPart, newPos)
+	end
+end)
+
+-- Placement aim: the ghost follows the center of the camera while
+-- placing a blueprint; the server makes the final call.
+RunService.RenderStepped:Connect(function()
+	if not placing then
+		return
+	end
+	local camera = workspace.CurrentCamera
+	local character = player.Character
+	if not camera or not character then
+		return
+	end
+	local ray = camera:ViewportPointToRay(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character }
+	local hit = workspace:Raycast(ray.Origin, ray.Direction * 80, params)
+	if hit then
+		aimPosition = hit.Position
+		if buildGhost then
+			buildGhost.CFrame = CFrame.new(hit.Position + Vector3.new(0, 0.25, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		end
 	end
 end)

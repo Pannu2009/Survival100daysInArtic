@@ -64,6 +64,8 @@ function Gameplay.new(world, clock, temperature)
 	self.Temperature = temperature
 	self._survivals = {}
 	self._sprinting = {}
+	self._lighterFuel = {}
+	self._tutorial = {}
 	self._digReady = {}
 	self._axeReady = {}
 	self._published = {}
@@ -98,11 +100,47 @@ function Gameplay:Start()
 	setSprinting.Parent = remotes
 	self._setSprinting = setSprinting
 
+	local openBuildMenu = Instance.new("RemoteEvent")
+	openBuildMenu.Name = "OpenBuildMenu"
+	openBuildMenu.Parent = remotes
+	self._openBuildMenu = openBuildMenu
+
+	local placeBlueprint = Instance.new("RemoteEvent")
+	placeBlueprint.Name = "PlaceBlueprint"
+	placeBlueprint.Parent = remotes
+	placeBlueprint.OnServerEvent:Connect(function(player, position)
+		if typeof(position) ~= "Vector3" then
+			return
+		end
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not root then
+			return
+		end
+		if (position - root.Position).Magnitude > Config.Blueprint.PlaceRange then
+			return
+		end
+		self.World:PlaceBlueprint(position.X, position.Z)
+	end)
+
 	self:_buildAxe()
 	self:_buildShovel()
+	self:_buildBlueprintTool()
+	self:_buildLighter()
 
-	self.World.OnFeedAttempt = function(player)
-		return self:_feedLog(player)
+	self.World.OnFeedAttempt = function(player, fire)
+		return self:_feedLog(player, fire.Core.Position)
+	end
+	self.World.OnBlueprintAdd = function(player, bp)
+		return self:_addLogToBlueprint(player, bp)
+	end
+	self.World.OnBlueprintBuilt = function(bp)
+		for player in pairs(bp.Contributors) do
+			self:_markTutorial(player, "Built")
+		end
+	end
+	self.World.OnLightAttempt = function(player, fire)
+		return self:_lightFire(player, fire)
 	end
 
 	setSprinting.OnServerEvent:Connect(function(player, value)
@@ -131,6 +169,8 @@ function Gameplay:Start()
 		self:_releaseLogs(player)
 		self._survivals[player] = nil
 		self._sprinting[player] = nil
+		self._lighterFuel[player] = nil
+		self._tutorial[player] = nil
 		self._published[player] = nil
 		self._digReady[player] = nil
 		self._axeReady[player] = nil
@@ -199,6 +239,38 @@ function Gameplay:_buildShovel()
 	shovel.Parent = StarterPack
 end
 
+function Gameplay:_buildBlueprintTool()
+	local tool = Instance.new("Tool")
+	tool.Name = "Blueprint"
+	tool.RequiresHandle = true
+	tool.CanBeDropped = false
+
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(0.28, 3.2, 0.28)
+	handle.Material = Enum.Material.Wood
+	handle.Color = Color3.fromRGB(234, 160, 0)
+	handle.Parent = tool
+
+	tool.Parent = StarterPack
+end
+
+function Gameplay:_buildLighter()
+	local tool = Instance.new("Tool")
+	tool.Name = "Lighter"
+	tool.RequiresHandle = true
+	tool.CanBeDropped = false
+
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(0.5, 0.9, 0.3)
+	handle.Material = Enum.Material.Metal
+	handle.Color = Color3.fromRGB(220, 90, 30)
+	handle.Parent = tool
+
+	tool.Parent = StarterPack
+end
+
 function Gameplay:_onShovelActivated(player)
 	local now = os.clock()
 	if now < (self._digReady[player] or 0) then
@@ -222,13 +294,8 @@ function Gameplay:_onShovelActivated(player)
 	local tx = root.Position.X + look.X * Config.Digging.Reach
 	local tz = root.Position.Z + look.Z * Config.Digging.Reach
 
-	local core = self.World.FireCore
-	if core then
-		local dx = tx - core.Position.X
-		local dz = tz - core.Position.Z
-		if math.sqrt(dx * dx + dz * dz) < Config.Digging.SafeRadius then
-			return
-		end
+	if self.World:IsNearStructure(tx, tz, Config.Digging.SafeRadius) then
+		return
 	end
 
 	local hit = self.World:TerrainRaycastDown(tx, tz)
@@ -239,6 +306,7 @@ function Gameplay:_onShovelActivated(player)
 	local terrain = workspace:WaitForChild("Terrain")
 	local center = hit.Position - Vector3.new(0, Config.Digging.Radius * 0.35, 0)
 	terrain:FillBall(center, Config.Digging.Radius, Enum.Material.Air)
+	self:_markTutorial(player, "Dug")
 end
 
 function Gameplay:_syncAttributes(player)
@@ -253,6 +321,8 @@ function Gameplay:_syncAttributes(player)
 		Warmth = math.floor(survival.Warmth),
 		Hunger = math.floor(survival.Hunger:Get()),
 		IsSick = survival.IsSick,
+		LighterFuel = self._lighterFuel[player] or 0,
+		TutorialStep = self:_tutorialStep(player),
 	}
 	local published = self._published[player]
 	if not published then
@@ -279,9 +349,39 @@ function Gameplay:_makeSurvival(player)
 	return survival
 end
 
+-- Day 1 tutorial: four personal steps, completable in any order;
+-- the published step is the first one still missing (5 = done).
+local TUTORIAL_ORDER = { "Felled", "Dug", "Built", "Lit" }
+
+function Gameplay:_markTutorial(player, key)
+	local flags = self._tutorial[player]
+	if flags then
+		flags[key] = true
+	end
+end
+
+function Gameplay:_tutorialStep(player)
+	local flags = self._tutorial[player]
+	if not flags then
+		return 1
+	end
+	for i, key in ipairs(TUTORIAL_ORDER) do
+		if not flags[key] then
+			return i
+		end
+	end
+	return 5
+end
+
 function Gameplay:_setupPlayer(player)
 	self._survivals[player] = self:_makeSurvival(player)
 	self._sprinting[player] = false
+	if self._lighterFuel[player] == nil then
+		self._lighterFuel[player] = Config.Lighter.StartFuel
+	end
+	if not self._tutorial[player] then
+		self._tutorial[player] = {}
+	end
 	self:_syncAttributes(player)
 	player.CharacterAdded:Connect(function(character)
 		self:_onCharacter(player, character)
@@ -315,6 +415,31 @@ function Gameplay:_onCharacter(player, character)
 			self:_onShovelActivated(player)
 		end)
 	end
+	local playerBlueprint = backpack:WaitForChild("Blueprint", 5) or character:FindFirstChild("Blueprint")
+	if playerBlueprint then
+		playerBlueprint.Activated:Connect(function()
+			if self._openBuildMenu then
+				self._openBuildMenu:FireClient(player)
+			end
+		end)
+	end
+	local playerLighter = backpack:WaitForChild("Lighter", 5) or character:FindFirstChild("Lighter")
+	if playerLighter then
+		playerLighter.Activated:Connect(function()
+			local charRoot = character:FindFirstChild("HumanoidRootPart")
+			if not charRoot then
+				return
+			end
+			for _, fire in ipairs(self.World.Fires) do
+				if not fire.Lit and fire.Fuel > 0
+					and (fire.Core.Position - charRoot.Position).Magnitude <= 9
+				then
+					self:_lightFire(player, fire)
+					break
+				end
+			end
+		end)
+	end
 
 	self:_syncAttributes(player)
 end
@@ -332,25 +457,22 @@ function Gameplay:ReleaseDraggedLogs(player)
 	self:_releaseLogs(player)
 end
 
--- A log is the wood: feeding the fire consumes one physical log.
--- The log the player is dragging wins; otherwise the nearest loose
--- log beside the fire is used. Bigger logs burn longer and count
--- more toward the campfire's level.
-function Gameplay:_feedLog(player)
-	if not self.LogsFolder or not self.World.FireCore then
+-- Take one physical log for a fire or blueprint at `position`:
+-- the log the player is dragging wins, else the nearest loose log.
+-- A log is the wood — feeding and building both consume real logs.
+function Gameplay:_takeLogNear(player, position)
+	if not self.LogsFolder then
 		return nil
 	end
 
-	local firePosition = self.World.FireCore.Position
 	local chosen = nil
-
 	local draggedPart = DragSystem.GetPlayerItem(player)
 	if draggedPart then
 		local model = draggedPart.Parent
 		if model
 			and model.Parent == self.LogsFolder
 			and not model:GetAttribute("OnSled")
-			and (model:GetPivot().Position - firePosition).Magnitude <= Config.Campfire.FeedRange
+			and (model:GetPivot().Position - position).Magnitude <= Config.Campfire.FeedRange
 		then
 			chosen = model
 		end
@@ -364,7 +486,7 @@ function Gameplay:_feedLog(player)
 				and not log:GetAttribute("OnSled")
 				and logPart:GetAttribute("DraggedBy") == nil
 			then
-				local distance = (log:GetPivot().Position - firePosition).Magnitude
+				local distance = (log:GetPivot().Position - position).Magnitude
 				if distance <= nearestDistance then
 					chosen = log
 					nearestDistance = distance
@@ -382,12 +504,48 @@ function Gameplay:_feedLog(player)
 		return nil
 	end
 
-	local burnUnits = logBurnUnits(logPart)
+	local taken = {
+		Weight = chosen:GetAttribute("Weight") or 0,
+		BurnUnits = logBurnUnits(logPart),
+	}
 	if logPart:GetAttribute("DraggedBy") then
 		DragSystem.ForceStop(logPart)
 	end
 	chosen:Destroy()
-	return burnUnits
+	return taken
+end
+
+function Gameplay:_feedLog(player, firePosition)
+	local taken = self:_takeLogNear(player, firePosition)
+	if not taken then
+		return nil
+	end
+	return taken.BurnUnits
+end
+
+function Gameplay:_addLogToBlueprint(player, bp)
+	local taken = self:_takeLogNear(player, bp.Position)
+	if not taken then
+		return nil
+	end
+	bp.Contributors[player] = true
+	return taken.Weight
+end
+
+-- Lighting costs lighter fuel (the lighter starts at 100). The fire
+-- needs fuel inside it first — an empty fire cannot catch.
+function Gameplay:_lightFire(player, fire)
+	if fire.Lit or fire.Fuel <= 0 then
+		return false
+	end
+	local fuel = self._lighterFuel[player] or 0
+	if fuel < Config.Lighter.LightCost then
+		return false
+	end
+	self._lighterFuel[player] = fuel - Config.Lighter.LightCost
+	fire.Lit = true
+	self:_markTutorial(player, "Lit")
+	return true
 end
 
 function Gameplay:_refreshLog(log)
@@ -622,6 +780,7 @@ function Gameplay:_onAxeActivated(player)
 	end
 
 	self:_fellTree(target)
+	self:_markTutorial(player, "Felled")
 end
 
 function Gameplay:Update(dt)
@@ -650,11 +809,10 @@ function Gameplay:Update(dt)
 			humanoid.WalkSpeed = baseSpeed * factor
 		end
 
-		if root and world:IsLit() and world.FireCore then
-			local dx = root.Position.X - world.FireCore.Position.X
-			local dz = root.Position.Z - world.FireCore.Position.Z
-			if math.sqrt(dx * dx + dz * dz) <= world:GetWarmthRadius() then
-				context.FireRate = Config.Campfire.WarmthRate
+		if root then
+			local rate = world:WarmthRateAt(root.Position)
+			if rate then
+				context.FireRate = rate
 			end
 		end
 
