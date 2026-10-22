@@ -195,7 +195,7 @@ function WorldBuilder:_buildCampfire()
 	local fireCore = Instance.new("Part")
 	fireCore.Name = "Core"
 	fireCore.Size = Vector3.new(3, 1, 3)
-	fireCore.CFrame = CFrame.new(0, self:GroundY(0, 0) + 0.5, 0)
+	fireCore.CFrame = CFrame.new(0, self:GroundY(0, 0) + 0.9, 0)
 	fireCore.Anchored = true
 	fireCore.Material = Enum.Material.Wood
 	fireCore.Color = Color3.fromRGB(70, 45, 28)
@@ -238,7 +238,7 @@ function WorldBuilder:_buildCampfire()
 	ring.Name = "WarmthRing"
 	ring.Shape = Enum.PartType.Cylinder
 	ring.Size = Vector3.new(0.15, radius * 2, radius * 2)
-	ring.CFrame = CFrame.new(fireCore.Position.X, self:GroundY(fireCore.Position.X, fireCore.Position.Z) + 0.12, fireCore.Position.Z)
+	ring.CFrame = CFrame.new(fireCore.Position.X, self:GroundY(fireCore.Position.X, fireCore.Position.Z) + 0.35, fireCore.Position.Z)
 		* CFrame.Angles(0, 0, math.rad(90))
 	ring.Anchored = true
 	ring.CanCollide = false

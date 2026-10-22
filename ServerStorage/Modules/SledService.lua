@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
@@ -122,6 +123,10 @@ function SledService:Start()
 		self:_releasePull(player)
 	end)
 
+	RunService.Heartbeat:Connect(function(dt)
+		self:_stepSled(dt)
+	end)
+
 	print("[Arctic] Sled spawned near camp")
 end
 
@@ -134,8 +139,8 @@ function SledService:_makePrompts()
 	loadPrompt.ActionText = "Load piece"
 	loadPrompt.ObjectText = "Sled cargo 0/" .. Config.Sled.MaxCargoWeight .. "kg"
 	loadPrompt.HoldDuration = 0.3
-	loadPrompt.MaxActivationDistance = 8
-	loadPrompt.RequiresLineOfSight = true
+	loadPrompt.MaxActivationDistance = 9
+	loadPrompt.RequiresLineOfSight = false
 	loadPrompt.Parent = cargo or rootPart
 	loadPrompt.Triggered:Connect(function(player)
 		self:_loadNearest(player)
@@ -165,8 +170,8 @@ function SledService:_makePrompts()
 	pullPrompt.ActionText = "Pull sled"
 	pullPrompt.ObjectText = "Sled"
 	pullPrompt.HoldDuration = 0.3
-	pullPrompt.MaxActivationDistance = 7
-	pullPrompt.RequiresLineOfSight = true
+	pullPrompt.MaxActivationDistance = 16
+	pullPrompt.RequiresLineOfSight = false
 	pullPrompt.Parent = pullAnchor
 	pullPrompt.Triggered:Connect(function(player)
 		self:_togglePull(player)
@@ -179,8 +184,8 @@ function SledService:_makePrompts()
 	unloadPrompt.ActionText = "Unload piece"
 	unloadPrompt.ObjectText = "Sled"
 	unloadPrompt.HoldDuration = 0.3
-	unloadPrompt.MaxActivationDistance = 7
-	unloadPrompt.RequiresLineOfSight = true
+	unloadPrompt.MaxActivationDistance = 9
+	unloadPrompt.RequiresLineOfSight = false
 	unloadPrompt.Enabled = false
 	unloadPrompt.Parent = unloadAnchor
 	unloadPrompt.Triggered:Connect(function(player)
@@ -407,8 +412,6 @@ function SledService:Update(dt)
 		if not piece.Parent then
 			table.remove(self._cargo, i)
 			self:_recalcCargoWeight()
-		else
-			self:_placePiece(piece, i - 1)
 		end
 	end
 
@@ -439,29 +442,69 @@ function SledService:_updatePull(player)
 		end
 	end
 
+end
+
+function SledService:_stepSled(dt)
+	local sled = self.Sled
+	if not sled then
+		return
+	end
+
+	for i, piece in ipairs(self._cargo) do
+		if piece.Parent then
+			self:_placePiece(piece, i - 1)
+		end
+	end
+
+	local puller = nil
+	for player in pairs(self._pulling) do
+		puller = player
+		break
+	end
+	if not puller then
+		return
+	end
+	local character = puller.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
+
 	local pivot = sled:GetPivot()
 	local pos = pivot.Position
-	local look = horizontalDir(root.CFrame.LookVector)
-	local target = root.Position - look * (Config.Sled.RopeLength + self._halfLength)
-	local nx = pos.X + (target.X - pos.X) * 0.3
-	local nz = pos.Z + (target.Z - pos.Z) * 0.3
+	local toSled = Vector3.new(pos.X - root.Position.X, 0, pos.Z - root.Position.Z)
+	local dist = toSled.Magnitude
+	local desired = Config.Sled.RopeLength + self._halfLength
+	if dist > desired + 0.05 then
+		local target = root.Position + toSled.Unit * desired
+		local factor = 1 - math.exp(-dt * 5)
+		local nx = pos.X + (target.X - pos.X) * factor
+		local nz = pos.Z + (target.Z - pos.Z) * factor
+		sled:PivotTo(CFrame.new(nx, pos.Y, nz) * (pivot - pivot.Position))
+	end
 
+	local away = horizontalDir(sled:GetPivot().Position - root.Position)
 	local alongWorld
 	if self._cargoPart then
 		local cs = self._cargoPart.Size
 		local axis = cs.X >= cs.Z and Vector3.xAxis or Vector3.zAxis
 		alongWorld = horizontalDir(self._cargoPart.CFrame:VectorToWorldSpace(axis))
 	else
-		alongWorld = horizontalDir(pivot.LookVector)
+		alongWorld = horizontalDir(sled:GetPivot().LookVector)
 	end
-	if alongWorld:Dot(look) < 0 then
+	if alongWorld:Dot(away) < 0 then
 		alongWorld = -alongWorld
 	end
-	local yawDelta = yawBetween(alongWorld, look)
-	local newPivot = CFrame.new(nx, pos.Y, nz) * CFrame.Angles(0, yawDelta, 0) * (pivot - pivot.Position)
-	sled:PivotTo(newPivot)
-	self.World:SnapPartToGround(sled, self._rootPart, nx, nz)
+	local yawDelta = yawBetween(alongWorld, away) * (1 - math.exp(-dt * 4))
+	if math.abs(yawDelta) > 0.0005 then
+		local p = sled:GetPivot()
+		sled:PivotTo(CFrame.new(p.Position) * CFrame.Angles(0, yawDelta, 0) * (p - p.Position))
+	end
 
+	local finalPos = sled:GetPivot().Position
+	self.World:SnapPartToGround(sled, self._rootPart, finalPos.X, finalPos.Z)
+
+	local ropes = self._ropes[puller]
 	if ropes and ropes.hitch then
 		local center = sled:GetPivot().Position
 		local toPlayer = horizontalDir(root.Position - center)

@@ -3,6 +3,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
+local StarterGui = game:GetService("StarterGui")
+task.spawn(function()
+	for _ = 1, 20 do
+		pcall(function()
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+		end)
+		task.wait(0.25)
+	end
+end)
 local Config = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"))
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local setSprinting = remotes:WaitForChild("SetSprinting")
@@ -125,8 +134,32 @@ hotbarCorner.Parent = hotbar
 
 local slotFrames = {}
 local slotLabels = {}
-local function makeSlot(index, name)
-	local slot = Instance.new("Frame")
+local function toggleTool(toolName)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	if character:FindFirstChild(toolName) then
+		humanoid:UnequipTools()
+		return
+	end
+	local backpack = player:FindFirstChild("Backpack")
+	local tool = backpack and backpack:FindFirstChild(toolName)
+	if tool then
+		humanoid:EquipTool(tool)
+	end
+end
+
+local function makeSlot(index, name, isTool)
+	local slot
+	if isTool then
+		slot = Instance.new("TextButton")
+		slot.Text = ""
+		slot.AutoButtonColor = false
+	else
+		slot = Instance.new("Frame")
+	end
 	slot.Size = UDim2.fromOffset(68, 44)
 	slot.Position = UDim2.fromOffset(6 + (index - 1) * 74, 6)
 	slot.BackgroundColor3 = SILVER
@@ -142,10 +175,15 @@ local function makeSlot(index, name)
 	value.TextXAlignment = Enum.TextXAlignment.Center
 	slotFrames[name] = slot
 	slotLabels[name] = value
+	if isTool then
+		slot.Activated:Connect(function()
+			toggleTool(name)
+		end)
+	end
 end
-makeSlot(1, "Axe")
-makeSlot(2, "Shovel")
-makeSlot(3, "Wood")
+makeSlot(1, "Axe", true)
+makeSlot(2, "Shovel", true)
+makeSlot(3, "Wood", false)
 
 local function refreshHotbar()
 	local character = player.Character
@@ -196,6 +234,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		setSprint(true)
+	elseif input.KeyCode == Enum.KeyCode.One then
+		toggleTool("Axe")
+	elseif input.KeyCode == Enum.KeyCode.Two then
+		toggleTool("Shovel")
 	end
 end)
 UserInputService.InputEnded:Connect(function(input)

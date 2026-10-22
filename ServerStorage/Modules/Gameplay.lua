@@ -338,8 +338,8 @@ function Gameplay:_attachDragPrompt(log)
 	prompt.ActionText = "Drag"
 	prompt.ObjectText = "WoodLog"
 	prompt.HoldDuration = 0.3
-	prompt.MaxActivationDistance = 6
-	prompt.RequiresLineOfSight = true
+	prompt.MaxActivationDistance = 7
+	prompt.RequiresLineOfSight = false
 	prompt.Parent = logPart
 	prompt.Triggered:Connect(function(player)
 		if log:GetAttribute("OnSled") then
@@ -379,7 +379,10 @@ function Gameplay:_dropLogPieces(treeModel, spotPos)
 	end
 	local woodSize = woodPart.Size
 	local axisVec, woodLength = lengthAxis(woodSize)
-	local pieceCount = math.clamp(math.round(woodLength / Config.Log.PieceTargetLength), 1, Config.Log.MaxPieces)
+	local isBig = woodLength >= Config.Log.BigTreeLength
+	local targetLength = isBig and Config.Log.BigPieceTargetLength or Config.Log.PieceTargetLength
+	local maxPieces = isBig and Config.Log.BigTreeMaxPieces or Config.Log.MaxPieces
+	local pieceCount = math.clamp(math.round(woodLength / targetLength), 1, maxPieces)
 	local pieceLength = woodLength / pieceCount
 
 	for _ = 1, pieceCount do
