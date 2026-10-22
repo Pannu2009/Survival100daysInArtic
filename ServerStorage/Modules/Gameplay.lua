@@ -303,6 +303,15 @@ function Gameplay:_releaseLogs(player)
 	self._dragging[player] = nil
 end
 
+function Gameplay:AttachDragPrompt(log)
+	self:_attachDragPrompt(log)
+	self:_refreshLog(log)
+end
+
+function Gameplay:ReleaseDraggedLogs(player)
+	self:_releaseLogs(player)
+end
+
 function Gameplay:_refreshLog(log)
 	local logPart = getLogPart(log)
 	if not logPart then
@@ -333,6 +342,9 @@ function Gameplay:_attachDragPrompt(log)
 	prompt.RequiresLineOfSight = true
 	prompt.Parent = logPart
 	prompt.Triggered:Connect(function(player)
+		if log:GetAttribute("OnSled") then
+			return
+		end
 		if log:GetAttribute("DraggedBy") == player.UserId then
 			log:SetAttribute("DraggedBy", nil)
 			if self._dragging[player] == log then
@@ -526,14 +538,16 @@ function Gameplay:_onAxeActivated(player)
 		end
 	end
 	for _, log in ipairs(self.LogsFolder:GetChildren()) do
-		local pivot = log:GetPivot().Position
-		local dx = pivot.X - root.Position.X
-		local dz = pivot.Z - root.Position.Z
-		local distance = math.sqrt(dx * dx + dz * dz)
-		if distance < nearestDistance then
-			target = log
-			targetIsLog = true
-			nearestDistance = distance
+		if not log:GetAttribute("OnSled") then
+			local pivot = log:GetPivot().Position
+			local dx = pivot.X - root.Position.X
+			local dz = pivot.Z - root.Position.Z
+			local distance = math.sqrt(dx * dx + dz * dz)
+			if distance < nearestDistance then
+				target = log
+				targetIsLog = true
+				nearestDistance = distance
+			end
 		end
 	end
 	if not target then
@@ -575,6 +589,12 @@ function Gameplay:Update(dt)
 			if log then
 				local w = log:GetAttribute("Weight") or 0
 				factor = math.clamp(1 - w * Config.Log.DragSlowPerWeight, Config.Log.MinDragSpeedFactor, 1)
+			end
+			if self.Sleds then
+				local pullWeight = self.Sleds:GetPullWeight(player)
+				if pullWeight then
+					factor = math.clamp(1 - pullWeight * Config.Sled.PullSlowPerWeight, Config.Sled.MinPullSpeedFactor, 1)
+				end
 			end
 			humanoid.WalkSpeed = baseSpeed * factor
 		end

@@ -9,6 +9,7 @@ local Temperature = require(ServerModules:WaitForChild("Temperature"))
 local WorldGen = require(ServerModules:WaitForChild("WorldGen"))
 local WorldBuilder = require(ServerModules:WaitForChild("WorldBuilder"))
 local Gameplay = require(ServerModules:WaitForChild("Gameplay"))
+local SledService = require(ServerModules:WaitForChild("SledService"))
 
 local function randomSeed()
 	local letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -37,6 +38,10 @@ print("[Arctic] World seed: " .. layout.SeedString)
 local gameplay = Gameplay.new(world, clock, temperature)
 gameplay:Start()
 
+local sleds = SledService.new(world, gameplay)
+sleds:Start()
+gameplay.Sleds = sleds
+
 world:UpdateState(clock, temperature)
 
 while true do
@@ -44,5 +49,6 @@ while true do
 	clock:Update(dt)
 	world:TickFire(dt)
 	gameplay:Update(dt)
+	sleds:Update(dt)
 	world:UpdateState(clock, temperature)
 end

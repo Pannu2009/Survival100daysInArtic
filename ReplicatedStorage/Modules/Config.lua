@@ -76,6 +76,15 @@ Config.Campfire = {
 	FuelDisplayMax = 600,
 }
 
+Config.Sled = {
+	MaxCargoWeight = 100,
+	Weight = 25,
+	RopeLength = 7,
+	PullSlowPerWeight = 0.004,
+	MinPullSpeedFactor = 0.35,
+	LoadRange = 9,
+}
+
 Config.Digging = {
 	Radius = 2.6,
 	Reach = 4,
