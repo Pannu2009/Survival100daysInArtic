@@ -710,6 +710,10 @@ function Gameplay:_igniteLog(player, log)
 	end
 	self._lighterFuel[player] = fuel - Config.Lighter.LightCost
 	log:SetAttribute("Burning", true)
+	-- Burning wood leaves the drag system for good: release any
+	-- hold on it and hide its drag prompt.
+	DragSystem.ForceStop(logPart)
+	self:_refreshLog(log)
 
 	local flame = Instance.new("Fire")
 	flame.Name = "BurnFlame"
@@ -791,6 +795,8 @@ function Gameplay:_refreshLog(log)
 	local prompt = logPart:FindFirstChildOfClass("ProximityPrompt")
 	if prompt then
 		prompt.ObjectText = "WoodLog " .. log:GetAttribute("Weight") .. "kg"
+		-- A burning log shows no prompt at all: it can't be grabbed.
+		prompt.Enabled = log:GetAttribute("Burning") ~= true
 	end
 end
 
@@ -809,12 +815,16 @@ function Gameplay:_attachDragPrompt(log)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Drag"
 	prompt.ObjectText = "WoodLog"
-	prompt.HoldDuration = 0.3
+	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 7
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = logPart
 	prompt.Triggered:Connect(function(player)
 		if log:GetAttribute("OnSled") then
+			return
+		end
+		if log:GetAttribute("Burning") == true then
+			-- Burning wood is hands-off: no grabbing it back.
 			return
 		end
 		if logPart:GetAttribute("DraggedBy") == player.UserId then

@@ -112,7 +112,7 @@ function FishSystem:_attachDragPrompt(fish, part)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Drag"
 	prompt.ObjectText = "Fish"
-	prompt.HoldDuration = 0.3
+	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 7
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = part

@@ -4,6 +4,10 @@ Config.DayCycle = {
 	DayLength = 180,
 	NightLength = 120,
 	StartPhase = "Day",
+	-- Nights are properly dark; brightness follows the sun so dusk
+	-- and dawn fade instead of snapping at the phase change.
+	DayBrightness = 2,
+	NightBrightness = 0.6,
 }
 
 Config.Multiplier = {
@@ -75,7 +79,7 @@ Config.Campfire = {
 	BurningLogWarmRate = 1.8,
 	BurningLogCookRange = 4,
 	BuildFuelSeconds = 45,
-	FuelPerBurnUnit = 45,
+	FuelPerBurnUnit = 30,
 	FuelDisplayMax = 600,
 	FeedRange = 10,
 }

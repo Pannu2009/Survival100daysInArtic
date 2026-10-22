@@ -222,8 +222,10 @@ function DragSystem.Update(player, item, targetPosition)
 	local maxStep = CONFIG.MaxTargetSpeed * elapsed
 
 	if delta.Magnitude > maxStep + 1 then
-		DragSystem.Stop(player, item)
-		return false
+		-- Clamp to the allowed step instead of killing the drag.
+		-- Network jitter bunches intents up, and a drag dropped by
+		-- a late packet reads exactly like "grab failed".
+		targetPosition = state.Position + delta.Unit * (maxStep + 1)
 	end
 
 	state.LastUpdate = now
@@ -364,9 +366,11 @@ function DragSystem.InitServer()
 			end
 
 			if (item.Position - state.Position).Magnitude > CONFIG.DeviationTolerance then
-				-- The item is not tracking the validated intent stream.
-				DragSystem.Stop(state.Player, item)
-				continue
+				-- The item snagged on something (tree, sled, terrain
+				-- lip) and physics fell behind the intent stream.
+				-- Reality wins: pull the ledger back to the item
+				-- instead of dropping the player's drag.
+				state.Position = item.Position
 			end
 		end
 	end)

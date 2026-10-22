@@ -663,6 +663,15 @@ function WorldBuilder:UpdateState(clock, temperature)
 	end
 	Lighting.ClockTime = timeOfDay
 
+	-- Brightness and ambient follow the sun: full daylight at
+	-- midday, properly dark at night, smooth fades between.
+	local daylight = math.clamp(1 - math.abs(timeOfDay - 12.5) / 6.5, 0, 1)
+	Lighting.Brightness = Config.DayCycle.NightBrightness
+		+ daylight * (Config.DayCycle.DayBrightness - Config.DayCycle.NightBrightness)
+	local ambient = Color3.fromRGB(16, 20, 38):Lerp(Color3.fromRGB(135, 145, 160), daylight)
+	Lighting.Ambient = ambient
+	Lighting.OutdoorAmbient = ambient
+
 	local published = self._publishedWorld
 	local function publish(name, value)
 		if published[name] ~= value then
