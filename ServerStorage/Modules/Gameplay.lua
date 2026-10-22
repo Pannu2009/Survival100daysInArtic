@@ -328,6 +328,68 @@ function Gameplay:_buildBlueprintTool()
 end
 
 function Gameplay:_buildLighter()
+	-- Ajay's own lighter from Assets.Tools wins when it exists. His
+	-- script inside it (flame effects and such) is KEPT on purpose —
+	-- unlike the axe, nothing is stripped here. Gameplay still owns
+	-- the fuel and ignition logic through the Activated connection in
+	-- _onCharacter; his script only has to handle the visuals.
+	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
+	local toolsFolder = assets and assets:FindFirstChild("Tools")
+	local lighterTemplate = toolsFolder and toolsFolder:FindFirstChild("Lighter")
+	if lighterTemplate and lighterTemplate:IsA("Tool") then
+		local lighter = lighterTemplate:Clone()
+		lighter.Name = "Lighter"
+		lighter.CanBeDropped = false
+		-- Same normalization as the axe, minus script stripping:
+		-- unanchor every part, guarantee a Handle, weld loose parts.
+		local handle = nil
+		local biggest = nil
+		local biggestVolume = -1
+		local parts = {}
+		for _, d in ipairs(lighter:GetDescendants()) do
+			if d:IsA("BasePart") then
+				d.Anchored = false
+				table.insert(parts, d)
+				if d.Name == "Handle" then
+					handle = d
+				end
+				local volume = d.Size.X * d.Size.Y * d.Size.Z
+				if volume > biggestVolume then
+					biggestVolume = volume
+					biggest = d
+				end
+			end
+		end
+		if not handle and biggest then
+			biggest.Name = "Handle"
+			handle = biggest
+		end
+		if handle then
+			for _, part in ipairs(parts) do
+				if part ~= handle then
+					part.Massless = true
+					part.CanCollide = false
+					local welded = false
+					for _, c in ipairs(part:GetDescendants()) do
+						if c:IsA("WeldConstraint") or c:IsA("Weld") then
+							welded = true
+							break
+						end
+					end
+					if not welded then
+						local weld = Instance.new("WeldConstraint")
+						weld.Part0 = handle
+						weld.Part1 = part
+						weld.Parent = part
+					end
+				end
+			end
+		end
+		lighter.RequiresHandle = handle ~= nil
+		lighter.Parent = StarterPack
+		return
+	end
+
 	local tool = Instance.new("Tool")
 	tool.Name = "Lighter"
 	tool.RequiresHandle = true
