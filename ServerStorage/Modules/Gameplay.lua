@@ -329,6 +329,7 @@ function Gameplay:_attachDragPrompt(log)
 	if not logPart then
 		return
 	end
+	log:SetAttribute("Draggable", true)
 	local existing = logPart:FindFirstChildOfClass("ProximityPrompt")
 	if existing then
 		existing:Destroy()
