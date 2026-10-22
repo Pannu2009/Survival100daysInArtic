@@ -48,6 +48,11 @@ function SledService.new(world, gameplay)
 	self._cargoWeight = 0
 	self._pulling = {}
 	self._ropes = {}
+	self._vel = Vector3.zero
+	self._yaw = 0
+	self._yawVel = 0
+	self._orientOffset = CFrame.identity
+	self._groundOffset = 0.5
 	self._loadPrompt = nil
 	self._unloadPrompt = nil
 	self._pullPrompt = nil
@@ -116,6 +121,28 @@ function SledService:Start()
 	local extents = sled:GetExtentsSize()
 	self._halfLength = math.max(extents.X, extents.Z) / 2
 	sled:SetAttribute("CargoWeight", 0)
+
+	self._vel = Vector3.zero
+	self._yawVel = 0
+	local a0 = Vector3.xAxis
+	if cargo then
+		local cs = cargo.Size
+		local axis = cs.X >= cs.Z and Vector3.xAxis or Vector3.zAxis
+		a0 = horizontalDir(cargo.CFrame:VectorToWorldSpace(axis))
+	end
+	self._yaw = math.atan2(-a0.X, -a0.Z)
+	local z0 = -a0
+	local x0 = Vector3.yAxis:Cross(z0)
+	if x0.Magnitude < 0.01 then
+		x0 = Vector3.xAxis
+	else
+		x0 = x0.Unit
+	end
+	local y0 = z0:Cross(x0)
+	local canon0 = CFrame.fromMatrix(Vector3.zero, x0, y0, z0)
+	local spawnPivot = sled:GetPivot()
+	self._orientOffset = canon0:Inverse() * (spawnPivot - spawnPivot.Position)
+	self._groundOffset = spawnPivot.Position.Y - self.World:GroundY(spawnPivot.Position.X, spawnPivot.Position.Z)
 
 	self:_makePrompts()
 
@@ -341,6 +368,14 @@ function SledService:_togglePull(player)
 		self.Gameplay:ReleaseDraggedLogs(player)
 		sled:SetAttribute("PulledBy", player.UserId)
 		self._pulling[player] = sled
+		local rootP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if rootP then
+			local fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
+			local toPlayer = rootP.Position - sled:GetPivot().Position
+			if fwdH.X * toPlayer.X + fwdH.Z * toPlayer.Z < 0 then
+				self._yaw += math.pi
+			end
+		end
 		self:_makeRopes(player)
 	end
 	self:_refreshPrompts()
@@ -453,67 +488,124 @@ function SledService:_stepSled(dt)
 	if not sled then
 		return
 	end
+	dt = math.min(dt, 0.05)
 
-	for i, piece in ipairs(self._cargo) do
-		if piece.Parent then
-			self:_placePiece(piece, i - 1)
-		end
-	end
+	local world = self.World
+	local pos = sled:GetPivot().Position
+
+	local mass = Config.Sled.Weight + self._cargoWeight
+	local massFactor = mass / Config.Sled.Weight
+
+	local s = 3
+	local hx1 = world:GroundY(pos.X + s, pos.Z)
+	local hx0 = world:GroundY(pos.X - s, pos.Z)
+	local hz1 = world:GroundY(pos.X, pos.Z + s)
+	local hz0 = world:GroundY(pos.X, pos.Z - s)
+	local gradX = (hx1 - hx0) / (2 * s)
+	local gradZ = (hz1 - hz0) / (2 * s)
+
+	local fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
 
 	local puller = nil
 	for player in pairs(self._pulling) do
 		puller = player
 		break
 	end
-	if not puller then
-		return
-	end
-	local character = puller.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not root then
-		return
+	local root = puller and puller.Character and puller.Character:FindFirstChild("HumanoidRootPart")
+
+	local accel = Vector3.zero
+	local tension01 = 0
+	local hitchPos = pos + fwdH * (self._halfLength * 0.9) + Vector3.new(0, 0.8, 0)
+	if root then
+		local toPlayer = root.Position - hitchPos
+		local dist = toPlayer.Magnitude
+		local stretch = dist - Config.Sled.RopeLength
+		if stretch > 0 and dist > 0.01 then
+			local dir = toPlayer / dist
+			local along = self._vel:Dot(dir)
+			local force = stretch * Config.Sled.RopeSpring - along * Config.Sled.RopeDamp
+			if force > 0 then
+				accel += dir * (force / massFactor)
+			end
+			tension01 = math.clamp(stretch / 2.5, 0, 1)
+		end
+		local desired = horizontalDir(root.Position - pos)
+		local err = yawBetween(fwdH, desired)
+		self._yawVel += err * Config.Sled.YawResponse * dt
+	elseif self._vel.Magnitude > 1 then
+		local desired = horizontalDir(self._vel)
+		if fwdH:Dot(desired) < 0 then
+			desired = -desired
+		end
+		local err = yawBetween(fwdH, desired)
+		self._yawVel += err * Config.Sled.YawResponse * 0.5 * dt
 	end
 
-	local pivot = sled:GetPivot()
-	local pos = pivot.Position
-	local toSled = Vector3.new(pos.X - root.Position.X, 0, pos.Z - root.Position.Z)
-	local dist = toSled.Magnitude
-	local desired = Config.Sled.RopeLength + self._halfLength
-	if dist > desired + 0.05 then
-		local target = root.Position + toSled.Unit * desired
-		local factor = 1 - math.exp(-dt * 5)
-		local nx = pos.X + (target.X - pos.X) * factor
-		local nz = pos.Z + (target.Z - pos.Z) * factor
-		sled:PivotTo(CFrame.new(nx, pos.Y, nz) * (pivot - pivot.Position))
+	local slopeAccel = Vector3.new(-gradX, 0, -gradZ) * Config.Sled.SlopeGravity
+	if root or slopeAccel.Magnitude > Config.Sled.StaticHold then
+		accel += slopeAccel
 	end
 
-	local away = horizontalDir(sled:GetPivot().Position - root.Position)
-	local alongWorld
-	if self._cargoPart then
-		local cs = self._cargoPart.Size
-		local axis = cs.X >= cs.Z and Vector3.xAxis or Vector3.zAxis
-		alongWorld = horizontalDir(self._cargoPart.CFrame:VectorToWorldSpace(axis))
+	self._vel += accel * dt
+	local friction = Config.Sled.Friction / math.sqrt(massFactor)
+	self._vel *= math.exp(-dt * friction)
+	if self._vel.Magnitude > Config.Sled.MaxSpeed then
+		self._vel = self._vel.Unit * Config.Sled.MaxSpeed
+	end
+	if self._vel.Magnitude < 0.04 and not root then
+		self._vel = Vector3.zero
+	end
+
+	self._yawVel *= math.exp(-dt * Config.Sled.YawDamp / math.sqrt(massFactor))
+	local maxYaw = 2.2 / math.sqrt(massFactor)
+	self._yawVel = math.clamp(self._yawVel, -maxYaw, maxYaw)
+	self._yaw += self._yawVel * dt
+
+	local newPos = pos + self._vel * dt
+
+	if root then
+		local dx = newPos.X - root.Position.X
+		local dz = newPos.Z - root.Position.Z
+		local d = math.sqrt(dx * dx + dz * dz)
+		local minD = self._halfLength + 1.2
+		if d < minD and d > 0.01 then
+			newPos = Vector3.new(root.Position.X + dx / d * minD, newPos.Y, root.Position.Z + dz / d * minD)
+		end
+	end
+
+	fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
+	local rightH = Vector3.new(-fwdH.Z, 0, fwdH.X)
+	local fwd3 = Vector3.new(fwdH.X, gradX * fwdH.X + gradZ * fwdH.Z, fwdH.Z).Unit
+	local rightRaw = Vector3.new(rightH.X, gradX * rightH.X + gradZ * rightH.Z, rightH.Z).Unit
+	local zAxis = -fwd3
+	local yAxis = zAxis:Cross(rightRaw)
+	if yAxis.Magnitude < 0.01 then
+		yAxis = Vector3.yAxis
 	else
-		alongWorld = horizontalDir(sled:GetPivot().LookVector)
+		yAxis = yAxis.Unit
 	end
-	if alongWorld:Dot(away) < 0 then
-		alongWorld = -alongWorld
-	end
-	local yawDelta = yawBetween(alongWorld, away) * (1 - math.exp(-dt * 4))
-	if math.abs(yawDelta) > 0.0005 then
-		local p = sled:GetPivot()
-		sled:PivotTo(CFrame.new(p.Position) * CFrame.Angles(0, yawDelta, 0) * (p - p.Position))
-	end
+	local xAxis = yAxis:Cross(zAxis).Unit
+	local canon = CFrame.fromMatrix(Vector3.zero, xAxis, yAxis, zAxis)
+	local targetY = world:GroundY(newPos.X, newPos.Z) + self._groundOffset
+	local smoothY = pos.Y + (targetY - pos.Y) * (1 - math.exp(-dt * 10))
+	sled:PivotTo(CFrame.new(newPos.X, smoothY, newPos.Z) * canon * self._orientOffset)
 
-	local finalPos = sled:GetPivot().Position
-	self.World:SnapPartToGround(sled, self._rootPart, finalPos.X, finalPos.Z)
-
-	local ropes = self._ropes[puller]
+	local ropes = puller and self._ropes[puller]
 	if ropes and ropes.hitch then
 		local center = sled:GetPivot().Position
-		local toPlayer = horizontalDir(root.Position - center)
-		local hitchWorld = center + toPlayer * (self._halfLength * 0.85) + Vector3.new(0, 1, 0)
+		local hitchWorld = center + fwdH * (self._halfLength * 0.85) + Vector3.new(0, 1, 0)
 		ropes.hitch.CFrame = self._rootPart.CFrame:ToObjectSpace(CFrame.new(hitchWorld))
+		local sag = (1 - tension01) * -0.85
+		for _, beam in ipairs(ropes.beams) do
+			beam.CurveSize0 = sag
+			beam.CurveSize1 = sag
+		end
+	end
+
+	for i, piece in ipairs(self._cargo) do
+		if piece.Parent then
+			self:_placePiece(piece, i - 1)
+		end
 	end
 end
 

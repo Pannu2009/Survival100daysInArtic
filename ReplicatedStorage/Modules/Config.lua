@@ -83,6 +83,14 @@ Config.Sled = {
 	PullSlowPerWeight = 0.004,
 	MinPullSpeedFactor = 0.35,
 	LoadRange = 9,
+	RopeSpring = 15,
+	RopeDamp = 1.4,
+	Friction = 2.2,
+	SlopeGravity = 30,
+	StaticHold = 5,
+	MaxSpeed = 30,
+	YawResponse = 6,
+	YawDamp = 5,
 }
 
 Config.Digging = {
