@@ -306,6 +306,7 @@ end
 -- Track the dragged part by its DraggedBy attribute instead of
 -- scanning the whole folder every frame.
 local myDragPart = nil
+local lastDragSend = 0
 local function trackLog(log)
 	local part = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
 	if not part then
@@ -378,4 +379,13 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 
 	myPart.CFrame = CFrame.new(nx, ny, nz) * (cf - cf.Position)
+
+	-- Stream the applied position as a movement intent at 20 Hz.
+	-- The server validates reach and step speed per intent and keeps
+	-- the last accepted position as the ledger the item must track.
+	local now = os.clock()
+	if now - lastDragSend >= 1 / 20 then
+		lastDragSend = now
+		DragSystem.SendUpdate(myPart, Vector3.new(nx, ny, nz))
+	end
 end)

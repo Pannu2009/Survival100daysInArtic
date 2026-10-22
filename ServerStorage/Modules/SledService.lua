@@ -4,6 +4,7 @@ local RunService = game:GetService("RunService")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
+local DragSystem = require(Modules:WaitForChild("DragSystem"))
 
 local SledService = {}
 SledService.__index = SledService
@@ -314,6 +315,14 @@ function SledService:_loadNearest(player)
 	end
 	if not best then
 		return
+	end
+
+	-- Structural guarantee: a piece being loaded is never still owned
+	-- by a dragger. The filter above already excludes dragged pieces;
+	-- this stays as a hard stop if that ever changes.
+	local bestPart = getLogPart(best)
+	if bestPart and bestPart:GetAttribute("DraggedBy") then
+		DragSystem.ForceStop(bestPart)
 	end
 
 	local weight = best:GetAttribute("Weight") or 0

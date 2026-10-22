@@ -21,6 +21,7 @@ local CONFIG = {
 	MaxReach = 16,
 	MaxTargetDistance = 12,
 	MaxTargetSpeed = 45,
+	DeviationTolerance = 8,
 	UpdateRate = 1 / 20,
 
 	BeamColor = Color3.fromRGB(255, 205, 125),
@@ -286,6 +287,14 @@ function DragSystem.StopPlayer(player)
 	end
 end
 
+-- Client-side: stream a movement intent for server validation.
+function DragSystem.SendUpdate(item, targetPosition)
+	assert(RunService:IsClient(), "SendUpdate is client-only")
+	if remote then
+		remote:FireServer("Update", item, targetPosition)
+	end
+end
+
 function DragSystem.GetPlayerItem(player)
 	if RunService:IsServer() then
 		return playerDrags[player]
@@ -354,7 +363,11 @@ function DragSystem.InitServer()
 				continue
 			end
 
-			state.Position = item.Position
+			if (item.Position - state.Position).Magnitude > CONFIG.DeviationTolerance then
+				-- The item is not tracking the validated intent stream.
+				DragSystem.Stop(state.Player, item)
+				continue
+			end
 		end
 	end)
 end
