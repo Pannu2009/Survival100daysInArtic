@@ -80,8 +80,8 @@ Config.Tree = {
 }
 
 Config.Log = {
-	PieceTargetLength = 2,
-	MaxPieces = 10,
+	PieceTargetLength = 4,
+	MaxPieces = 5,
 	HitsPerCut = 2,
 	WoodPerVolume = 0.2,
 	WeightPerVolume = 2,

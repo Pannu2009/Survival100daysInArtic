@@ -251,7 +251,8 @@ function Gameplay:_attachDragPrompt(log)
 	prompt.ActionText = "Drag"
 	prompt.ObjectText = "WoodLog"
 	prompt.HoldDuration = 0.3
-	prompt.MaxActivationDistance = 10
+	prompt.MaxActivationDistance = 6
+	prompt.RequiresLineOfSight = true
 	prompt.Parent = logPart
 	prompt.Triggered:Connect(function(player)
 		if log:GetAttribute("DraggedBy") == player.UserId then
