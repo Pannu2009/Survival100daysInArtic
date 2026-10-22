@@ -56,6 +56,32 @@ function WorldBuilder:SnapToGround(model, x, z)
 	end
 end
 
+local function partBottomY(part)
+	local cf = part.CFrame
+	local half = part.Size / 2
+	local minY = math.huge
+	for _, sx in ipairs({ -1, 1 }) do
+		for _, sy in ipairs({ -1, 1 }) do
+			for _, sz in ipairs({ -1, 1 }) do
+				local corner = cf:PointToWorldSpace(Vector3.new(half.X * sx, half.Y * sy, half.Z * sz))
+				if corner.Y < minY then
+					minY = corner.Y
+				end
+			end
+		end
+	end
+	return minY
+end
+
+function WorldBuilder:SnapPartToGround(model, part, x, z)
+	local pivot = model:GetPivot()
+	model:PivotTo(CFrame.new(x, pivot.Position.Y, z) * pivot.Rotation)
+	local dy = self:GroundY(x, z) - partBottomY(part)
+	if dy ~= 0 then
+		model:PivotTo(model:GetPivot() + Vector3.new(0, dy, 0))
+	end
+end
+
 function WorldBuilder:IsLit()
 	return self.Fuel > 0
 end

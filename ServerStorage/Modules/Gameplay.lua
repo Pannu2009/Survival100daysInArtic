@@ -277,7 +277,7 @@ function Gameplay:_attachDragPrompt(log)
 	end)
 end
 
-function Gameplay:_spawnLog(treeModel, spotPos)
+function Gameplay:_dropLogPieces(treeModel, spotPos)
 	local template = self.World.WoodLogTemplate
 	if not template then
 		return
@@ -287,31 +287,41 @@ function Gameplay:_spawnLog(treeModel, spotPos)
 		return
 	end
 	local woodSize = woodPart.Size
+	local axisVec, woodLength = lengthAxis(woodSize)
+	local pieceCount = math.clamp(math.round(woodLength / Config.Log.PieceTargetLength), 1, Config.Log.MaxPieces)
+	local pieceLength = woodLength / pieceCount
 
-	local log = template:Clone()
-	local logPart = getLogPart(log)
-	if not logPart then
-		return
-	end
+	for _ = 1, pieceCount do
+		local log = template:Clone()
+		local logPart = getLogPart(log)
+		if logPart then
+			log.Name = "WoodLog"
+			logPart.Size = woodSize
+			setLength(logPart, axisVec, pieceLength)
+			for _, part in ipairs(log:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Anchored = true
+					part.CanCollide = true
+				end
+			end
+			log:SetAttribute("PieceHits", 0)
+			log.Parent = self.LogsFolder
 
-	log.Name = "WoodLog"
-	logPart.Size = woodSize
-	for _, part in ipairs(log:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.Anchored = true
-			part.CanCollide = true
+			if axisVec == Vector3.yAxis then
+				log:PivotTo(log:GetPivot() * CFrame.Angles(0, 0, math.rad(90)))
+			end
+			local pivot = log:GetPivot()
+			local yaw = CFrame.Angles(0, math.random() * math.pi * 2, 0)
+			log:PivotTo(CFrame.new(pivot.Position) * yaw * (pivot - pivot.Position))
+
+			local ox = spotPos.X + (math.random() - 0.5) * 3
+			local oz = spotPos.Z + (math.random() - 0.5) * 3
+			self.World:SnapPartToGround(log, logPart, ox, oz)
+
+			self:_attachDragPrompt(log)
+			self:_refreshLog(log)
 		end
 	end
-	log:SetAttribute("PieceHits", 0)
-	log.Parent = self.LogsFolder
-
-	if woodSize.Y >= woodSize.X and woodSize.Y >= woodSize.Z then
-		log:PivotTo(log:GetPivot() * CFrame.Angles(0, 0, math.rad(90)))
-	end
-	self.World:SnapToGround(log, spotPos.X, spotPos.Z)
-
-	self:_attachDragPrompt(log)
-	self:_refreshLog(log)
 end
 
 function Gameplay:_shakeTree(tree)
@@ -378,7 +388,7 @@ function Gameplay:_fellTree(tree)
 			return
 		end
 		rotateAround(tree, base, bounce:Inverse())
-		self:_spawnLog(tree, spotPos)
+		self:_dropLogPieces(tree, spotPos)
 		tree:Destroy()
 	end)
 end
@@ -394,63 +404,16 @@ function Gameplay:_cutLog(player, log)
 		log:SetAttribute("PieceHits", hits)
 		return
 	end
-	log:SetAttribute("PieceHits", 0)
 
-	local axisVec, length = lengthAxis(logPart.Size)
-	if length <= Config.Log.MinSplitLength then
-		self._wood[player] = (self._wood[player] or 0) + Config.Log.WoodPerSmallLog
-		player:SetAttribute("Wood", self._wood[player])
-		if self._dragging[player] == log then
-			self._dragging[player] = nil
-		end
-		log:Destroy()
-		return
+	local size = logPart.Size
+	local volume = size.X * size.Y * size.Z
+	local woodAmount = math.max(1, math.floor(volume * Config.Log.WoodPerVolume + 0.5))
+	self._wood[player] = (self._wood[player] or 0) + woodAmount
+	player:SetAttribute("Wood", self._wood[player])
+	if self._dragging[player] == log then
+		self._dragging[player] = nil
 	end
-
-	local cutLength = math.min(Config.Log.CutLength, length * 0.45)
-	local dir = logPart.CFrame:VectorToWorldSpace(axisVec)
-	dir = Vector3.new(dir.X, 0, dir.Z)
-	if dir.Magnitude < 0.01 then
-		dir = Vector3.xAxis
-	end
-	dir = dir.Unit
-
-	local center = logPart.Position
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local endSign = 1
-	if root then
-		local endPlus = center + dir * (length / 2)
-		local endMinus = center - dir * (length / 2)
-		if (root.Position - endMinus).Magnitude < (root.Position - endPlus).Magnitude then
-			endSign = -1
-		end
-	end
-
-	local chunk = log:Clone()
-	chunk:SetAttribute("PieceHits", 0)
-	chunk:SetAttribute("DraggedBy", nil)
-	local chunkPart = getLogPart(chunk)
-	if not chunkPart then
-		chunk:Destroy()
-		return
-	end
-	setLength(chunkPart, axisVec, cutLength)
-	chunk.Parent = self.LogsFolder
-	local chunkCenter = center + dir * endSign * (length / 2 - cutLength / 2)
-	local delta = chunkCenter - chunkPart.Position
-	chunk:PivotTo(chunk:GetPivot() + delta)
-	local chunkPos = chunk:GetPivot().Position
-	self.World:SnapToGround(chunk, chunkPos.X, chunkPos.Z)
-	self:_attachDragPrompt(chunk)
-	self:_refreshLog(chunk)
-
-	setLength(logPart, axisVec, length - cutLength)
-	local shift = dir * (-endSign) * (cutLength / 2)
-	log:PivotTo(log:GetPivot() + shift)
-	local logPos = log:GetPivot().Position
-	self.World:SnapToGround(log, logPos.X, logPos.Z)
-	self:_refreshLog(log)
+	log:Destroy()
 end
 
 function Gameplay:_onAxeActivated(player)
@@ -544,7 +507,10 @@ function Gameplay:Update(dt)
 			local pivotPos = log:GetPivot().Position
 			local nx = pivotPos.X + (tx - pivotPos.X) * 0.4
 			local nz = pivotPos.Z + (tz - pivotPos.Z) * 0.4
-			world:SnapToGround(log, nx, nz)
+			local logPart = getLogPart(log)
+			if logPart then
+				world:SnapPartToGround(log, logPart, nx, nz)
+			end
 		end
 
 		if root and world:IsLit() and world.FireCore then

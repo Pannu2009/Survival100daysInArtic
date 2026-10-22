@@ -80,10 +80,10 @@ Config.Tree = {
 }
 
 Config.Log = {
-	CutLength = 1.5,
+	PieceTargetLength = 2,
+	MaxPieces = 10,
 	HitsPerCut = 2,
-	MinSplitLength = 3.5,
-	WoodPerSmallLog = 2,
+	WoodPerVolume = 0.2,
 	WeightPerVolume = 2,
 	DragSlowPerWeight = 0.008,
 	MinDragSpeedFactor = 0.35,
