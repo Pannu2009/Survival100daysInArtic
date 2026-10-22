@@ -303,16 +303,36 @@ local function dragHorizontal(v)
 	return h.Unit
 end
 
-RunService.RenderStepped:Connect(function(dt)
-	local myPart = nil
-	for _, log in ipairs(logsFolder:GetChildren()) do
-		local part = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
-		if part and part:GetAttribute("DraggedBy") == player.UserId then
-			myPart = part
-			break
+-- Track the dragged part by its DraggedBy attribute instead of
+-- scanning the whole folder every frame.
+local myDragPart = nil
+local function trackLog(log)
+	local part = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
+	if not part then
+		return
+	end
+	local function check()
+		if part:GetAttribute("DraggedBy") == player.UserId then
+			myDragPart = part
+		elseif myDragPart == part then
+			myDragPart = nil
 		end
 	end
+	part:GetAttributeChangedSignal("DraggedBy"):Connect(check)
+	check()
+end
+for _, log in ipairs(logsFolder:GetChildren()) do
+	trackLog(log)
+end
+logsFolder.ChildAdded:Connect(trackLog)
+
+RunService.RenderStepped:Connect(function(dt)
+	local myPart = myDragPart
 	if not myPart then
+		return
+	end
+	if not myPart.Parent then
+		myDragPart = nil
 		return
 	end
 	local character = player.Character
