@@ -39,6 +39,7 @@ function WorldBuilder.new(layout)
 	self.TreeTemplate = nil
 	self.WoodLogTemplate = nil
 	self.BonfireTemplate = nil
+	self.FireBoxTemplate = nil
 	self._groundParams = RaycastParams.new()
 	self._groundParams.FilterType = Enum.RaycastFilterType.Include
 	self._groundParams.FilterDescendantsInstances = { workspace:WaitForChild("Terrain") }
@@ -93,11 +94,24 @@ end
 function WorldBuilder:WarmthRateAt(position)
 	for _, fire in ipairs(self.Fires) do
 		if fire.Lit and fire.Fuel > 0 then
-			local radius = Config.Campfire.RadiusByLevel[fire.Level] or Config.Campfire.RadiusByLevel[1]
-			local dx = position.X - fire.Core.Position.X
-			local dz = position.Z - fire.Core.Position.Z
-			if dx * dx + dz * dz <= radius * radius then
-				return Config.Campfire.WarmthRate
+			if fire.WarmthPart then
+				-- The FireBox volume is the warmth area when present.
+				local p = fire.WarmthPart.CFrame:PointToObjectSpace(position)
+				local s = fire.WarmthPart.Size
+				if math.abs(p.X) <= s.X / 2
+					and math.abs(p.Z) <= s.Z / 2
+					and p.Y >= -s.Y / 2 - 2
+					and p.Y <= s.Y / 2 + 3
+				then
+					return Config.Campfire.WarmthRate
+				end
+			else
+				local radius = Config.Campfire.RadiusByLevel[fire.Level] or Config.Campfire.RadiusByLevel[1]
+				local dx = position.X - fire.Core.Position.X
+				local dz = position.Z - fire.Core.Position.Z
+				if dx * dx + dz * dz <= radius * radius then
+					return Config.Campfire.WarmthRate
+				end
 			end
 		end
 	end
@@ -199,6 +213,7 @@ function WorldBuilder:Build()
 		warn("[Arctic] Assets.WoodLog not found - felled trees will drop no log")
 	end
 	self.BonfireTemplate = assets and (assets:FindFirstChild("BonFire") or assets:FindFirstChild("Bonfire"))
+	self.FireBoxTemplate = assets and assets:FindFirstChild("FireBox")
 	if self.BonfireTemplate then
 		print("[Arctic] Campfire uses Assets.BonFire")
 	else
@@ -305,12 +320,16 @@ function WorldBuilder:_createFire(x, z)
 	local fire = {
 		Model = campfire,
 		Core = fireCore,
-		Fuel = 0,
+		-- A built fire carries starter fuel from its construction
+		-- wood, so the lighter works on it right away; feeding logs
+		-- is how it stays alive after that.
+		Fuel = Config.Campfire.BuildFuelSeconds,
 		TotalFed = 0,
 		Level = 1,
 		Lit = false,
 		Emitters = emitters,
 		RingLevel = 1,
+		GroundY = groundY,
 	}
 
 	local flame = campfire:FindFirstChildOfClass("Fire", true)
@@ -353,7 +372,7 @@ function WorldBuilder:_createFire(x, z)
 	lightPrompt.ActionText = "Light with lighter"
 	lightPrompt.ObjectText = "Campfire"
 	lightPrompt.HoldDuration = 0.3
-	lightPrompt.MaxActivationDistance = 10
+	lightPrompt.MaxActivationDistance = 12
 	lightPrompt.Enabled = false
 	lightPrompt.Parent = fireCore
 	lightPrompt.Triggered:Connect(function(player)
@@ -379,6 +398,53 @@ function WorldBuilder:_createFire(x, z)
 	ring.Transparency = 0.93
 	ring.Parent = campfire
 	fire.Ring = ring
+
+	-- Ajay's FireBox rides on every built fire: FeelsWarmth becomes
+	-- the volume players feel warmth in (sized to the fire's warm
+	-- radius), CookingPart is the zone food cooks in, stretched to
+	-- fit a full log. Both are invisible logic volumes in game.
+	if self.FireBoxTemplate then
+		local box = self.FireBoxTemplate:Clone()
+		for _, obj in ipairs(box:GetDescendants()) do
+			if obj:IsA("Script") or obj:IsA("LocalScript") then
+				obj:Destroy()
+			end
+		end
+		box.Parent = campfire
+
+		local warmthPart = box:FindFirstChild("FeelsWarmth", true)
+		if warmthPart and warmthPart:IsA("BasePart") then
+			warmthPart.Anchored = true
+			warmthPart.CanCollide = false
+			warmthPart.CanQuery = false
+			warmthPart.CanTouch = false
+			warmthPart.Transparency = 1
+			local h = warmthPart.Size.Y
+			warmthPart.Size = Vector3.new(radius * 2, h, radius * 2)
+			warmthPart.CFrame = CFrame.new(fireCore.Position.X, groundY + h / 2, fireCore.Position.Z)
+			fire.WarmthPart = warmthPart
+		end
+
+		local cookingPart = box:FindFirstChild("CookingPart", true)
+		if cookingPart and cookingPart:IsA("BasePart") then
+			cookingPart.Anchored = true
+			cookingPart.CanCollide = false
+			cookingPart.CanQuery = false
+			cookingPart.CanTouch = false
+			cookingPart.Transparency = 1
+			local s = cookingPart.Size
+			if math.max(s.X, s.Z) < 7 then
+				if s.X >= s.Z then
+					s = Vector3.new(7, s.Y, s.Z)
+				else
+					s = Vector3.new(s.X, s.Y, 7)
+				end
+				cookingPart.Size = s
+			end
+			cookingPart.CFrame = CFrame.new(fireCore.Position.X, groundY + 0.8, fireCore.Position.Z)
+			fire.CookingPart = cookingPart
+		end
+	end
 
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "CampfireGui"
@@ -618,6 +684,11 @@ function WorldBuilder:UpdateState(clock, temperature)
 			fire.RingLevel = fire.Level
 			local radius = self:FireRadius(fire)
 			fire.Ring.Size = Vector3.new(0.15, radius * 2, radius * 2)
+			if fire.WarmthPart then
+				local s = fire.WarmthPart.Size
+				fire.WarmthPart.Size = Vector3.new(radius * 2, s.Y, radius * 2)
+				fire.WarmthPart.CFrame = CFrame.new(fire.Core.Position.X, fire.GroundY + s.Y / 2, fire.Core.Position.Z)
+			end
 		end
 		if fire.Ring then
 			fire.Ring.Transparency = burning and 0.78 or 0.93

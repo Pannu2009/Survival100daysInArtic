@@ -18,6 +18,7 @@ DragSystem.InitClient()
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local setSprinting = remotes:WaitForChild("SetSprinting")
 local storeRemote = remotes:WaitForChild("StoreDraggedItem", 10)
+local eatRemote = remotes:WaitForChild("EatFish")
 local openBuildMenuRemote = remotes:WaitForChild("OpenBuildMenu")
 local placeBlueprintRemote = remotes:WaitForChild("PlaceBlueprint")
 
@@ -29,6 +30,16 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "SurvivalHUD"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
+
+-- Freezing overlay: fades in over the screen as this player's
+-- warmth runs out (client-only effect).
+local frost = Instance.new("Frame")
+frost.Name = "Frost"
+frost.Size = UDim2.fromScale(1, 1)
+frost.BackgroundColor3 = Color3.fromRGB(174, 216, 240)
+frost.BackgroundTransparency = 1
+frost.BorderSizePixel = 0
+frost.Parent = gui
 
 local function makeLabel(parent, text, size, position, color, textSize)
 	local label = Instance.new("TextLabel")
@@ -177,6 +188,35 @@ local function tryStore()
 	end
 end
 storeButton.Activated:Connect(tryStore)
+
+-- Eat fish button: same contextual pattern as Store — appears
+-- while dragging a fish or standing near one.
+local eatButton = Instance.new("TextButton")
+eatButton.Name = "EatButton"
+eatButton.Size = UDim2.fromOffset(132, 54)
+eatButton.Position = UDim2.new(1, -156, 1, -206)
+eatButton.BackgroundColor3 = MARIGOLD
+eatButton.Text = "EAT FISH"
+eatButton.TextColor3 = AUBERGINE
+eatButton.TextSize = 16
+eatButton.Font = Enum.Font.GothamBold
+eatButton.BorderSizePixel = 0
+eatButton.Visible = false
+eatButton.Parent = gui
+local eatCorner = Instance.new("UICorner")
+eatCorner.CornerRadius = UDim.new(0, 12)
+eatCorner.Parent = eatButton
+local eatHint = makeLabel(gui, "tap", UDim2.fromOffset(132, 16), UDim2.new(1, -156, 1, -148), SILVER, 11)
+eatHint.TextXAlignment = Enum.TextXAlignment.Center
+eatHint.Visible = false
+
+local eatTarget = nil
+local function tryEat()
+	if eatTarget then
+		eatRemote:FireServer(eatTarget)
+	end
+end
+eatButton.Activated:Connect(tryEat)
 
 -- Build menu (blueprint stick) + campfire placement mode.
 local buildMenu = Instance.new("Frame")
@@ -438,6 +478,7 @@ local function applyMode()
 		slotHints["Lighter"].Text = inputMode == "Keyboard" and "4" or inputMode == "Gamepad" and "▼" or ""
 	end
 	storeHint.Text = inputMode == "Keyboard" and "press E" or inputMode == "Gamepad" and "press X" or "tap"
+	eatHint.Text = inputMode == "Keyboard" and "press F" or inputMode == "Gamepad" and "press Y" or "tap"
 end
 UserInputService.LastInputTypeChanged:Connect(applyMode)
 applyMode()
@@ -478,6 +519,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			toggleTool("Lighter")
 		elseif input.KeyCode == Enum.KeyCode.E then
 			tryStore()
+		elseif input.KeyCode == Enum.KeyCode.F then
+			tryEat()
 		end
 	elseif inputMode == "Gamepad" then
 		if input.KeyCode == Enum.KeyCode.ButtonL3 then
@@ -492,6 +535,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			toggleTool("Lighter")
 		elseif input.KeyCode == Enum.KeyCode.ButtonX then
 			tryStore()
+		elseif input.KeyCode == Enum.KeyCode.ButtonY then
+			tryEat()
 		end
 	end
 end)
@@ -518,6 +563,12 @@ end
 local function refreshPlayer()
 	setBar(healthFill, player:GetAttribute("Health"), Config.Survival.MaxHealth)
 	setBar(warmthFill, player:GetAttribute("Warmth"), Config.Survival.MaxWarmth)
+	local warmthNow = player:GetAttribute("Warmth") or Config.Survival.MaxWarmth
+	if warmthNow < 35 then
+		frost.BackgroundTransparency = 0.55 + 0.45 * (warmthNow / 35)
+	else
+		frost.BackgroundTransparency = 1
+	end
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
 	lighterLabel.Text = "Lighter: " .. tostring(player:GetAttribute("LighterFuel") or 0)
 	objectiveLabel.Text = OBJECTIVES[player:GetAttribute("TutorialStep") or 1] or OBJECTIVES[1]
@@ -594,6 +645,28 @@ local dotCorner = Instance.new("UICorner")
 dotCorner.CornerRadius = UDim.new(1, 0)
 dotCorner.Parent = dragDot
 
+local function nearestFish()
+	local fishFolder = workspace:FindFirstChild("Fish")
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not fishFolder or not root then
+		return nil
+	end
+	local best = nil
+	local bestDistance = 8
+	for _, fish in ipairs(fishFolder:GetChildren()) do
+		local part = fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true)
+		if part then
+			local d = (part.Position - root.Position).Magnitude
+			if d < bestDistance then
+				best = fish
+				bestDistance = d
+			end
+		end
+	end
+	return best
+end
+
 RunService.RenderStepped:Connect(function(dt)
 	local myPart = myDragPart
 	dragDot.Visible = myPart ~= nil
@@ -611,6 +684,15 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 	storeButton.Visible = canStore
+
+	local draggedModel = myPart and myPart.Parent
+	if draggedModel and draggedModel.Name == "Fish" then
+		eatTarget = draggedModel
+	else
+		eatTarget = nearestFish()
+	end
+	eatButton.Visible = eatTarget ~= nil
+	eatHint.Visible = eatButton.Visible
 
 	if not myPart then
 		return

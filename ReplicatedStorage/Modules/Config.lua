@@ -19,7 +19,7 @@ Config.Survival = {
 	HealthRegenPerSecond = 0.05,
 	FreezingHealthDrain = 1.5,
 	StarvingHealthDrain = 1.0,
-	HungerDrainPerSecond = 0.09,
+	HungerDrainPerSecond = 0.11,
 	SprintHungerMultiplier = 2,
 	WalkSpeed = 16,
 	SprintSpeed = 22,
@@ -71,6 +71,7 @@ Config.Campfire = {
 	RadiusByLevel = { 18, 23, 28, 33, 38, 44, 50 },
 	LevelBurnUnits = { 0, 4, 10, 18, 28, 40, 55 },
 	WarmthRate = 2.4,
+	BuildFuelSeconds = 45,
 	FuelPerBurnUnit = 45,
 	FuelDisplayMax = 600,
 	FeedRange = 10,
@@ -119,10 +120,10 @@ Config.Tree = {
 }
 
 Config.Log = {
-	PieceTargetLength = 6,
+	PieceTargetLength = 7.5,
 	MaxPieces = 3,
 	BigTreeLength = 14,
-	BigPieceTargetLength = 4,
+	BigPieceTargetLength = 5,
 	BigTreeMaxPieces = 5,
 	BurnUnitsPerVolume = 0.2,
 	WeightPerVolume = 2.5,
@@ -136,6 +137,11 @@ Config.Log = {
 Config.Food = {
 	RawMeat = 15,
 	CookedMeat = 40,
+	RawFishHunger = 10,
+	RawFishHeal = 2.5,
+	CookedFishHunger = 16,
+	CookedFishHeal = 2.5,
+	CookSeconds = 5,
 }
 
 Config.Animations = {
