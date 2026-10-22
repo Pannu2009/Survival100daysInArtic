@@ -46,6 +46,8 @@ function SledService.new(world, gameplay)
 	self._cargoPart = nil
 	self._halfLength = 4
 	self._cargo = {}
+	self._cargoDims = {}
+	self._slots = {}
 	self._cargoWeight = 0
 	self._pulling = {}
 	self._ropes = {}
@@ -58,6 +60,105 @@ function SledService.new(world, gameplay)
 	self._unloadPrompt = nil
 	self._pullPrompt = nil
 	return self
+end
+
+local function layoutCargo(box, dimsList)
+	local placements = {}
+	local layers = {}
+	for i, d in ipairs(dimsList) do
+		if d.thick > box.across + 0.01 then
+			return nil
+		end
+		local spot = nil
+		for l = 1, #layers + 1 do
+			local layer = layers[l]
+			if not layer then
+				local y = 0
+				for j = 1, l - 1 do
+					y += layers[j].height + 0.1
+				end
+				if y + d.thick > box.height + 0.01 then
+					return nil
+				end
+				layer = { used = 0, height = 0, y = y }
+				layers[l] = layer
+			end
+			local gap = layer.used > 0 and 0.12 or 0
+			if layer.used + gap + d.thick <= box.across + 0.01 then
+				spot = {
+					across = -box.across / 2 + layer.used + gap + d.thick / 2,
+					up = -box.height / 2 + layer.y + d.thick / 2,
+				}
+				layer.used += gap + d.thick
+				if d.thick > layer.height then
+					layer.height = d.thick
+				end
+				break
+			end
+		end
+		if not spot then
+			return nil
+		end
+		placements[i] = spot
+	end
+	return placements
+end
+
+function SledService:_pieceDims(logPart)
+	local size = logPart.Size
+	local axisVec, len = lengthAxis(size)
+	local thick = 0
+	for _, d in ipairs({ size.X, size.Y, size.Z }) do
+		if d ~= len and d > thick then
+			thick = d
+		end
+	end
+	if thick == 0 then
+		thick = math.min(size.X, size.Y, size.Z)
+	end
+	return { len = len, thick = thick, axisVec = axisVec }
+end
+
+function SledService:_cargoBox()
+	local cargo = self._cargoPart
+	if not cargo then
+		return nil
+	end
+	local cs = cargo.Size
+	return {
+		along = math.max(cs.X, cs.Z),
+		across = math.min(cs.X, cs.Z),
+		height = cs.Y,
+	}
+end
+
+function SledService:_relayout()
+	local box = self:_cargoBox()
+	self._slots = {}
+	if not box then
+		return
+	end
+	local dimsList = {}
+	for i, piece in ipairs(self._cargo) do
+		dimsList[i] = self._cargoDims[piece] or { thick = 1, len = 1 }
+	end
+	local layout = layoutCargo(box, dimsList)
+	if layout then
+		for i, piece in ipairs(self._cargo) do
+			self._slots[piece] = layout[i]
+		end
+	end
+end
+
+local function playerRoot(player)
+	local character = player.Character
+	return character and character:FindFirstChild("HumanoidRootPart")
+end
+
+local function withinRange(root, position, range)
+	local dx = root.Position.X - position.X
+	local dz = root.Position.Z - position.Z
+	return (dx * dx + dz * dz) <= range * range
 end
 
 function SledService:GetPullWeight(player)
@@ -248,7 +349,7 @@ function SledService:_recalcCargoWeight()
 	self:_refreshPrompts()
 end
 
-function SledService:_placePiece(piece, index)
+function SledService:_placePiece(piece)
 	local cargo = self._cargoPart
 	local logPart = getLogPart(piece)
 	if not cargo or not logPart then
@@ -269,12 +370,9 @@ function SledService:_placePiece(piece, index)
 
 	local cs = cargo.Size
 	local alongIsX = cs.X >= cs.Z
-	local boxAcross = alongIsX and cs.Z or cs.X
-	local rowsAcross = math.max(1, math.floor(boxAcross / (thick + 0.15)))
-	local acrossIdx = index % rowsAcross
-	local layer = math.floor(index / rowsAcross)
-	local across = (acrossIdx - (rowsAcross - 1) / 2) * (thick + 0.15)
-	local up = -cs.Y / 2 + thick / 2 + layer * (thick + 0.12)
+	local slot = self._slots[piece]
+	local across = slot and slot.across or 0
+	local up = slot and slot.up or (-cs.Y / 2 + thick / 2)
 	local localPos = alongIsX and Vector3.new(0, up, across) or Vector3.new(across, up, 0)
 	local center = cargo.CFrame:PointToWorldSpace(localPos)
 
@@ -293,10 +391,17 @@ end
 
 function SledService:_loadNearest(player)
 	local sled = self.Sled
-	if not sled then
+	if not sled or not self._cargoPart then
+		return
+	end
+	local root = playerRoot(player)
+	if not root then
 		return
 	end
 	local sledPos = sled:GetPivot().Position
+	if not withinRange(root, sledPos, Config.Sled.InteractRange) then
+		return
+	end
 
 	local best = nil
 	local bestDistance = Config.Sled.LoadRange
@@ -316,44 +421,87 @@ function SledService:_loadNearest(player)
 	if not best then
 		return
 	end
-
-	-- Structural guarantee: a piece being loaded is never still owned
-	-- by a dragger. The filter above already excludes dragged pieces;
-	-- this stays as a hard stop if that ever changes.
-	local bestPart = getLogPart(best)
-	if bestPart and bestPart:GetAttribute("DraggedBy") then
-		DragSystem.ForceStop(bestPart)
+	local logPart = getLogPart(best)
+	if not logPart then
+		return
 	end
 
+	-- Validate everything before changing anything: capacity, then
+	-- whether the piece (shrunk to the box length if needed) actually
+	-- fits the cargo volume alongside what's already loaded.
 	local weight = best:GetAttribute("Weight") or 0
 	if self._cargoWeight + weight > Config.Sled.MaxCargoWeight then
 		return
 	end
 
+	local box = self:_cargoBox()
+	if not box then
+		return
+	end
+	local dims = self:_pieceDims(logPart)
+	local effLen = math.min(dims.len, box.along * 0.98)
+	local trialDims = {}
+	for i, piece in ipairs(self._cargo) do
+		trialDims[i] = self._cargoDims[piece]
+	end
+	trialDims[#trialDims + 1] = { len = effLen, thick = dims.thick }
+	if not layoutCargo(box, trialDims) then
+		return
+	end
+
+	-- All checks passed: mutate.
+	if logPart:GetAttribute("DraggedBy") then
+		DragSystem.ForceStop(logPart)
+	end
+	if effLen < dims.len then
+		local sz = logPart.Size
+		if dims.axisVec == Vector3.yAxis then
+			logPart.Size = Vector3.new(sz.X, effLen, sz.Z)
+		elseif dims.axisVec == Vector3.xAxis then
+			logPart.Size = Vector3.new(effLen, sz.Y, sz.Z)
+		else
+			logPart.Size = Vector3.new(sz.X, sz.Y, effLen)
+		end
+	end
+
 	best:SetAttribute("OnSled", true)
 	table.insert(self._cargo, best)
+	self._cargoDims[best] = { len = effLen, thick = dims.thick }
 
-	local logPart = getLogPart(best)
-	local prompt = logPart and logPart:FindFirstChildOfClass("ProximityPrompt")
+	local prompt = logPart:FindFirstChildOfClass("ProximityPrompt")
 	if prompt then
 		prompt:Destroy()
 	end
-	if logPart then
-		logPart:SetAttribute("Draggable", nil)
-	end
+	logPart:SetAttribute("Draggable", nil)
 
-	self:_placePiece(best, #self._cargo - 1)
+	self:_relayout()
+	for _, piece in ipairs(self._cargo) do
+		self:_placePiece(piece)
+	end
 	self:_recalcCargoWeight()
 end
 
 function SledService:_unloadLast(player)
+	local sled = self.Sled
+	if not sled then
+		return
+	end
+	local root = playerRoot(player)
+	if not root then
+		return
+	end
+	if not withinRange(root, sled:GetPivot().Position, Config.Sled.InteractRange) then
+		return
+	end
+
 	local piece = table.remove(self._cargo)
 	if not piece then
 		return
 	end
+	self._cargoDims[piece] = nil
+	self._slots[piece] = nil
 	piece:SetAttribute("OnSled", nil)
 
-	local sled = self.Sled
 	local pivot = sled:GetPivot()
 	local forward = horizontalDir(pivot.LookVector)
 	local behind = pivot.Position - forward * (self._halfLength + 2.5)
@@ -363,6 +511,7 @@ function SledService:_unloadLast(player)
 	end
 
 	self.Gameplay:AttachDragPrompt(piece)
+	self:_relayout()
 	self:_recalcCargoWeight()
 end
 
@@ -374,10 +523,16 @@ function SledService:_togglePull(player)
 	if sled:GetAttribute("PulledBy") == player.UserId then
 		self:_releasePull(player)
 	elseif sled:GetAttribute("PulledBy") == nil then
+		local rootP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if not rootP then
+			return
+		end
+		if not withinRange(rootP, sled:GetPivot().Position, Config.Sled.PullRange) then
+			return
+		end
 		self.Gameplay:ReleaseDraggedLogs(player)
 		sled:SetAttribute("PulledBy", player.UserId)
 		self._pulling[player] = sled
-		local rootP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 		if rootP then
 			local fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
 			local toPlayer = rootP.Position - sled:GetPivot().Position
@@ -611,9 +766,9 @@ function SledService:_stepSled(dt)
 		end
 	end
 
-	for i, piece in ipairs(self._cargo) do
+	for _, piece in ipairs(self._cargo) do
 		if piece.Parent then
-			self:_placePiece(piece, i - 1)
+			self:_placePiece(piece)
 		end
 	end
 end
