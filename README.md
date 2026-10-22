@@ -27,6 +27,8 @@ Survive 100 Days in the Arctic — a Roblox survival game. Design doc lives outs
 
 **Phase 1 — Core clock (complete).** Runtime is live on the `Phase1` branch: the server script picks a seed, builds the terrain, starts the one server-wide clock, and spawns a `SurvivalPlayer` per player. Playable now: day/night cycle, weather, chopping (a felled tree drops a WoodLog — drag it as-is or cut it into pieces for wood; heavier logs slow your movement), campfire warmth and feeding, sprint (2x hunger drain), freeze / starve / sick / die, and the HUD. Tuning: hunger caps at 50 and cold drains warmth fast — the fire matters. Trees and logs come from the models in `ReplicatedStorage/Assets` (`Tree`, `WoodLog`) — there are no code-built placeholder models.
 
+**Phase 2 — Dig, Fire, Wolf (in progress, branch `Phase2`).** No placed buildings: a starter shovel carves snow caves into the terrain (the campfire never moves — you dig your base inside its warm circle). The campfire levels up as it's fed (levels 1–7, total wood in `Config.Campfire.LevelWood`), growing a visible warm ring from 18 to 50 studs and a BillboardGui readout (level, fuel bar, radius). HUD gained the hotbar. Still to come in this phase: fishing-lite, wolf taming, and the sled.
+
 - `DayNightClock` — day/night cycle (3 min day, 2 min night), day counter, day multiplier.
 - `Temperature` — weather (Clear / Storm / Blizzard), ambient temperature, cold exposure rates.
 - `Hunger` — hunger value, drain (sprinting drains 2x), starving state.

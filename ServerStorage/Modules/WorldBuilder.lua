@@ -5,6 +5,10 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local TerrainBuilder = require(script.Parent:WaitForChild("TerrainBuilder"))
 
+local AUBERGINE = Color3.fromHex("3A0F34")
+local SILVER = Color3.fromHex("DDE3E7")
+local MARIGOLD = Color3.fromHex("EAA000")
+
 local WorldBuilder = {}
 WorldBuilder.__index = WorldBuilder
 
@@ -25,7 +29,14 @@ function WorldBuilder.new(layout)
 	local self = setmetatable({}, WorldBuilder)
 	self.Layout = layout
 	self.Fuel = Config.Campfire.StartFuelSeconds
+	self.Level = 1
+	self.TotalFed = 0
 	self.OnFeedAttempt = nil
+	self._ring = nil
+	self._ringLevel = nil
+	self._fireTitle = nil
+	self._fireFill = nil
+	self._fireState = nil
 	self.TreesFolder = nil
 	self.FireCore = nil
 	self.TreeTemplate = nil
@@ -84,6 +95,27 @@ end
 
 function WorldBuilder:IsLit()
 	return self.Fuel > 0
+end
+
+function WorldBuilder:GetWarmthRadius()
+	return Config.Campfire.RadiusByLevel[self.Level] or Config.Campfire.RadiusByLevel[1]
+end
+
+function WorldBuilder:TerrainRaycastDown(x, z)
+	return workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0), self._groundParams)
+end
+
+function WorldBuilder:_recalcLevel()
+	local level = 1
+	for i, needed in ipairs(Config.Campfire.LevelWood) do
+		if self.TotalFed >= needed then
+			level = i
+		end
+	end
+	if level ~= self.Level then
+		self.Level = level
+		print(("[Arctic] Campfire reached level %d - warm radius %d studs"):format(level, self:GetWarmthRadius()))
+	end
 end
 
 function WorldBuilder:TickFire(dt)
@@ -196,8 +228,90 @@ function WorldBuilder:_buildCampfire()
 	feedPrompt.Triggered:Connect(function(player)
 		if self.OnFeedAttempt and self.OnFeedAttempt(player) then
 			self.Fuel += Config.Campfire.FuelPerWood
+			self.TotalFed += 1
+			self:_recalcLevel()
 		end
 	end)
+
+	local radius = self:GetWarmthRadius()
+	local ring = Instance.new("Part")
+	ring.Name = "WarmthRing"
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.15, radius * 2, radius * 2)
+	ring.CFrame = CFrame.new(fireCore.Position.X, self:GroundY(fireCore.Position.X, fireCore.Position.Z) + 0.12, fireCore.Position.Z)
+		* CFrame.Angles(0, 0, math.rad(90))
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CanTouch = false
+	ring.Material = Enum.Material.SmoothPlastic
+	ring.Color = MARIGOLD
+	ring.Transparency = 0.78
+	ring.Parent = campfire
+	self._ring = ring
+	self._ringLevel = self.Level
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "CampfireGui"
+	billboard.Size = UDim2.fromOffset(170, 62)
+	billboard.StudsOffset = Vector3.new(0, 3.6, 0)
+	billboard.MaxDistance = 70
+	billboard.Parent = fireCore
+
+	local bg = Instance.new("Frame")
+	bg.Size = UDim2.fromScale(1, 1)
+	bg.BackgroundColor3 = AUBERGINE
+	bg.BackgroundTransparency = 0.25
+	bg.BorderSizePixel = 0
+	bg.Parent = billboard
+	local bgCorner = Instance.new("UICorner")
+	bgCorner.CornerRadius = UDim.new(0, 8)
+	bgCorner.Parent = bg
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, -12, 0, 20)
+	title.Position = UDim2.fromOffset(6, 4)
+	title.BackgroundTransparency = 1
+	title.Text = "CAMPFIRE Lv 1"
+	title.TextColor3 = SILVER
+	title.TextSize = 15
+	title.Font = Enum.Font.GothamBold
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = bg
+	self._fireTitle = title
+
+	local track = Instance.new("Frame")
+	track.Size = UDim2.new(1, -12, 0, 10)
+	track.Position = UDim2.fromOffset(6, 28)
+	track.BackgroundColor3 = SILVER
+	track.BackgroundTransparency = 0.6
+	track.BorderSizePixel = 0
+	track.Parent = bg
+	local trackCorner = Instance.new("UICorner")
+	trackCorner.CornerRadius = UDim.new(0, 5)
+	trackCorner.Parent = track
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.fromScale(0.4, 1)
+	fill.BackgroundColor3 = MARIGOLD
+	fill.BorderSizePixel = 0
+	fill.Parent = track
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(0, 5)
+	fillCorner.Parent = fill
+	self._fireFill = fill
+
+	local state = Instance.new("TextLabel")
+	state.Size = UDim2.new(1, -12, 0, 16)
+	state.Position = UDim2.fromOffset(6, 42)
+	state.BackgroundTransparency = 1
+	state.Text = "Fuel 240s"
+	state.TextColor3 = SILVER
+	state.TextSize = 12
+	state.Font = Enum.Font.Gotham
+	state.TextXAlignment = Enum.TextXAlignment.Left
+	state.Parent = bg
+	self._fireState = state
 end
 
 function WorldBuilder:UpdateState(clock, temperature)
@@ -219,6 +333,30 @@ function WorldBuilder:UpdateState(clock, temperature)
 	ReplicatedStorage:SetAttribute("Weather", temperature:GetWeather())
 	ReplicatedStorage:SetAttribute("AmbientTempC", temperature:GetAmbientTempC(clock:GetPhase()))
 	ReplicatedStorage:SetAttribute("CampfireFuel", math.floor(self.Fuel))
+	ReplicatedStorage:SetAttribute("CampfireLevel", self.Level)
+
+	if self._ring and self._ringLevel ~= self.Level then
+		self._ringLevel = self.Level
+		local radius = self:GetWarmthRadius()
+		self._ring.Size = Vector3.new(0.15, radius * 2, radius * 2)
+	end
+	if self._ring then
+		self._ring.Transparency = self:IsLit() and 0.78 or 0.93
+	end
+	if self._fireTitle then
+		self._fireTitle.Text = "CAMPFIRE Lv " .. self.Level
+	end
+	if self._fireFill then
+		local fraction = math.clamp(self.Fuel / Config.Campfire.FuelDisplayMax, 0, 1)
+		self._fireFill.Size = UDim2.fromScale(fraction, 1)
+	end
+	if self._fireState then
+		if self:IsLit() then
+			self._fireState.Text = "Fuel " .. math.floor(self.Fuel) .. "s · warm " .. self:GetWarmthRadius() .. " studs"
+		else
+			self._fireState.Text = "OUT - feed wood to relight"
+		end
+	end
 end
 
 return WorldBuilder

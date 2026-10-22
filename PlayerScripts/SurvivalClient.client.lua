@@ -110,6 +110,67 @@ local sprintCorner = Instance.new("UICorner")
 sprintCorner.CornerRadius = UDim.new(0, 12)
 sprintCorner.Parent = sprintButton
 
+local hotbar = Instance.new("Frame")
+hotbar.Name = "Hotbar"
+hotbar.Size = UDim2.fromOffset(232, 56)
+hotbar.Position = UDim2.new(0.5, -116, 1, -64)
+hotbar.BackgroundColor3 = AUBERGINE
+hotbar.BackgroundTransparency = 0.25
+hotbar.BorderSizePixel = 0
+hotbar.Parent = gui
+
+local hotbarCorner = Instance.new("UICorner")
+hotbarCorner.CornerRadius = UDim.new(0, 10)
+hotbarCorner.Parent = hotbar
+
+local slotFrames = {}
+local slotLabels = {}
+local function makeSlot(index, name)
+	local slot = Instance.new("Frame")
+	slot.Size = UDim2.fromOffset(68, 44)
+	slot.Position = UDim2.fromOffset(6 + (index - 1) * 74, 6)
+	slot.BackgroundColor3 = SILVER
+	slot.BackgroundTransparency = 0.75
+	slot.BorderSizePixel = 0
+	slot.Parent = hotbar
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = slot
+	local label = makeLabel(slot, name, UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 4), SILVER, 12)
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	local value = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 24), MARIGOLD, 13)
+	value.TextXAlignment = Enum.TextXAlignment.Center
+	slotFrames[name] = slot
+	slotLabels[name] = value
+end
+makeSlot(1, "Axe")
+makeSlot(2, "Shovel")
+makeSlot(3, "Wood")
+
+local function refreshHotbar()
+	local character = player.Character
+	for _, toolName in ipairs({ "Axe", "Shovel" }) do
+		local equipped = character and character:FindFirstChild(toolName) ~= nil
+		local slot = slotFrames[toolName]
+		if slot then
+			slot.BackgroundColor3 = equipped and MARIGOLD or SILVER
+			slot.BackgroundTransparency = equipped and 0 or 0.75
+		end
+		slotLabels[toolName].Text = equipped and "in hand" or ""
+	end
+	slotLabels["Wood"].Text = tostring(player:GetAttribute("Wood") or 0)
+end
+
+local function hookCharacter(character)
+	character.ChildAdded:Connect(refreshHotbar)
+	character.ChildRemoved:Connect(refreshHotbar)
+	refreshHotbar()
+end
+if player.Character then
+	hookCharacter(player.Character)
+end
+player.CharacterAdded:Connect(hookCharacter)
+
 local isSprinting = false
 local function setSprint(value)
 	if value == isSprinting then
@@ -148,7 +209,7 @@ local function refreshWorld()
 	phaseLabel.Text = tostring(ReplicatedStorage:GetAttribute("Phase") or "Day")
 	tempLabel.Text = tostring(ReplicatedStorage:GetAttribute("AmbientTempC") or 0) .. "C"
 	multLabel.Text = "x" .. tostring(ReplicatedStorage:GetAttribute("Multiplier") or 1)
-	fuelLabel.Text = "Fire: " .. tostring(ReplicatedStorage:GetAttribute("CampfireFuel") or 0) .. "s"
+	fuelLabel.Text = "Fire Lv " .. tostring(ReplicatedStorage:GetAttribute("CampfireLevel") or 1) .. " · " .. tostring(ReplicatedStorage:GetAttribute("CampfireFuel") or 0) .. "s"
 	seedLabel.Text = "Seed: " .. tostring(ReplicatedStorage:GetAttribute("WorldSeed") or "------")
 end
 
@@ -163,6 +224,7 @@ local function refreshPlayer()
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
 	woodLabel.Text = "Wood: " .. tostring(player:GetAttribute("Wood") or 0)
 	sickLabel.Visible = player:GetAttribute("IsSick") == true
+	refreshHotbar()
 end
 
 ReplicatedStorage.AttributeChanged:Connect(refreshWorld)

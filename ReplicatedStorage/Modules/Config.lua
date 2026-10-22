@@ -68,10 +68,19 @@ Config.World = {
 }
 
 Config.Campfire = {
-	WarmthRadius = 18,
+	RadiusByLevel = { 18, 23, 28, 33, 38, 44, 50 },
+	LevelWood = { 0, 4, 10, 18, 28, 40, 55 },
 	WarmthRate = 2.4,
 	StartFuelSeconds = 240,
 	FuelPerWood = 45,
+	FuelDisplayMax = 600,
+}
+
+Config.Digging = {
+	Radius = 2.6,
+	Reach = 4,
+	Cooldown = 0.35,
+	SafeRadius = 5,
 }
 
 Config.Tree = {

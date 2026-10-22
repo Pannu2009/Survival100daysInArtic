@@ -59,6 +59,7 @@ function Gameplay.new(world, clock, temperature)
 	self._sprinting = {}
 	self._wood = {}
 	self._dragging = {}
+	self._digReady = {}
 	self.LogsFolder = nil
 	self._setSprinting = nil
 	return self
@@ -80,6 +81,7 @@ function Gameplay:Start()
 	self._setSprinting = setSprinting
 
 	self:_buildAxe()
+	self:_buildShovel()
 
 	self.World.OnFeedAttempt = function(player)
 		if (self._wood[player] or 0) < 1 then
@@ -151,6 +153,76 @@ function Gameplay:_buildAxe()
 	axe.Parent = StarterPack
 end
 
+function Gameplay:_buildShovel()
+	local shovel = Instance.new("Tool")
+	shovel.Name = "Shovel"
+	shovel.RequiresHandle = true
+	shovel.CanBeDropped = false
+
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(0.4, 3.6, 0.4)
+	handle.Material = Enum.Material.Wood
+	handle.Color = Color3.fromRGB(110, 78, 48)
+	handle.Parent = shovel
+
+	local blade = Instance.new("Part")
+	blade.Name = "Blade"
+	blade.Size = Vector3.new(1.1, 1.4, 0.18)
+	blade.CFrame = CFrame.new(0, -2.2, 0)
+	blade.Material = Enum.Material.Metal
+	blade.Color = Color3.fromRGB(150, 155, 160)
+	blade.CanCollide = false
+	blade.Massless = true
+	blade.Parent = shovel
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = handle
+	weld.Part1 = blade
+	weld.Parent = blade
+
+	shovel.Parent = StarterPack
+end
+
+function Gameplay:_onShovelActivated(player)
+	local now = os.clock()
+	if now < (self._digReady[player] or 0) then
+		return
+	end
+	self._digReady[player] = now + Config.Digging.Cooldown
+
+	local character = player.Character
+	if not character then
+		return
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
+
+	local look = root.CFrame.LookVector
+	local tx = root.Position.X + look.X * Config.Digging.Reach
+	local tz = root.Position.Z + look.Z * Config.Digging.Reach
+
+	local core = self.World.FireCore
+	if core then
+		local dx = tx - core.Position.X
+		local dz = tz - core.Position.Z
+		if math.sqrt(dx * dx + dz * dz) < Config.Digging.SafeRadius then
+			return
+		end
+	end
+
+	local hit = self.World:TerrainRaycastDown(tx, tz)
+	if not hit or hit.Material ~= Enum.Material.Snow then
+		return
+	end
+
+	local terrain = workspace:WaitForChild("Terrain")
+	local center = hit.Position - Vector3.new(0, Config.Digging.Radius * 0.35, 0)
+	terrain:FillBall(center, Config.Digging.Radius, Enum.Material.Air)
+end
+
 function Gameplay:_syncAttributes(player)
 	local survival = self._survivals[player]
 	if not survival then
@@ -205,6 +277,12 @@ function Gameplay:_onCharacter(player, character)
 	if playerAxe then
 		playerAxe.Activated:Connect(function()
 			self:_onAxeActivated(player)
+		end)
+	end
+	local playerShovel = backpack:WaitForChild("Shovel", 5) or character:FindFirstChild("Shovel")
+	if playerShovel then
+		playerShovel.Activated:Connect(function()
+			self:_onShovelActivated(player)
 		end)
 	end
 
@@ -517,7 +595,7 @@ function Gameplay:Update(dt)
 		if root and world:IsLit() and world.FireCore then
 			local dx = root.Position.X - world.FireCore.Position.X
 			local dz = root.Position.Z - world.FireCore.Position.Z
-			if math.sqrt(dx * dx + dz * dz) <= Config.Campfire.WarmthRadius then
+			if math.sqrt(dx * dx + dz * dz) <= world:GetWarmthRadius() then
 				context.FireRate = Config.Campfire.WarmthRate
 			end
 		end
