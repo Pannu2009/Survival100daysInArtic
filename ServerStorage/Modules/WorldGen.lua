@@ -60,7 +60,13 @@ function WorldGen.Generate(seedString)
 			local inLake = distanceTo(x, z, layout.Lake.X, layout.Lake.Z) < layout.Lake.Radius
 			local inMountain = distanceTo(x, z, layout.Mountain.X, layout.Mountain.Z) < layout.Mountain.Radius * 0.75
 			if not inLake and not inMountain then
-				table.insert(layout.Trees, { X = x, Z = z })
+				local heightScale = rng:NextNumber(0.7, 1.6)
+				local thicknessScale = rng:NextNumber(0.6, 1.8)
+				if rng:Next() < 0.1 then
+					heightScale = rng:NextNumber(1.7, 2.1)
+					thicknessScale = rng:NextNumber(0.4, 0.55)
+				end
+				table.insert(layout.Trees, { X = x, Z = z, H = heightScale, T = thicknessScale })
 			end
 		end
 	end

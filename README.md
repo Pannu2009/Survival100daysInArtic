@@ -8,7 +8,7 @@ Survive 100 Days in the Arctic — a Roblox survival game. Design doc lives outs
 |---|---|---|
 | `ReplicatedStorage/` | ReplicatedStorage | Shared modules (Config, Signal) used by server and client |
 | `ServerStorage/` | ServerStorage | Server-only modules (core clock, temperature, hunger, survival) |
-| `ServerScript/` | ServerScriptService | Server scripts (runtime entry points — later step) |
+| `ServerScript/` | ServerScriptService | The server script — init only; all logic lives in modules |
 | `PlayerScripts/` | StarterPlayer > StarterPlayerScripts | Client scripts (HUD, input — later phases) |
 | `Others/` | not synced | Models, meshes, and other raw assets |
 
@@ -31,6 +31,8 @@ Survive 100 Days in the Arctic — a Roblox survival game. Design doc lives outs
 - `Temperature` — weather (Clear / Storm / Blizzard), ambient temperature, cold exposure rates.
 - `Hunger` — hunger value, drain (sprinting drains 2x), starving state.
 - `SurvivalPlayer` — one player's health / warmth / hunger / sickness, ticked together.
+- `WorldBuilder` — builds the world: terrain (skippable via `Config.World.GenerateTerrain` for hand-made maps), tree planting with seeded size variety, the campfire, ground-height lookups, and the shared HUD world state.
+- `Gameplay` — players and interaction: survival ticking, the axe, tree shake/fall, logs (cut a piece off the end — the piece stays as its own log; small logs chop into wood), dragging with weight-based slowdown, and sprint.
 - `Seed` — deterministic RNG from a 5–8 letter seed string. `Fork("lake")` gives each feature its own stream, so changing one feature never reshuffles the others. Same seed = same numbers, always.
 - `WorldGen` — turns a seed into a world layout (data only): mountain, frozen lake, tree spots, cabin spots, plus reserved coal and yeti-cave spots for later phases.
 - `TerrainBuilder` — paints a layout into Workspace Terrain: snow base, rock mountain with a snow cap, carved lake with a glacier surface.

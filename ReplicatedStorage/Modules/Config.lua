@@ -49,6 +49,7 @@ Config.World = {
 	MinSeedLength = 5,
 	MaxSeedLength = 8,
 	DevSeed = "",
+	GenerateTerrain = true,
 	MountainMinDistance = 250,
 	MountainMaxDistance = 850,
 	MountainMinRadius = 200,
@@ -79,9 +80,10 @@ Config.Tree = {
 }
 
 Config.Log = {
-	PiecesPerLog = 3,
-	HitsPerPiece = 2,
-	WoodPerPiece = 2,
+	CutLength = 1.5,
+	HitsPerCut = 2,
+	MinSplitLength = 3.5,
+	WoodPerSmallLog = 2,
 	WeightPerVolume = 2,
 	DragSlowPerWeight = 0.008,
 	MinDragSpeedFactor = 0.35,
