@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
+local Config = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"))
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local setSprinting = remotes:WaitForChild("SetSprinting")
 
@@ -151,15 +152,15 @@ local function refreshWorld()
 	seedLabel.Text = "Seed: " .. tostring(ReplicatedStorage:GetAttribute("WorldSeed") or "------")
 end
 
-local function setBar(fill, value)
-	local fraction = math.clamp((value or 100) / 100, 0, 1)
+local function setBar(fill, value, maxValue)
+	local fraction = math.clamp((value or maxValue) / maxValue, 0, 1)
 	fill.Size = UDim2.fromScale(fraction, 1)
 end
 
 local function refreshPlayer()
-	setBar(healthFill, player:GetAttribute("Health"))
-	setBar(warmthFill, player:GetAttribute("Warmth"))
-	setBar(hungerFill, player:GetAttribute("Hunger"))
+	setBar(healthFill, player:GetAttribute("Health"), Config.Survival.MaxHealth)
+	setBar(warmthFill, player:GetAttribute("Warmth"), Config.Survival.MaxWarmth)
+	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
 	woodLabel.Text = "Wood: " .. tostring(player:GetAttribute("Wood") or 0)
 	sickLabel.Visible = player:GetAttribute("IsSick") == true
 end

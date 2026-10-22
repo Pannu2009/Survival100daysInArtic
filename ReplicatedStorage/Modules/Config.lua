@@ -15,7 +15,7 @@ Config.Multiplier = {
 Config.Survival = {
 	MaxHealth = 100,
 	MaxWarmth = 100,
-	MaxHunger = 100,
+	MaxHunger = 50,
 	HealthRegenPerSecond = 0.05,
 	FreezingHealthDrain = 1.5,
 	StarvingHealthDrain = 1.0,
@@ -32,8 +32,8 @@ Config.Temperature = {
 	BlizzardDropC = -16,
 	WeatherChance = { Storm = 0.18, Blizzard = 0.07 },
 	Exposure = {
-		Day = { Clear = 0.07, Storm = 0.13, Blizzard = 0.24 },
-		Night = { Clear = 0.14, Storm = 0.22, Blizzard = 0.38 },
+		Day = { Clear = 0.55, Storm = 1.05, Blizzard = 1.9 },
+		Night = { Clear = 1.1, Storm = 1.75, Blizzard = 3.0 },
 	},
 }
 
@@ -49,6 +49,7 @@ Config.World = {
 	MinSeedLength = 5,
 	MaxSeedLength = 8,
 	DevSeed = "",
+	GenerateTerrain = true,
 	MountainMinDistance = 250,
 	MountainMaxDistance = 850,
 	MountainMinRadius = 200,
@@ -75,8 +76,18 @@ Config.Campfire = {
 
 Config.Tree = {
 	Health = 3,
-	WoodPerTree = 2,
 	ChopRange = 10,
+}
+
+Config.Log = {
+	PieceTargetLength = 4,
+	MaxPieces = 5,
+	HitsPerCut = 2,
+	WoodPerVolume = 0.2,
+	WeightPerVolume = 2,
+	DragSlowPerWeight = 0.008,
+	MinDragSpeedFactor = 0.35,
+	DragDistance = 5,
 }
 
 Config.Food = {

@@ -1,0 +1,530 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterPack = game:GetService("StarterPack")
+
+local Modules = ReplicatedStorage:WaitForChild("Modules")
+local Config = require(Modules:WaitForChild("Config"))
+local SurvivalPlayer = require(script.Parent:WaitForChild("SurvivalPlayer"))
+
+local Gameplay = {}
+Gameplay.__index = Gameplay
+
+local function findWoodPart(model)
+	return model:FindFirstChild("WoodPart", true)
+		or model:FindFirstChild("Trunk", true)
+		or model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function getLogPart(log)
+	return log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function logWeight(logPart)
+	local size = logPart.Size
+	return math.floor(size.X * size.Y * size.Z * Config.Log.WeightPerVolume + 0.5)
+end
+
+local function lengthAxis(size)
+	if size.Y >= size.X and size.Y >= size.Z then
+		return Vector3.yAxis, size.Y
+	elseif size.X >= size.Z then
+		return Vector3.xAxis, size.X
+	else
+		return Vector3.zAxis, size.Z
+	end
+end
+
+local function setLength(part, axisVec, newLength)
+	local s = part.Size
+	if axisVec == Vector3.yAxis then
+		part.Size = Vector3.new(s.X, newLength, s.Z)
+	elseif axisVec == Vector3.xAxis then
+		part.Size = Vector3.new(newLength, s.Y, s.Z)
+	else
+		part.Size = Vector3.new(s.X, s.Y, newLength)
+	end
+end
+
+local function rotateAround(model, center, rotation)
+	local cf = model:GetPivot()
+	model:PivotTo(CFrame.new(center) * rotation * CFrame.new(-center) * cf)
+end
+
+function Gameplay.new(world, clock, temperature)
+	local self = setmetatable({}, Gameplay)
+	self.World = world
+	self.Clock = clock
+	self.Temperature = temperature
+	self._survivals = {}
+	self._sprinting = {}
+	self._wood = {}
+	self._dragging = {}
+	self.LogsFolder = nil
+	self._setSprinting = nil
+	return self
+end
+
+function Gameplay:Start()
+	local logsFolder = Instance.new("Folder")
+	logsFolder.Name = "Logs"
+	logsFolder.Parent = workspace
+	self.LogsFolder = logsFolder
+
+	local remotes = Instance.new("Folder")
+	remotes.Name = "Remotes"
+	remotes.Parent = ReplicatedStorage
+
+	local setSprinting = Instance.new("RemoteEvent")
+	setSprinting.Name = "SetSprinting"
+	setSprinting.Parent = remotes
+	self._setSprinting = setSprinting
+
+	self:_buildAxe()
+
+	self.World.OnFeedAttempt = function(player)
+		if (self._wood[player] or 0) < 1 then
+			return false
+		end
+		self._wood[player] -= 1
+		player:SetAttribute("Wood", self._wood[player])
+		return true
+	end
+
+	setSprinting.OnServerEvent:Connect(function(player, value)
+		self._sprinting[player] = value == true
+	end)
+
+	self.Clock.OnPhaseChanged:Connect(function(phase, day)
+		local roll = math.random()
+		if roll < Config.Temperature.WeatherChance.Blizzard then
+			self.Temperature:SetWeather("Blizzard")
+		elseif roll < Config.Temperature.WeatherChance.Blizzard + Config.Temperature.WeatherChance.Storm then
+			self.Temperature:SetWeather("Storm")
+		else
+			self.Temperature:SetWeather("Clear")
+		end
+		print(("[Arctic] %s of day %d - weather: %s"):format(phase, day, self.Temperature:GetWeather()))
+	end)
+
+	Players.PlayerAdded:Connect(function(player)
+		self:_setupPlayer(player)
+	end)
+	for _, player in ipairs(Players:GetPlayers()) do
+		self:_setupPlayer(player)
+	end
+	Players.PlayerRemoving:Connect(function(player)
+		self:_releaseLogs(player)
+		self._survivals[player] = nil
+		self._sprinting[player] = nil
+		self._wood[player] = nil
+	end)
+end
+
+function Gameplay:_buildAxe()
+	local axe = Instance.new("Tool")
+	axe.Name = "Axe"
+	axe.RequiresHandle = true
+	axe.CanBeDropped = false
+
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(0.45, 3.4, 0.45)
+	handle.Material = Enum.Material.Wood
+	handle.Color = Color3.fromRGB(110, 78, 48)
+	handle.Parent = axe
+
+	local axeHead = Instance.new("Part")
+	axeHead.Name = "Head"
+	axeHead.Size = Vector3.new(0.3, 1.1, 1.6)
+	axeHead.CFrame = CFrame.new(0, 1.5, 0)
+	axeHead.Material = Enum.Material.Metal
+	axeHead.Color = Color3.fromRGB(150, 155, 160)
+	axeHead.CanCollide = false
+	axeHead.Massless = true
+	axeHead.Parent = axe
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = handle
+	weld.Part1 = axeHead
+	weld.Parent = axeHead
+
+	axe.Parent = StarterPack
+end
+
+function Gameplay:_syncAttributes(player)
+	local survival = self._survivals[player]
+	if not survival then
+		return
+	end
+	player:SetAttribute("Health", math.floor(survival.Health))
+	player:SetAttribute("Warmth", math.floor(survival.Warmth))
+	player:SetAttribute("Hunger", math.floor(survival.Hunger:Get()))
+	player:SetAttribute("IsSick", survival.IsSick)
+	player:SetAttribute("Wood", self._wood[player] or 0)
+end
+
+function Gameplay:_makeSurvival(player)
+	local survival = SurvivalPlayer.new(self.Clock, self.Temperature)
+	survival.OnDied:Connect(function()
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.Health = 0
+		end
+	end)
+	return survival
+end
+
+function Gameplay:_setupPlayer(player)
+	self._survivals[player] = self:_makeSurvival(player)
+	self._wood[player] = 0
+	self._sprinting[player] = false
+	self:_syncAttributes(player)
+	player.CharacterAdded:Connect(function(character)
+		self:_onCharacter(player, character)
+	end)
+	if player.Character then
+		self:_onCharacter(player, player.Character)
+	end
+end
+
+function Gameplay:_onCharacter(player, character)
+	self:_releaseLogs(player)
+	self._survivals[player] = self:_makeSurvival(player)
+	self._wood[player] = 0
+	self._sprinting[player] = false
+
+	local humanoid = character:WaitForChild("Humanoid")
+	humanoid.WalkSpeed = Config.Survival.WalkSpeed
+
+	local root = character:WaitForChild("HumanoidRootPart")
+	root.CFrame = CFrame.new(7, self.World:GroundY(7, 0) + 4, 0)
+
+	local backpack = player:WaitForChild("Backpack")
+	local playerAxe = backpack:WaitForChild("Axe", 5) or character:FindFirstChild("Axe")
+	if playerAxe then
+		playerAxe.Activated:Connect(function()
+			self:_onAxeActivated(player)
+		end)
+	end
+
+	self:_syncAttributes(player)
+end
+
+function Gameplay:_releaseLogs(player)
+	for _, log in ipairs(self.LogsFolder:GetChildren()) do
+		if log:GetAttribute("DraggedBy") == player.UserId then
+			log:SetAttribute("DraggedBy", nil)
+			local logPart = getLogPart(log)
+			local prompt = logPart and logPart:FindFirstChildOfClass("ProximityPrompt")
+			if prompt then
+				prompt.ActionText = "Drag"
+			end
+		end
+	end
+	self._dragging[player] = nil
+end
+
+function Gameplay:_refreshLog(log)
+	local logPart = getLogPart(log)
+	if not logPart then
+		return
+	end
+	log:SetAttribute("Weight", logWeight(logPart))
+	local prompt = logPart:FindFirstChildOfClass("ProximityPrompt")
+	if prompt then
+		prompt.ObjectText = "WoodLog " .. log:GetAttribute("Weight") .. "kg"
+	end
+end
+
+function Gameplay:_attachDragPrompt(log)
+	local logPart = getLogPart(log)
+	if not logPart then
+		return
+	end
+	local existing = logPart:FindFirstChildOfClass("ProximityPrompt")
+	if existing then
+		existing:Destroy()
+	end
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Drag"
+	prompt.ObjectText = "WoodLog"
+	prompt.HoldDuration = 0.3
+	prompt.MaxActivationDistance = 6
+	prompt.RequiresLineOfSight = true
+	prompt.Parent = logPart
+	prompt.Triggered:Connect(function(player)
+		if log:GetAttribute("DraggedBy") == player.UserId then
+			log:SetAttribute("DraggedBy", nil)
+			if self._dragging[player] == log then
+				self._dragging[player] = nil
+			end
+			prompt.ActionText = "Drag"
+		elseif log:GetAttribute("DraggedBy") == nil then
+			local previous = self._dragging[player]
+			if previous and previous ~= log then
+				previous:SetAttribute("DraggedBy", nil)
+				local prevPart = getLogPart(previous)
+				local prevPrompt = prevPart and prevPart:FindFirstChildOfClass("ProximityPrompt")
+				if prevPrompt then
+					prevPrompt.ActionText = "Drag"
+				end
+			end
+			log:SetAttribute("DraggedBy", player.UserId)
+			self._dragging[player] = log
+			prompt.ActionText = "Drop"
+		end
+	end)
+end
+
+function Gameplay:_dropLogPieces(treeModel, spotPos)
+	local template = self.World.WoodLogTemplate
+	if not template then
+		return
+	end
+	local woodPart = findWoodPart(treeModel)
+	if not woodPart then
+		return
+	end
+	local woodSize = woodPart.Size
+	local axisVec, woodLength = lengthAxis(woodSize)
+	local pieceCount = math.clamp(math.round(woodLength / Config.Log.PieceTargetLength), 1, Config.Log.MaxPieces)
+	local pieceLength = woodLength / pieceCount
+
+	for _ = 1, pieceCount do
+		local log = template:Clone()
+		local logPart = getLogPart(log)
+		if logPart then
+			log.Name = "WoodLog"
+			logPart.Size = woodSize
+			setLength(logPart, axisVec, pieceLength)
+			for _, part in ipairs(log:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Anchored = true
+					part.CanCollide = true
+				end
+			end
+			log:SetAttribute("PieceHits", 0)
+			log.Parent = self.LogsFolder
+
+			if axisVec == Vector3.yAxis then
+				log:PivotTo(log:GetPivot() * CFrame.Angles(0, 0, math.rad(90)))
+			end
+			local pivot = log:GetPivot()
+			local yaw = CFrame.Angles(0, math.random() * math.pi * 2, 0)
+			log:PivotTo(CFrame.new(pivot.Position) * yaw * (pivot - pivot.Position))
+
+			local ox = spotPos.X + (math.random() - 0.5) * 3
+			local oz = spotPos.Z + (math.random() - 0.5) * 3
+			self.World:SnapPartToGround(log, logPart, ox, oz)
+
+			self:_attachDragPrompt(log)
+			self:_refreshLog(log)
+		end
+	end
+end
+
+function Gameplay:_shakeTree(tree)
+	if tree:GetAttribute("Shaking") or tree:GetAttribute("Falling") then
+		return
+	end
+	tree:SetAttribute("Shaking", true)
+	task.spawn(function()
+		local pos = tree:GetPivot().Position
+		local base = Vector3.new(pos.X, self.World:GroundY(pos.X, pos.Z), pos.Z)
+		local axis = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5)
+		if axis.Magnitude < 0.1 then
+			axis = Vector3.new(1, 0, 0)
+		end
+		axis = axis.Unit
+		local tilt = CFrame.fromAxisAngle(axis, math.rad(2.5))
+		rotateAround(tree, base, tilt)
+		task.wait(0.07)
+		if tree.Parent then
+			rotateAround(tree, base, tilt:Inverse())
+			local settle = CFrame.fromAxisAngle(axis, math.rad(-1.2))
+			rotateAround(tree, base, settle)
+			task.wait(0.06)
+			if tree.Parent then
+				rotateAround(tree, base, settle:Inverse())
+			end
+		end
+		if tree.Parent then
+			tree:SetAttribute("Shaking", false)
+		end
+	end)
+end
+
+function Gameplay:_fellTree(tree)
+	tree:SetAttribute("Falling", true)
+	local spotPos = tree:GetPivot().Position
+	task.spawn(function()
+		local base = Vector3.new(spotPos.X, self.World:GroundY(spotPos.X, spotPos.Z), spotPos.Z)
+		local axis = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5)
+		if axis.Magnitude < 0.1 then
+			axis = Vector3.new(1, 0, 0)
+		end
+		axis = axis.Unit
+		local total = math.rad(math.random(72, 86))
+		local steps = 16
+		local previous = 0
+		for i = 1, steps do
+			if not tree.Parent then
+				return
+			end
+			local t = i / steps
+			local angle = total * t * t
+			rotateAround(tree, base, CFrame.fromAxisAngle(axis, angle - previous))
+			previous = angle
+			task.wait(0.03)
+		end
+		if not tree.Parent then
+			return
+		end
+		local bounce = CFrame.fromAxisAngle(axis, math.rad(-4))
+		rotateAround(tree, base, bounce)
+		task.wait(0.07)
+		if not tree.Parent then
+			return
+		end
+		rotateAround(tree, base, bounce:Inverse())
+		self:_dropLogPieces(tree, spotPos)
+		tree:Destroy()
+	end)
+end
+
+function Gameplay:_cutLog(player, log)
+	local logPart = getLogPart(log)
+	if not logPart then
+		return
+	end
+
+	local hits = (log:GetAttribute("PieceHits") or 0) + 1
+	if hits < Config.Log.HitsPerCut then
+		log:SetAttribute("PieceHits", hits)
+		return
+	end
+
+	local size = logPart.Size
+	local volume = size.X * size.Y * size.Z
+	local woodAmount = math.max(1, math.floor(volume * Config.Log.WoodPerVolume + 0.5))
+	self._wood[player] = (self._wood[player] or 0) + woodAmount
+	player:SetAttribute("Wood", self._wood[player])
+	if self._dragging[player] == log then
+		self._dragging[player] = nil
+	end
+	log:Destroy()
+end
+
+function Gameplay:_onAxeActivated(player)
+	local character = player.Character
+	if not character then
+		return
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
+
+	local target = nil
+	local targetIsLog = false
+	local nearestDistance = Config.Tree.ChopRange
+
+	local treesFolder = self.World.TreesFolder
+	if treesFolder then
+		for _, tree in ipairs(treesFolder:GetChildren()) do
+			if not tree:GetAttribute("Falling") then
+				local pivot = tree:GetPivot().Position
+				local dx = pivot.X - root.Position.X
+				local dz = pivot.Z - root.Position.Z
+				local distance = math.sqrt(dx * dx + dz * dz)
+				if distance < nearestDistance then
+					target = tree
+					targetIsLog = false
+					nearestDistance = distance
+				end
+			end
+		end
+	end
+	for _, log in ipairs(self.LogsFolder:GetChildren()) do
+		local pivot = log:GetPivot().Position
+		local dx = pivot.X - root.Position.X
+		local dz = pivot.Z - root.Position.Z
+		local distance = math.sqrt(dx * dx + dz * dz)
+		if distance < nearestDistance then
+			target = log
+			targetIsLog = true
+			nearestDistance = distance
+		end
+	end
+	if not target then
+		return
+	end
+
+	if targetIsLog then
+		self:_cutLog(player, target)
+		return
+	end
+
+	local remaining = (target:GetAttribute("Health") or Config.Tree.Health) - 1
+	if remaining > 0 then
+		target:SetAttribute("Health", remaining)
+		self:_shakeTree(target)
+		return
+	end
+
+	self:_fellTree(target)
+end
+
+function Gameplay:Update(dt)
+	local world = self.World
+	for player, survival in pairs(self._survivals) do
+		local context = { IsSprinting = self._sprinting[player] == true }
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+
+		local log = self._dragging[player]
+		if log and (not log.Parent or log:GetAttribute("DraggedBy") ~= player.UserId) then
+			self._dragging[player] = nil
+			log = nil
+		end
+
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			local baseSpeed = self._sprinting[player] and Config.Survival.SprintSpeed or Config.Survival.WalkSpeed
+			local factor = 1
+			if log then
+				local w = log:GetAttribute("Weight") or 0
+				factor = math.clamp(1 - w * Config.Log.DragSlowPerWeight, Config.Log.MinDragSpeedFactor, 1)
+			end
+			humanoid.WalkSpeed = baseSpeed * factor
+		end
+
+		if log and root then
+			local look = root.CFrame.LookVector
+			local tx = root.Position.X - look.X * Config.Log.DragDistance
+			local tz = root.Position.Z - look.Z * Config.Log.DragDistance
+			local pivotPos = log:GetPivot().Position
+			local nx = pivotPos.X + (tx - pivotPos.X) * 0.4
+			local nz = pivotPos.Z + (tz - pivotPos.Z) * 0.4
+			local logPart = getLogPart(log)
+			if logPart then
+				world:SnapPartToGround(log, logPart, nx, nz)
+			end
+		end
+
+		if root and world:IsLit() and world.FireCore then
+			local dx = root.Position.X - world.FireCore.Position.X
+			local dz = root.Position.Z - world.FireCore.Position.Z
+			if math.sqrt(dx * dx + dz * dz) <= Config.Campfire.WarmthRadius then
+				context.FireRate = Config.Campfire.WarmthRate
+			end
+		end
+
+		survival:Update(dt, context)
+		self:_syncAttributes(player)
+	end
+end
+
+return Gameplay

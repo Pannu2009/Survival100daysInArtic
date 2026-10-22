@@ -8,11 +8,15 @@ Survive 100 Days in the Arctic — a Roblox survival game. Design doc lives outs
 |---|---|---|
 | `ReplicatedStorage/` | ReplicatedStorage | Shared modules (Config, Signal) used by server and client |
 | `ServerStorage/` | ServerStorage | Server-only modules (core clock, temperature, hunger, survival) |
-| `ServerScript/` | ServerScriptService | Server scripts (runtime entry points — later step) |
+| `ServerScript/` | ServerScriptService | The server script — init only; all logic lives in modules |
 | `PlayerScripts/` | StarterPlayer > StarterPlayerScripts | Client scripts (HUD, input — later phases) |
 | `Others/` | not synced | Models, meshes, and other raw assets |
 
 `default.project.json` is a Rojo project file that maps these folders into the tree above. Copy-pasting the folders into Studio by hand works too.
+
+## Sync rules
+
+- **Rojo sync is narrow on purpose.** `default.project.json` maps only `ReplicatedStorage/Modules`, `ServerStorage/Modules`, and the two runtime scripts (`SurvivalServer`, `SurvivalClient`). Everything else in Studio — the `Assets` folder, spare models, anything you add by hand — is outside Rojo's reach and never gets deleted by a sync.
 
 ## Architecture rules
 
@@ -21,12 +25,14 @@ Survive 100 Days in the Arctic — a Roblox survival game. Design doc lives outs
 
 ## Status
 
-**Phase 1 — Core clock (complete).** Modules plus runtime scripts. Sync with Rojo, press Play: a seeded snow world generates, the day/night cycle runs on one server-wide clock, and you can chop trees, feed the campfire, sprint (at 2x hunger), freeze, starve, get sick, and die. Death currently respawns you fresh for testing — full run-reset arrives with the lobby phase.
+**Phase 1 — Core clock (complete).** Runtime is live on the `Phase1` branch: the server script picks a seed, builds the terrain, starts the one server-wide clock, and spawns a `SurvivalPlayer` per player. Playable now: day/night cycle, weather, chopping (a felled tree drops a WoodLog — drag it as-is or cut it into pieces for wood; heavier logs slow your movement), campfire warmth and feeding, sprint (2x hunger drain), freeze / starve / sick / die, and the HUD. Tuning: hunger caps at 50 and cold drains warmth fast — the fire matters. Trees and logs come from the models in `ReplicatedStorage/Assets` (`Tree`, `WoodLog`) — there are no code-built placeholder models.
 
 - `DayNightClock` — day/night cycle (3 min day, 2 min night), day counter, day multiplier.
 - `Temperature` — weather (Clear / Storm / Blizzard), ambient temperature, cold exposure rates.
 - `Hunger` — hunger value, drain (sprinting drains 2x), starving state.
 - `SurvivalPlayer` — one player's health / warmth / hunger / sickness, ticked together.
+- `WorldBuilder` — builds the world: terrain (skippable via `Config.World.GenerateTerrain` for hand-made maps), tree planting with seeded size variety, the campfire, ground-height lookups, and the shared HUD world state.
+- `Gameplay` — players and interaction: survival ticking, the axe, tree shake/fall (a felled tree drops log pieces — bigger, thicker trees drop more, up to 10; pieces are ground-snapped, draggable with weight-based slowdown, and chop into wood by volume), and sprint.
 - `Seed` — deterministic RNG from a 5–8 letter seed string. `Fork("lake")` gives each feature its own stream, so changing one feature never reshuffles the others. Same seed = same numbers, always.
 - `WorldGen` — turns a seed into a world layout (data only): mountain, frozen lake, tree spots, cabin spots, plus reserved coal and yeti-cave spots for later phases.
 - `TerrainBuilder` — paints a layout into Workspace Terrain: snow base, rock mountain with a snow cap, carved lake with a glacier surface.
