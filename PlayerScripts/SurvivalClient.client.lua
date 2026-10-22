@@ -55,6 +55,17 @@ local function makeLabel(parent, text, size, position, color, textSize)
 	return label
 end
 
+local function addStroke(parent, color, thickness, transparency)
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = color
+	stroke.Thickness = thickness or 1
+	stroke.Transparency = transparency or 0.5
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Parent = parent
+	return stroke
+end
+
+
 local topPanel = Instance.new("Frame")
 topPanel.Name = "TopPanel"
 topPanel.Size = UDim2.fromOffset(216, 128)
@@ -67,6 +78,7 @@ topPanel.Parent = gui
 local topCorner = Instance.new("UICorner")
 topCorner.CornerRadius = UDim.new(0, 10)
 topCorner.Parent = topPanel
+addStroke(topPanel, SILVER, 1, 0.55)
 
 local dayLabel = makeLabel(topPanel, "DAY 1", UDim2.new(1, -16, 0, 26), UDim2.fromOffset(8, 6), SILVER, 22)
 local phaseLabel = makeLabel(topPanel, "Day", UDim2.new(0.5, -8, 0, 20), UDim2.fromOffset(8, 36), SILVER, 15)
@@ -91,6 +103,7 @@ objectivePanel.Parent = gui
 local objectiveCorner = Instance.new("UICorner")
 objectiveCorner.CornerRadius = UDim.new(0, 8)
 objectiveCorner.Parent = objectivePanel
+addStroke(objectivePanel, SILVER, 1, 0.55)
 local objectiveLabel = makeLabel(objectivePanel, "Day 1: Fell a tree", UDim2.new(1, -12, 1, 0), UDim2.fromOffset(6, 0), SILVER, 13)
 objectiveLabel.TextXAlignment = Enum.TextXAlignment.Center
 
@@ -157,6 +170,7 @@ sprintButton.Parent = gui
 local sprintCorner = Instance.new("UICorner")
 sprintCorner.CornerRadius = UDim.new(0, 12)
 sprintCorner.Parent = sprintButton
+addStroke(sprintButton, AUBERGINE, 1.5, 0.25)
 
 -- Context action: appears while a dragged log hovers over the sled's
 -- cargo zone. Tappable on touch, clickable on PC, key-bound per
@@ -175,6 +189,7 @@ storeButton.Parent = gui
 local storeCorner = Instance.new("UICorner")
 storeCorner.CornerRadius = UDim.new(0, 12)
 storeCorner.Parent = storeButton
+addStroke(storeButton, AUBERGINE, 1.5, 0.25)
 
 local storeTitle = makeLabel(storeButton, "STORE ITEM", UDim2.new(1, -8, 0, 22), UDim2.fromOffset(4, 6), AUBERGINE, 15)
 storeTitle.TextXAlignment = Enum.TextXAlignment.Center
@@ -206,6 +221,7 @@ eatButton.Parent = gui
 local eatCorner = Instance.new("UICorner")
 eatCorner.CornerRadius = UDim.new(0, 12)
 eatCorner.Parent = eatButton
+addStroke(eatButton, AUBERGINE, 1.5, 0.25)
 local eatHint = makeLabel(gui, "tap", UDim2.fromOffset(132, 16), UDim2.new(1, -156, 1, -148), SILVER, 11)
 eatHint.TextXAlignment = Enum.TextXAlignment.Center
 eatHint.Visible = false
@@ -231,6 +247,7 @@ buildMenu.Parent = gui
 local buildMenuCorner = Instance.new("UICorner")
 buildMenuCorner.CornerRadius = UDim.new(0, 12)
 buildMenuCorner.Parent = buildMenu
+addStroke(buildMenu, SILVER, 1, 0.4)
 local buildTitle = makeLabel(buildMenu, "BUILD", UDim2.new(1, -16, 0, 24), UDim2.fromOffset(8, 8), SILVER, 17)
 buildTitle.TextXAlignment = Enum.TextXAlignment.Center
 
@@ -247,6 +264,7 @@ campfireBuildButton.Parent = buildMenu
 local campfireBuildCorner = Instance.new("UICorner")
 campfireBuildCorner.CornerRadius = UDim.new(0, 10)
 campfireBuildCorner.Parent = campfireBuildButton
+addStroke(campfireBuildButton, AUBERGINE, 1.5, 0.25)
 
 local buildCloseButton = Instance.new("TextButton")
 buildCloseButton.Size = UDim2.new(1, -24, 0, 34)
@@ -289,6 +307,7 @@ placeButton.Parent = gui
 local placeCorner = Instance.new("UICorner")
 placeCorner.CornerRadius = UDim.new(0, 12)
 placeCorner.Parent = placeButton
+addStroke(placeButton, AUBERGINE, 1.5, 0.25)
 
 local cancelPlaceButton = Instance.new("TextButton")
 cancelPlaceButton.Name = "CancelPlaceButton"
@@ -306,6 +325,7 @@ cancelPlaceButton.Parent = gui
 local cancelPlaceCorner = Instance.new("UICorner")
 cancelPlaceCorner.CornerRadius = UDim.new(0, 12)
 cancelPlaceCorner.Parent = cancelPlaceButton
+addStroke(cancelPlaceButton, AUBERGINE, 1.5, 0.4)
 
 local function stopPlacing()
 	placing = false
@@ -358,6 +378,7 @@ hotbar.Parent = gui
 local hotbarCorner = Instance.new("UICorner")
 hotbarCorner.CornerRadius = UDim.new(0, 10)
 hotbarCorner.Parent = hotbar
+addStroke(hotbar, SILVER, 1, 0.55)
 
 local slotFrames = {}
 local slotLabels = {}
@@ -397,6 +418,7 @@ local function makeSlot(index, name, isTool)
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = slot
+	addStroke(slot, AUBERGINE, 1, 0.6)
 	local label = makeLabel(slot, name, UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 4), SILVER, 12)
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	local value = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 24), MARIGOLD, 13)
@@ -611,6 +633,8 @@ end
 -- scanning the whole folder every frame.
 local myDragPart = nil
 local lastDragSend = 0
+local dragSmoothedTarget = nil
+local dragSmoothedPart = nil
 local function trackLog(log)
 	local part = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
 	if not part then
@@ -670,6 +694,10 @@ end
 RunService.RenderStepped:Connect(function(dt)
 	local myPart = myDragPart
 	dragDot.Visible = myPart ~= nil
+	if not myPart then
+		dragSmoothedPart = nil
+		dragSmoothedTarget = nil
+	end
 
 	canStore = false
 	if myPart and myPart.Parent and not myPart.Parent:GetAttribute("OnSled") then
@@ -758,17 +786,27 @@ RunService.RenderStepped:Connect(function(dt)
 	local targetY = math.clamp(desiredY, minY, root.Position.Y + Config.Log.DragMaxRise)
 	local target = Vector3.new(anchor.X, targetY, anchor.Z)
 
-	-- Close on the anchor fast, but stay inside the step speed the
-	-- server accepts, so the intent stream remains valid.
-	local delta = target - pos
+	-- Glide, don't snap: the aim target is low-passed so terrain
+	-- bumps stop shaking the carry height, the item eases toward it
+	-- inside the server's accepted step speed, and physics velocity
+	-- is zeroed every frame so gravity can't fight the hold between
+	-- frames (that fight was the shake).
+	if dragSmoothedPart ~= myPart then
+		dragSmoothedPart = myPart
+		dragSmoothedTarget = target
+	end
+	dragSmoothedTarget = dragSmoothedTarget:Lerp(target, 1 - math.exp(-dt * 10))
+	local delta = dragSmoothedTarget - pos
 	local gap = delta.Magnitude
 	local newPos = pos
 	if gap > 0.001 then
-		local step = math.min(gap, math.clamp(gap * 7, 6, 38) * dt)
+		local step = math.min(gap * (1 - math.exp(-dt * 12)), 38 * dt)
 		newPos = pos + delta.Unit * step
 	end
 
 	myPart.CFrame = CFrame.new(newPos) * (cf - cf.Position)
+	myPart.AssemblyLinearVelocity = Vector3.zero
+	myPart.AssemblyAngularVelocity = Vector3.zero
 
 	-- Stream the applied position as a movement intent at 20 Hz.
 	-- The server validates reach and step speed per intent and keeps

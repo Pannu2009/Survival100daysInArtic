@@ -6,6 +6,7 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local DragSystem = require(Modules:WaitForChild("DragSystem"))
 local SurvivalPlayer = require(script.Parent:WaitForChild("SurvivalPlayer"))
+local FishSystem = require(script.Parent:WaitForChild("FishSystem"))
 
 local Gameplay = {}
 Gameplay.__index = Gameplay
@@ -66,6 +67,8 @@ function Gameplay.new(world, clock, temperature)
 	self._sprinting = {}
 	self._lighterFuel = {}
 	self._tutorial = {}
+	self._burning = {}
+	self.Fish = FishSystem.new(self)
 	self._digReady = {}
 	self._axeReady = {}
 	self._published = {}
@@ -80,12 +83,7 @@ function Gameplay:Start()
 	logsFolder.Parent = workspace
 	self.LogsFolder = logsFolder
 
-	local fishFolder = Instance.new("Folder")
-	fishFolder.Name = "Fish"
-	fishFolder.Parent = workspace
-	self.FishFolder = fishFolder
-	local assetsFolder = ReplicatedStorage:WaitForChild("Assets", 5)
-	self.FishTemplate = assetsFolder and assetsFolder:FindFirstChild("Fish")
+	self.Fish:Start()
 
 	DragSystem.OnStopped = function(item)
 		local model = item.Parent
@@ -135,9 +133,6 @@ function Gameplay:Start()
 	self:_buildBlueprintTool()
 	self:_buildLighter()
 
-	self.World.OnFeedAttempt = function(player, fire)
-		return self:_feedLog(player, fire.Core.Position)
-	end
 	self.World.OnBlueprintAdd = function(player, bp)
 		return self:_addLogToBlueprint(player, bp)
 	end
@@ -154,17 +149,8 @@ function Gameplay:Start()
 	eatFish.Name = "EatFish"
 	eatFish.Parent = remotes
 	eatFish.OnServerEvent:Connect(function(player, fish)
-		self:_eatFish(player, fish)
+		self.Fish:Eat(player, fish)
 	end)
-
-	-- Starter fish on the lake ice so the cook/eat loop is testable
-	-- before ice fishing lands (Day 2).
-	if self.FishTemplate and self.World.Layout and self.World.Layout.Lake then
-		local lake = self.World.Layout.Lake
-		for i = 1, 3 do
-			self:_spawnFish(lake.X + (i - 2) * 4, lake.Z + lake.Radius * 0.3)
-		end
-	end
 
 	setSprinting.OnServerEvent:Connect(function(player, value)
 		self._sprinting[player] = value == true
@@ -201,6 +187,18 @@ function Gameplay:Start()
 end
 
 function Gameplay:_buildAxe()
+	-- Ajay's own axe from Assets.Tools wins when it exists.
+	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
+	local toolsFolder = assets and assets:FindFirstChild("Tools")
+	local axeTemplate = toolsFolder and toolsFolder:FindFirstChild("Axe")
+	if axeTemplate and axeTemplate:IsA("Tool") then
+		local axe = axeTemplate:Clone()
+		axe.Name = "Axe"
+		axe.CanBeDropped = false
+		axe.Parent = StarterPack
+		return
+	end
+
 	local axe = Instance.new("Tool")
 	axe.Name = "Axe"
 	axe.RequiresHandle = true
@@ -453,6 +451,28 @@ function Gameplay:_onCharacter(player, character)
 			if not charRoot then
 				return
 			end
+			-- Burnable wood first: the lighter sets the nearest log
+			-- itself burning. Otherwise it lights a campfire.
+			local bestLog = nil
+			local bestDistance = 9
+			for _, log in ipairs(self.LogsFolder:GetChildren()) do
+				if log:GetAttribute("Burnable")
+					and not log:GetAttribute("OnSled")
+					and log:GetAttribute("Burning") ~= true
+				then
+					local lp = getLogPart(log)
+					if lp and lp:GetAttribute("DraggedBy") == nil then
+						local d = (lp.Position - charRoot.Position).Magnitude
+						if d < bestDistance then
+							bestLog = log
+							bestDistance = d
+						end
+					end
+				end
+			end
+			if bestLog and self:_igniteLog(player, bestLog) then
+				return
+			end
 			for _, fire in ipairs(self.World.Fires) do
 				if not fire.Lit and fire.Fuel > 0
 					and (fire.Core.Position - charRoot.Position).Magnitude <= 9
@@ -538,14 +558,6 @@ function Gameplay:_takeLogNear(player, position)
 	return taken
 end
 
-function Gameplay:_feedLog(player, firePosition)
-	local taken = self:_takeLogNear(player, firePosition)
-	if not taken then
-		return nil
-	end
-	return taken.BurnUnits
-end
-
 function Gameplay:_addLogToBlueprint(player, bp)
 	local taken = self:_takeLogNear(player, bp.Position)
 	if not taken then
@@ -571,162 +583,82 @@ function Gameplay:_lightFire(player, fire)
 	return true
 end
 
-local function getFishPart(fish)
-	return fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true)
+-- Ignite one burnable log with the lighter. A burning log is a
+-- small fire of its own: it warms nearby players, cooks fish, and
+-- burns for as long as its wood is worth, then it's gone.
+function Gameplay:_igniteLog(player, log)
+	local logPart = getLogPart(log)
+	if not logPart or log:GetAttribute("Burning") == true then
+		return false
+	end
+	local fuel = self._lighterFuel[player] or 0
+	if fuel < Config.Lighter.LightCost then
+		return false
+	end
+	self._lighterFuel[player] = fuel - Config.Lighter.LightCost
+	log:SetAttribute("Burning", true)
+
+	local flame = Instance.new("Fire")
+	flame.Name = "BurnFlame"
+	flame.Size = 5
+	flame.Heat = 10
+	flame.Parent = logPart
+	local light = Instance.new("PointLight")
+	light.Name = "BurnLight"
+	light.Color = Color3.fromRGB(255, 176, 66)
+	light.Range = 12
+	light.Brightness = 1.5
+	light.Parent = logPart
+
+	self._burning[log] = logBurnUnits(logPart) * Config.Campfire.FuelPerBurnUnit
+	return true
 end
 
-local function pointInPart(position, part, slack)
-	local p = part.CFrame:PointToObjectSpace(position)
-	local s = part.Size
-	return math.abs(p.X) <= s.X / 2 + slack
-		and math.abs(p.Y) <= s.Y / 2 + slack
-		and math.abs(p.Z) <= s.Z / 2 + slack
-end
-
--- Fish are physical items built from Ajay's Assets.Fish (parts
--- F1..F5, welded to F1): drag them, cook them in a fire's FireBox,
--- eat them.
-function Gameplay:_spawnFish(x, z)
-	local template = self.FishTemplate
-	if not template then
-		return
-	end
-	local fish = template:Clone()
-	fish.Name = "Fish"
-	fish:SetAttribute("Weight", 1.5)
-	fish:SetAttribute("Cooked", false)
-	fish:SetAttribute("Pieces", Config.Food.PiecesPerFish)
-	fish.Parent = self.FishFolder
-
-	local primary = getFishPart(fish)
-	if not primary then
-		fish:Destroy()
-		return
-	end
-	local delta = Vector3.new(x, self.World:GroundY(x, z) + 1, z) - primary.Position
-	for _, part in ipairs(fish:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CFrame = part.CFrame + delta
-		end
-	end
-	for _, part in ipairs(fish:GetDescendants()) do
-		if part:IsA("BasePart") then
-			if part == primary then
-				part.Anchored = true
-				part.CanCollide = true
-			else
-				part.Anchored = false
-				part.CanCollide = false
-				part.Massless = true
-				local weld = Instance.new("WeldConstraint")
-				weld.Part0 = primary
-				weld.Part1 = part
-				weld.Parent = primary
-			end
-		elseif part:IsA("Script") or part:IsA("LocalScript") then
-			part:Destroy()
-		end
-	end
-	if fish:IsA("Model") then
-		fish.PrimaryPart = primary
-	end
-	self:_attachFishDragPrompt(fish, primary)
-end
-
-function Gameplay:_attachFishDragPrompt(fish, part)
-	fish:SetAttribute("Draggable", true)
-	part:SetAttribute("Draggable", true)
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Drag"
-	prompt.ObjectText = "Fish"
-	prompt.HoldDuration = 0.3
-	prompt.MaxActivationDistance = 7
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = part
-	prompt.Triggered:Connect(function(player)
-		if part:GetAttribute("DraggedBy") == player.UserId then
-			DragSystem.Stop(player, part)
-		elseif part:GetAttribute("DraggedBy") == nil then
-			if DragSystem.Start(player, part) then
-				prompt.ActionText = "Drop"
-			end
-		end
-	end)
-end
-
-function Gameplay:_eatFish(player, fish)
-	if typeof(fish) ~= "Instance" or fish.Parent ~= self.FishFolder then
-		return
-	end
-	local survival = self._survivals[player]
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local part = getFishPart(fish)
-	if not survival or not root or not part then
-		return
-	end
-	if (part.Position - root.Position).Magnitude > 11 then
-		return
-	end
-	-- One fish is 5 pieces; each eat takes one piece off the model.
-	local cooked = fish:GetAttribute("Cooked") == true
-	survival.Hunger:Eat(cooked and Config.Food.CookedPieceHunger or Config.Food.RawPieceHunger)
-	survival.Health = math.min(
-		Config.Survival.MaxHealth,
-		survival.Health + (cooked and Config.Food.CookedPieceHeal or Config.Food.RawPieceHeal)
-	)
-	local pieces = (fish:GetAttribute("Pieces") or Config.Food.PiecesPerFish) - 1
-	if pieces <= 0 then
-		if part:GetAttribute("DraggedBy") then
-			DragSystem.ForceStop(part)
-		end
-		fish:Destroy()
-		return
-	end
-	fish:SetAttribute("Pieces", pieces)
-	fish:SetAttribute("Weight", 1.5 * pieces / Config.Food.PiecesPerFish)
-	for i = Config.Food.PiecesPerFish, 2, -1 do
-		local piecePart = fish:FindFirstChild("F" .. i)
-		if piecePart then
-			piecePart:Destroy()
-			break
-		end
-	end
-end
-
--- A fish resting inside a burning fire's CookingPart cooks over
--- CookSeconds, then turns golden and counts as cooked food.
-function Gameplay:_cookFish(dt)
-	if not self.FishFolder then
-		return
-	end
-	for _, fish in ipairs(self.FishFolder:GetChildren()) do
-		if fish:GetAttribute("Cooked") ~= true then
-			local part = getFishPart(fish)
-			if part and part:GetAttribute("DraggedBy") == nil then
-				local cooking = false
-				for _, fire in ipairs(self.World.Fires) do
-					if fire.Lit and fire.Fuel > 0 and fire.CookingPart
-						and pointInPart(part.Position, fire.CookingPart, 0.75)
-					then
-						cooking = true
-						break
-					end
+function Gameplay:_tickBurning(dt)
+	for log, timeLeft in pairs(self._burning) do
+		if not log.Parent then
+			self._burning[log] = nil
+		else
+			timeLeft -= dt
+			if timeLeft <= 0 then
+				self._burning[log] = nil
+				local logPart = getLogPart(log)
+				if logPart and logPart:GetAttribute("DraggedBy") then
+					DragSystem.ForceStop(logPart)
 				end
-				if cooking then
-					local t = (fish:GetAttribute("CookTime") or 0) + dt
-					if t >= Config.Food.CookSeconds then
-						fish:SetAttribute("Cooked", true)
-						for _, p in ipairs(fish:GetDescendants()) do
-							if p:IsA("BasePart") then
-								p.Color = Color3.fromRGB(198, 124, 56)
-							end
-						end
-					else
-						fish:SetAttribute("CookTime", t)
+				log:Destroy()
+			else
+				self._burning[log] = timeLeft
+			end
+		end
+	end
+end
+
+-- Physical campfire feeding: a burnable log that lands inside a
+-- fire's AddWoodBox is consumed as that fire's fuel.
+function Gameplay:_feedFires()
+	for _, fire in ipairs(self.World.Fires) do
+		if fire.AddBox then
+			for _, log in ipairs(self.LogsFolder:GetChildren()) do
+				if not log:GetAttribute("OnSled") then
+					local logPart = getLogPart(log)
+					local inBox = false
+					if logPart then
+						local rel = fire.AddBox.CFrame:PointToObjectSpace(logPart.Position)
+						local half = fire.AddBox.Size / 2 + Vector3.new(0.3, 0.3, 0.3)
+						inBox = math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
 					end
-				elseif (fish:GetAttribute("CookTime") or 0) ~= 0 then
-					fish:SetAttribute("CookTime", 0)
+					if logPart and inBox then
+						local units = logBurnUnits(logPart)
+						if logPart:GetAttribute("DraggedBy") then
+							DragSystem.ForceStop(logPart)
+						end
+						self._burning[log] = nil
+						log:Destroy()
+						if units > 0 then
+							self.World:AddFuel(fire, units)
+						end
+					end
 				end
 			end
 		end
@@ -739,6 +671,10 @@ function Gameplay:_refreshLog(log)
 		return
 	end
 	log:SetAttribute("Weight", logWeight(logPart))
+	log:SetAttribute("Burnable", true)
+	if log:GetAttribute("Burning") == nil then
+		log:SetAttribute("Burning", false)
+	end
 	local prompt = logPart:FindFirstChildOfClass("ProximityPrompt")
 	if prompt then
 		prompt.ObjectText = "WoodLog " .. log:GetAttribute("Weight") .. "kg"
@@ -904,6 +840,7 @@ function Gameplay:_fellTree(tree)
 	end)
 end
 
+
 function Gameplay:_onAxeActivated(player)
 	local now = os.clock()
 	if now < (self._axeReady[player] or 0) then
@@ -970,7 +907,9 @@ end
 
 function Gameplay:Update(dt)
 	local world = self.World
-	self:_cookFish(dt)
+	self.Fish:Cook(dt)
+	self:_feedFires()
+	self:_tickBurning(dt)
 	for player, survival in pairs(self._survivals) do
 		local context = { IsSprinting = self._sprinting[player] == true }
 		local character = player.Character
@@ -999,6 +938,15 @@ function Gameplay:Update(dt)
 			local rate = world:WarmthRateAt(root.Position)
 			if rate then
 				context.FireRate = rate
+			end
+		end
+		if root and not context.FireRate then
+			for log in pairs(self._burning) do
+				local lp = getLogPart(log)
+				if lp and (lp.Position - root.Position).Magnitude <= Config.Campfire.BurningLogRadius then
+					context.FireRate = Config.Campfire.BurningLogWarmRate
+					break
+				end
 			end
 		end
 

@@ -30,7 +30,6 @@ function WorldBuilder.new(layout)
 	self.Layout = layout
 	self.Fires = {}
 	self.Blueprints = {}
-	self.OnFeedAttempt = nil
 	self.OnBlueprintAdd = nil
 	self.OnBlueprintBuilt = nil
 	self.OnLightAttempt = nil
@@ -145,6 +144,14 @@ end
 
 function WorldBuilder:TerrainRaycastDown(x, z)
 	return workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0), self._groundParams)
+end
+
+-- Credit a fire with burned fuel (physical feeding via AddWoodBox).
+function WorldBuilder:AddFuel(fire, burnUnits)
+	fire.Fuel += burnUnits * Config.Campfire.FuelPerBurnUnit
+	fire.TotalFed += burnUnits
+	self:_recalcLevel(fire)
+	self:_refreshFireVisual(fire)
 end
 
 function WorldBuilder:_recalcLevel(fire)
@@ -352,21 +359,15 @@ function WorldBuilder:_createFire(x, z)
 	end
 	fire.Light = fireLight
 
-	local feedPrompt = Instance.new("ProximityPrompt")
-	feedPrompt.ActionText = "Feed log"
-	feedPrompt.ObjectText = "Campfire"
-	feedPrompt.HoldDuration = 0.4
-	feedPrompt.MaxActivationDistance = 10
-	feedPrompt.Parent = fireCore
-	feedPrompt.Triggered:Connect(function(player)
-		local burnUnits = self.OnFeedAttempt and self.OnFeedAttempt(player, fire)
-		if burnUnits then
-			fire.Fuel += burnUnits * Config.Campfire.FuelPerBurnUnit
-			fire.TotalFed += burnUnits
-			self:_recalcLevel(fire)
-			self:_refreshFireVisual(fire)
-		end
-	end)
+	-- Feeding is physical: burnable items that land in the model's
+	-- AddWoodBox are consumed as this fire's fuel (Gameplay watches
+	-- the box every tick).
+	local addBox = campfire:FindFirstChild("AddWoodBox", true)
+	if addBox and addBox:IsA("BasePart") then
+		addBox.CanCollide = false
+		addBox.CanTouch = false
+		fire.AddBox = addBox
+	end
 
 	local lightPrompt = Instance.new("ProximityPrompt")
 	lightPrompt.ActionText = "Light with lighter"
@@ -500,7 +501,7 @@ function WorldBuilder:_createFire(x, z)
 	state.Size = UDim2.new(1, -12, 0, 16)
 	state.Position = UDim2.fromOffset(6, 42)
 	state.BackgroundTransparency = 1
-	state.Text = "OUT - feed a log, then light it"
+	state.Text = "OUT - drop a log in the wood box, then light it"
 	state.TextColor3 = SILVER
 	state.TextSize = 12
 	state.Font = Enum.Font.Gotham
@@ -706,7 +707,7 @@ function WorldBuilder:UpdateState(clock, temperature)
 			elseif fire.Fuel > 0 then
 				fire.State.Text = "Unlit - light it with a lighter"
 			else
-				fire.State.Text = "OUT - feed a log, then light it"
+				fire.State.Text = "OUT - drop a log in the wood box, then light it"
 			end
 		end
 	end
