@@ -48,7 +48,9 @@ function SledService.new(world, gameplay)
 	self._cargo = {}
 	self._cargoDims = {}
 	self._slots = {}
+	self._origSize = {}
 	self._cargoWeight = 0
+	self._footprint = Vector3.new(4, 2, 7)
 	self._pulling = {}
 	self._ropes = {}
 	self._vel = Vector3.zero
@@ -222,6 +224,7 @@ function SledService:Start()
 	self._cargoPart = cargo
 	local extents = sled:GetExtentsSize()
 	self._halfLength = math.max(extents.X, extents.Z) / 2
+	self._footprint = Vector3.new(extents.X * 0.92, extents.Y, extents.Z * 0.92)
 	sled:SetAttribute("CargoWeight", 0)
 
 	self._vel = Vector3.zero
@@ -251,6 +254,18 @@ function SledService:Start()
 	Players.PlayerRemoving:Connect(function(player)
 		self:_releasePull(player)
 	end)
+
+	local function watchPlayer(player)
+		player.CharacterRemoving:Connect(function()
+			if self._pulling[player] then
+				self:_releasePull(player)
+			end
+		end)
+	end
+	for _, player in ipairs(Players:GetPlayers()) do
+		watchPlayer(player)
+	end
+	Players.PlayerAdded:Connect(watchPlayer)
 
 	RunService.Heartbeat:Connect(function(dt)
 		self:_stepSled(dt)
@@ -454,6 +469,7 @@ function SledService:_loadNearest(player)
 		DragSystem.ForceStop(logPart)
 	end
 	if effLen < dims.len then
+		self._origSize[best] = logPart.Size
 		local sz = logPart.Size
 		if dims.axisVec == Vector3.yAxis then
 			logPart.Size = Vector3.new(sz.X, effLen, sz.Z)
@@ -501,6 +517,15 @@ function SledService:_unloadLast(player)
 	self._cargoDims[piece] = nil
 	self._slots[piece] = nil
 	piece:SetAttribute("OnSled", nil)
+
+	local origSize = self._origSize[piece]
+	if origSize then
+		self._origSize[piece] = nil
+		local part = getLogPart(piece)
+		if part then
+			part.Size = origSize
+		end
+	end
 
 	local pivot = sled:GetPivot()
 	local forward = horizontalDir(pivot.LookVector)
@@ -614,6 +639,10 @@ function SledService:Update(dt)
 		local piece = self._cargo[i]
 		if not piece.Parent then
 			table.remove(self._cargo, i)
+			self._cargoDims[piece] = nil
+			self._slots[piece] = nil
+			self._origSize[piece] = nil
+			self:_relayout()
 			self:_recalcCargoWeight()
 		end
 	end
@@ -750,6 +779,42 @@ function SledService:_stepSled(dt)
 	end
 	local xAxis = yAxis:Cross(zAxis).Unit
 	local canon = CFrame.fromMatrix(Vector3.zero, xAxis, yAxis, zAxis)
+
+	-- Collision: the sled is kinematic, so test its footprint before
+	-- moving. Slide along obstacles; stop when boxed in on both axes.
+	local function blockedAt(cframe)
+		local params = OverlapParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.RespectCanCollide = true
+		local exclude = { sled, workspace.Terrain, self.Gameplay.LogsFolder }
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Character then
+				table.insert(exclude, p.Character)
+			end
+		end
+		params.FilterDescendantsInstances = exclude
+		return #workspace:GetPartBoundsInBox(cframe, self._footprint, params) > 0
+	end
+	local currentCF = CFrame.new(pos.X, pos.Y, pos.Z) * canon * self._orientOffset
+	if not blockedAt(currentCF) then
+		local candidateCF = CFrame.new(newPos.X, pos.Y, newPos.Z) * canon * self._orientOffset
+		if blockedAt(candidateCF) then
+			local cfX = CFrame.new(newPos.X, pos.Y, pos.Z) * canon * self._orientOffset
+			local cfZ = CFrame.new(pos.X, pos.Y, newPos.Z) * canon * self._orientOffset
+			if not blockedAt(cfX) then
+				newPos = Vector3.new(newPos.X, pos.Y, pos.Z)
+				self._vel = Vector3.new(self._vel.X, 0, 0)
+			elseif not blockedAt(cfZ) then
+				newPos = Vector3.new(pos.X, pos.Y, newPos.Z)
+				self._vel = Vector3.new(0, 0, self._vel.Z)
+			else
+				newPos = pos
+				self._vel *= 0.2
+				self._yawVel *= 0.5
+			end
+		end
+	end
+
 	local targetY = world:GroundY(newPos.X, newPos.Z) + self._groundOffset
 	local smoothY = pos.Y + (targetY - pos.Y) * (1 - math.exp(-dt * 10))
 	sled:PivotTo(CFrame.new(newPos.X, smoothY, newPos.Z) * canon * self._orientOffset)

@@ -60,6 +60,7 @@ function Gameplay.new(world, clock, temperature)
 	self._sprinting = {}
 	self._wood = {}
 	self._digReady = {}
+	self._axeReady = {}
 	self._published = {}
 	self.LogsFolder = nil
 	self._setSprinting = nil
@@ -132,6 +133,7 @@ function Gameplay:Start()
 		self._wood[player] = nil
 		self._published[player] = nil
 		self._digReady[player] = nil
+		self._axeReady[player] = nil
 	end)
 end
 
@@ -206,6 +208,9 @@ function Gameplay:_onShovelActivated(player)
 
 	local character = player.Character
 	if not character then
+		return
+	end
+	if not character:FindFirstChild("Shovel") then
 		return
 	end
 	local root = character:FindFirstChild("HumanoidRootPart")
@@ -525,46 +530,62 @@ function Gameplay:_cutLog(player, log)
 end
 
 function Gameplay:_onAxeActivated(player)
+	local now = os.clock()
+	if now < (self._axeReady[player] or 0) then
+		return
+	end
 	local character = player.Character
 	if not character then
+		return
+	end
+	if not character:FindFirstChild("Axe") then
 		return
 	end
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if not root then
 		return
 	end
+	self._axeReady[player] = now + Config.Tree.ChopCooldown
 
-	local target = nil
-	local targetIsLog = false
-	local nearestDistance = Config.Tree.ChopRange
-
+	local candidates = {}
 	local treesFolder = self.World.TreesFolder
 	if treesFolder then
 		for _, tree in ipairs(treesFolder:GetChildren()) do
 			if not tree:GetAttribute("Falling") then
-				local pivot = tree:GetPivot().Position
-				local dx = pivot.X - root.Position.X
-				local dz = pivot.Z - root.Position.Z
-				local distance = math.sqrt(dx * dx + dz * dz)
-				if distance < nearestDistance then
-					target = tree
-					targetIsLog = false
-					nearestDistance = distance
+				local distance = (tree:GetPivot().Position - root.Position).Magnitude
+				if distance <= Config.Tree.ChopRange then
+					table.insert(candidates, { model = tree, isLog = false, distance = distance })
 				end
 			end
 		end
 	end
 	for _, log in ipairs(self.LogsFolder:GetChildren()) do
 		if not log:GetAttribute("OnSled") then
-			local pivot = log:GetPivot().Position
-			local dx = pivot.X - root.Position.X
-			local dz = pivot.Z - root.Position.Z
-			local distance = math.sqrt(dx * dx + dz * dz)
-			if distance < nearestDistance then
-				target = log
-				targetIsLog = true
-				nearestDistance = distance
+			local distance = (log:GetPivot().Position - root.Position).Magnitude
+			if distance <= Config.Tree.ChopRange then
+				table.insert(candidates, { model = log, isLog = true, distance = distance })
 			end
+		end
+	end
+	table.sort(candidates, function(a, b)
+		return a.distance < b.distance
+	end)
+
+	local target = nil
+	local targetIsLog = false
+	local origin = root.Position + Vector3.new(0, 1, 0)
+	for _, candidate in ipairs(candidates) do
+		local targetPos = candidate.model:GetPivot().Position
+		local direction = targetPos - origin
+		local rayParams = RaycastParams.new()
+		rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		rayParams.FilterDescendantsInstances = { character, candidate.model }
+		rayParams.IgnoreWater = true
+		local hit = workspace:Raycast(origin, direction, rayParams)
+		if not hit or hit.Distance >= direction.Magnitude - 2 then
+			target = candidate.model
+			targetIsLog = candidate.isLog
+			break
 		end
 	end
 	if not target then

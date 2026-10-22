@@ -105,6 +105,7 @@ Config.Digging = {
 Config.Tree = {
 	Health = 3,
 	ChopRange = 10,
+	ChopCooldown = 0.35,
 }
 
 Config.Log = {
