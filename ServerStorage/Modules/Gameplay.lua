@@ -595,6 +595,7 @@ function Gameplay:_spawnFish(x, z)
 	fish.Name = "Fish"
 	fish:SetAttribute("Weight", 1.5)
 	fish:SetAttribute("Cooked", false)
+	fish:SetAttribute("Pieces", Config.Food.PiecesPerFish)
 	fish.Parent = self.FishFolder
 
 	local primary = getFishPart(fish)
@@ -667,16 +668,30 @@ function Gameplay:_eatFish(player, fish)
 	if (part.Position - root.Position).Magnitude > 11 then
 		return
 	end
+	-- One fish is 5 pieces; each eat takes one piece off the model.
 	local cooked = fish:GetAttribute("Cooked") == true
-	survival.Hunger:Eat(cooked and Config.Food.CookedFishHunger or Config.Food.RawFishHunger)
+	survival.Hunger:Eat(cooked and Config.Food.CookedPieceHunger or Config.Food.RawPieceHunger)
 	survival.Health = math.min(
 		Config.Survival.MaxHealth,
-		survival.Health + (cooked and Config.Food.CookedFishHeal or Config.Food.RawFishHeal)
+		survival.Health + (cooked and Config.Food.CookedPieceHeal or Config.Food.RawPieceHeal)
 	)
-	if part:GetAttribute("DraggedBy") then
-		DragSystem.ForceStop(part)
+	local pieces = (fish:GetAttribute("Pieces") or Config.Food.PiecesPerFish) - 1
+	if pieces <= 0 then
+		if part:GetAttribute("DraggedBy") then
+			DragSystem.ForceStop(part)
+		end
+		fish:Destroy()
+		return
 	end
-	fish:Destroy()
+	fish:SetAttribute("Pieces", pieces)
+	fish:SetAttribute("Weight", 1.5 * pieces / Config.Food.PiecesPerFish)
+	for i = Config.Food.PiecesPerFish, 2, -1 do
+		local piecePart = fish:FindFirstChild("F" .. i)
+		if piecePart then
+			piecePart:Destroy()
+			break
+		end
+	end
 end
 
 -- A fish resting inside a burning fire's CookingPart cooks over

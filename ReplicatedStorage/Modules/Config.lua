@@ -137,10 +137,11 @@ Config.Log = {
 Config.Food = {
 	RawMeat = 15,
 	CookedMeat = 40,
-	RawFishHunger = 10,
-	RawFishHeal = -5,
-	CookedFishHunger = 16,
-	CookedFishHeal = 2.5,
+	PiecesPerFish = 5,
+	RawPieceHunger = 2,
+	RawPieceHeal = -1,
+	CookedPieceHunger = 16,
+	CookedPieceHeal = 0.5,
 	CookSeconds = 5,
 }
 
