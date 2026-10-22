@@ -108,7 +108,7 @@ end
 
 function WorldBuilder:_recalcLevel()
 	local level = 1
-	for i, needed in ipairs(Config.Campfire.LevelWood) do
+	for i, needed in ipairs(Config.Campfire.LevelBurnUnits) do
 		if self.TotalFed >= needed then
 			level = i
 		end
@@ -214,7 +214,7 @@ function WorldBuilder:_buildCampfire()
 	fireLight.Parent = fireCore
 
 	local feedPrompt = Instance.new("ProximityPrompt")
-	feedPrompt.ActionText = "Feed wood"
+	feedPrompt.ActionText = "Feed log"
 	feedPrompt.ObjectText = "Campfire"
 	feedPrompt.HoldDuration = 0.4
 	feedPrompt.MaxActivationDistance = 10
@@ -227,9 +227,10 @@ function WorldBuilder:_buildCampfire()
 	self._light = fireLight
 
 	feedPrompt.Triggered:Connect(function(player)
-		if self.OnFeedAttempt and self.OnFeedAttempt(player) then
-			self.Fuel += Config.Campfire.FuelPerWood
-			self.TotalFed += 1
+		local burnUnits = self.OnFeedAttempt and self.OnFeedAttempt(player)
+		if burnUnits then
+			self.Fuel += burnUnits * Config.Campfire.FuelPerBurnUnit
+			self.TotalFed += burnUnits
 			self:_recalcLevel()
 		end
 	end)
@@ -362,7 +363,7 @@ function WorldBuilder:UpdateState(clock, temperature)
 		if self:IsLit() then
 			self._fireState.Text = "Fuel " .. math.floor(self.Fuel) .. "s · warm " .. self:GetWarmthRadius() .. " studs"
 		else
-			self._fireState.Text = "OUT - feed wood to relight"
+			self._fireState.Text = "OUT - feed a log to relight"
 		end
 	end
 end

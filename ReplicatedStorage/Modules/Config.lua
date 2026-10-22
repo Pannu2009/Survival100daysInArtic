@@ -69,11 +69,12 @@ Config.World = {
 
 Config.Campfire = {
 	RadiusByLevel = { 18, 23, 28, 33, 38, 44, 50 },
-	LevelWood = { 0, 4, 10, 18, 28, 40, 55 },
+	LevelBurnUnits = { 0, 4, 10, 18, 28, 40, 55 },
 	WarmthRate = 2.4,
 	StartFuelSeconds = 240,
-	FuelPerWood = 45,
+	FuelPerBurnUnit = 45,
 	FuelDisplayMax = 600,
+	FeedRange = 10,
 }
 
 Config.Sled = {
@@ -114,12 +115,12 @@ Config.Log = {
 	BigTreeLength = 14,
 	BigPieceTargetLength = 4,
 	BigTreeMaxPieces = 5,
-	HitsPerCut = 2,
-	WoodPerVolume = 0.2,
+	BurnUnitsPerVolume = 0.2,
 	WeightPerVolume = 2.5,
 	DragSlowPerWeight = 0.008,
 	MinDragSpeedFactor = 0.35,
-	DragDistance = 5,
+	DragDistance = 7,
+	DragMaxRise = 6,
 }
 
 Config.Food = {

@@ -25,6 +25,12 @@ local function logWeight(logPart)
 	return math.floor(size.X * size.Y * size.Z * Config.Log.WeightPerVolume + 0.5)
 end
 
+local function logBurnUnits(logPart)
+	local size = logPart.Size
+	local volume = size.X * size.Y * size.Z
+	return math.max(1, math.floor(volume * Config.Log.BurnUnitsPerVolume + 0.5))
+end
+
 local function lengthAxis(size)
 	if size.Y >= size.X and size.Y >= size.Z then
 		return Vector3.yAxis, size.Y
@@ -58,7 +64,6 @@ function Gameplay.new(world, clock, temperature)
 	self.Temperature = temperature
 	self._survivals = {}
 	self._sprinting = {}
-	self._wood = {}
 	self._digReady = {}
 	self._axeReady = {}
 	self._published = {}
@@ -97,11 +102,7 @@ function Gameplay:Start()
 	self:_buildShovel()
 
 	self.World.OnFeedAttempt = function(player)
-		if (self._wood[player] or 0) < 1 then
-			return false
-		end
-		self._wood[player] -= 1
-		return true
+		return self:_feedLog(player)
 	end
 
 	setSprinting.OnServerEvent:Connect(function(player, value)
@@ -130,7 +131,6 @@ function Gameplay:Start()
 		self:_releaseLogs(player)
 		self._survivals[player] = nil
 		self._sprinting[player] = nil
-		self._wood[player] = nil
 		self._published[player] = nil
 		self._digReady[player] = nil
 		self._axeReady[player] = nil
@@ -253,7 +253,6 @@ function Gameplay:_syncAttributes(player)
 		Warmth = math.floor(survival.Warmth),
 		Hunger = math.floor(survival.Hunger:Get()),
 		IsSick = survival.IsSick,
-		Wood = self._wood[player] or 0,
 	}
 	local published = self._published[player]
 	if not published then
@@ -282,7 +281,6 @@ end
 
 function Gameplay:_setupPlayer(player)
 	self._survivals[player] = self:_makeSurvival(player)
-	self._wood[player] = 0
 	self._sprinting[player] = false
 	self:_syncAttributes(player)
 	player.CharacterAdded:Connect(function(character)
@@ -296,7 +294,6 @@ end
 function Gameplay:_onCharacter(player, character)
 	self:_releaseLogs(player)
 	self._survivals[player] = self:_makeSurvival(player)
-	self._wood[player] = 0
 	self._sprinting[player] = false
 
 	local humanoid = character:WaitForChild("Humanoid")
@@ -333,6 +330,64 @@ end
 
 function Gameplay:ReleaseDraggedLogs(player)
 	self:_releaseLogs(player)
+end
+
+-- A log is the wood: feeding the fire consumes one physical log.
+-- The log the player is dragging wins; otherwise the nearest loose
+-- log beside the fire is used. Bigger logs burn longer and count
+-- more toward the campfire's level.
+function Gameplay:_feedLog(player)
+	if not self.LogsFolder or not self.World.FireCore then
+		return nil
+	end
+
+	local firePosition = self.World.FireCore.Position
+	local chosen = nil
+
+	local draggedPart = DragSystem.GetPlayerItem(player)
+	if draggedPart then
+		local model = draggedPart.Parent
+		if model
+			and model.Parent == self.LogsFolder
+			and not model:GetAttribute("OnSled")
+			and (model:GetPivot().Position - firePosition).Magnitude <= Config.Campfire.FeedRange
+		then
+			chosen = model
+		end
+	end
+
+	if not chosen then
+		local nearestDistance = Config.Campfire.FeedRange
+		for _, log in ipairs(self.LogsFolder:GetChildren()) do
+			local logPart = getLogPart(log)
+			if logPart
+				and not log:GetAttribute("OnSled")
+				and logPart:GetAttribute("DraggedBy") == nil
+			then
+				local distance = (log:GetPivot().Position - firePosition).Magnitude
+				if distance <= nearestDistance then
+					chosen = log
+					nearestDistance = distance
+				end
+			end
+		end
+	end
+
+	if not chosen then
+		return nil
+	end
+
+	local logPart = getLogPart(chosen)
+	if not logPart then
+		return nil
+	end
+
+	local burnUnits = logBurnUnits(logPart)
+	if logPart:GetAttribute("DraggedBy") then
+		DragSystem.ForceStop(logPart)
+	end
+	chosen:Destroy()
+	return burnUnits
 end
 
 function Gameplay:_refreshLog(log)
@@ -418,7 +473,6 @@ function Gameplay:_dropLogPieces(treeModel, spotPos)
 					end
 				end
 			end
-			log:SetAttribute("PieceHits", 0)
 			log.Parent = self.LogsFolder
 
 			if axisVec == Vector3.yAxis then
@@ -507,28 +561,6 @@ function Gameplay:_fellTree(tree)
 	end)
 end
 
-function Gameplay:_cutLog(player, log)
-	local logPart = getLogPart(log)
-	if not logPart then
-		return
-	end
-
-	local hits = (log:GetAttribute("PieceHits") or 0) + 1
-	if hits < Config.Log.HitsPerCut then
-		log:SetAttribute("PieceHits", hits)
-		return
-	end
-
-	local size = logPart.Size
-	local volume = size.X * size.Y * size.Z
-	local woodAmount = math.max(1, math.floor(volume * Config.Log.WoodPerVolume + 0.5))
-	self._wood[player] = (self._wood[player] or 0) + woodAmount
-	if logPart:GetAttribute("DraggedBy") then
-		DragSystem.ForceStop(logPart)
-	end
-	log:Destroy()
-end
-
 function Gameplay:_onAxeActivated(player)
 	local now = os.clock()
 	if now < (self._axeReady[player] or 0) then
@@ -554,16 +586,8 @@ function Gameplay:_onAxeActivated(player)
 			if not tree:GetAttribute("Falling") then
 				local distance = (tree:GetPivot().Position - root.Position).Magnitude
 				if distance <= Config.Tree.ChopRange then
-					table.insert(candidates, { model = tree, isLog = false, distance = distance })
+					table.insert(candidates, { model = tree, distance = distance })
 				end
-			end
-		end
-	end
-	for _, log in ipairs(self.LogsFolder:GetChildren()) do
-		if not log:GetAttribute("OnSled") then
-			local distance = (log:GetPivot().Position - root.Position).Magnitude
-			if distance <= Config.Tree.ChopRange then
-				table.insert(candidates, { model = log, isLog = true, distance = distance })
 			end
 		end
 	end
@@ -572,7 +596,6 @@ function Gameplay:_onAxeActivated(player)
 	end)
 
 	local target = nil
-	local targetIsLog = false
 	local origin = root.Position + Vector3.new(0, 1, 0)
 	for _, candidate in ipairs(candidates) do
 		local targetPos = candidate.model:GetPivot().Position
@@ -584,16 +607,10 @@ function Gameplay:_onAxeActivated(player)
 		local hit = workspace:Raycast(origin, direction, rayParams)
 		if not hit or hit.Distance >= direction.Magnitude - 2 then
 			target = candidate.model
-			targetIsLog = candidate.isLog
 			break
 		end
 	end
 	if not target then
-		return
-	end
-
-	if targetIsLog then
-		self:_cutLog(player, target)
 		return
 	end
 

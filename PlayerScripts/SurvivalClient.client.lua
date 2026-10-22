@@ -58,7 +58,6 @@ local dayLabel = makeLabel(topPanel, "DAY 1", UDim2.new(1, -16, 0, 26), UDim2.fr
 local phaseLabel = makeLabel(topPanel, "Day", UDim2.new(0.5, -8, 0, 20), UDim2.fromOffset(8, 36), SILVER, 15)
 local tempLabel = makeLabel(topPanel, "-12C", UDim2.new(0.5, -8, 0, 20), UDim2.new(0.5, 0, 0, 36), MARIGOLD, 15)
 local multLabel = makeLabel(topPanel, "x1", UDim2.new(0.5, -8, 0, 20), UDim2.fromOffset(8, 58), MARIGOLD, 15)
-local woodLabel = makeLabel(topPanel, "Wood: 0", UDim2.new(0.5, -8, 0, 20), UDim2.new(0.5, 0, 0, 58), SILVER, 15)
 local fuelLabel = makeLabel(topPanel, "Fire: 0s", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 80), SILVER, 13)
 local seedLabel = makeLabel(topPanel, "Seed: ------", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 100), SILVER, 13)
 local sickLabel = makeLabel(topPanel, "SICK", UDim2.new(0, 60, 0, 20), UDim2.new(1, -66, 0, 6), MARIGOLD, 16)
@@ -123,8 +122,8 @@ sprintCorner.Parent = sprintButton
 
 local hotbar = Instance.new("Frame")
 hotbar.Name = "Hotbar"
-hotbar.Size = UDim2.fromOffset(232, 56)
-hotbar.Position = UDim2.new(0.5, -116, 1, -64)
+hotbar.Size = UDim2.fromOffset(154, 56)
+hotbar.Position = UDim2.new(0.5, -77, 1, -64)
 hotbar.BackgroundColor3 = AUBERGINE
 hotbar.BackgroundTransparency = 0.25
 hotbar.BorderSizePixel = 0
@@ -185,7 +184,6 @@ local function makeSlot(index, name, isTool)
 end
 makeSlot(1, "Axe", true)
 makeSlot(2, "Shovel", true)
-makeSlot(3, "Wood", false)
 
 local function refreshHotbar()
 	local character = player.Character
@@ -198,7 +196,6 @@ local function refreshHotbar()
 		end
 		slotLabels[toolName].Text = equipped and "in hand" or ""
 	end
-	slotLabels["Wood"].Text = tostring(player:GetAttribute("Wood") or 0)
 end
 
 local function hookCharacter(character)
@@ -266,7 +263,6 @@ local function refreshPlayer()
 	setBar(healthFill, player:GetAttribute("Health"), Config.Survival.MaxHealth)
 	setBar(warmthFill, player:GetAttribute("Warmth"), Config.Survival.MaxWarmth)
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
-	woodLabel.Text = "Wood: " .. tostring(player:GetAttribute("Wood") or 0)
 	sickLabel.Visible = player:GetAttribute("IsSick") == true
 	refreshHotbar()
 end
@@ -276,8 +272,8 @@ player.AttributeChanged:Connect(refreshPlayer)
 refreshWorld()
 refreshPlayer()
 
--- Drag mover: as network owner, pull my dragged piece behind me on a
--- rope (trailer follow, frame-smooth). The server only validates.
+-- Drag mover: as network owner, float my dragged piece at a point in
+-- front of the camera (aim with the center dot). The server validates.
 local RunService = game:GetService("RunService")
 local logsFolder = workspace:WaitForChild("Logs")
 local dragRayParams = RaycastParams.new()
@@ -327,8 +323,23 @@ for _, log in ipairs(logsFolder:GetChildren()) do
 end
 logsFolder.ChildAdded:Connect(trackLog)
 
+-- Center aim dot, visible only while dragging.
+local dragDot = Instance.new("Frame")
+dragDot.Name = "DragDot"
+dragDot.Size = UDim2.fromOffset(8, 8)
+dragDot.Position = UDim2.new(0.5, -4, 0.5, -4)
+dragDot.BackgroundColor3 = Color3.new(1, 1, 1)
+dragDot.BackgroundTransparency = 0.2
+dragDot.BorderSizePixel = 0
+dragDot.Visible = false
+dragDot.Parent = gui
+local dotCorner = Instance.new("UICorner")
+dotCorner.CornerRadius = UDim.new(1, 0)
+dotCorner.Parent = dragDot
+
 RunService.RenderStepped:Connect(function(dt)
 	local myPart = myDragPart
+	dragDot.Visible = myPart ~= nil
 	if not myPart then
 		return
 	end
@@ -341,44 +352,56 @@ RunService.RenderStepped:Connect(function(dt)
 	if not root then
 		return
 	end
+	local camera = workspace.CurrentCamera
+	if not camera then
+		return
+	end
 
 	local cf = myPart.CFrame
 	local pos = cf.Position
-	local toItem = Vector3.new(pos.X - root.Position.X, 0, pos.Z - root.Position.Z)
+
+	-- The item floats at a point in front of the camera: where you
+	-- look is where it goes, including up and down (99 Nights style).
+	local look = camera.CFrame.LookVector
+	local anchor = root.Position + look * Config.Log.DragDistance
 
 	local axisVec = dragLengthAxis(myPart.Size)
 	local currentDir = dragHorizontal(cf:VectorToWorldSpace(axisVec))
-	local ropeDir = dragHorizontal(toItem)
-	if currentDir:Dot(ropeDir) < 0 then
-		ropeDir = -ropeDir
+	local faceDir = dragHorizontal(look)
+	if currentDir:Dot(faceDir) < 0 then
+		faceDir = -faceDir
 	end
-	local crossY = currentDir.Z * ropeDir.X - currentDir.X * ropeDir.Z
-	local dot = currentDir.X * ropeDir.X + currentDir.Z * ropeDir.Z
-	local yawDelta = math.atan2(crossY, dot) * (1 - math.exp(-dt * 4))
+	local crossY = currentDir.Z * faceDir.X - currentDir.X * faceDir.Z
+	local dotProd = currentDir.X * faceDir.X + currentDir.Z * faceDir.Z
+	local yawDelta = math.atan2(crossY, dotProd) * (1 - math.exp(-dt * 4))
 	if math.abs(yawDelta) > 0.0005 then
 		cf = CFrame.new(cf.Position) * CFrame.Angles(0, yawDelta, 0) * (cf - cf.Position)
 	end
 
-	local nx = pos.X
-	local nz = pos.Z
-	if toItem.Magnitude > Config.Log.DragDistance + 0.05 then
-		local target = root.Position + toItem.Unit * Config.Log.DragDistance
-		local factor = 1 - math.exp(-dt * 7)
-		nx = pos.X + (target.X - pos.X) * factor
-		nz = pos.Z + (target.Z - pos.Z) * factor
-	end
+	local size = myPart.Size
+	local halfY = (math.abs(cf.RightVector.Y) * size.X
+		+ math.abs(cf.UpVector.Y) * size.Y
+		+ math.abs(cf.LookVector.Y) * size.Z) / 2
 
-	local hit = workspace:Raycast(Vector3.new(nx, 300, nz), Vector3.new(0, -600, 0), dragRayParams)
-	local ny = cf.Position.Y
+	local hit = workspace:Raycast(Vector3.new(anchor.X, 300, anchor.Z), Vector3.new(0, -600, 0), dragRayParams)
+	local minY = pos.Y
 	if hit then
-		local size = myPart.Size
-		local halfY = (math.abs(cf.RightVector.Y) * size.X
-			+ math.abs(cf.UpVector.Y) * size.Y
-			+ math.abs(cf.LookVector.Y) * size.Z) / 2
-		ny = hit.Position.Y + halfY + 0.05
+		minY = hit.Position.Y + halfY + 0.05
+	end
+	local targetY = math.clamp(anchor.Y, minY, root.Position.Y + Config.Log.DragMaxRise)
+	local target = Vector3.new(anchor.X, targetY, anchor.Z)
+
+	-- Close on the anchor fast, but stay inside the step speed the
+	-- server accepts, so the intent stream remains valid.
+	local delta = target - pos
+	local gap = delta.Magnitude
+	local newPos = pos
+	if gap > 0.001 then
+		local step = math.min(gap, math.clamp(gap * 7, 6, 38) * dt)
+		newPos = pos + delta.Unit * step
 	end
 
-	myPart.CFrame = CFrame.new(nx, ny, nz) * (cf - cf.Position)
+	myPart.CFrame = CFrame.new(newPos) * (cf - cf.Position)
 
 	-- Stream the applied position as a movement intent at 20 Hz.
 	-- The server validates reach and step speed per intent and keeps
@@ -386,6 +409,6 @@ RunService.RenderStepped:Connect(function(dt)
 	local now = os.clock()
 	if now - lastDragSend >= 1 / 20 then
 		lastDragSend = now
-		DragSystem.SendUpdate(myPart, Vector3.new(nx, ny, nz))
+		DragSystem.SendUpdate(myPart, newPos)
 	end
 end)
