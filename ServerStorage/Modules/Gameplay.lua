@@ -195,6 +195,57 @@ function Gameplay:_buildAxe()
 		local axe = axeTemplate:Clone()
 		axe.Name = "Axe"
 		axe.CanBeDropped = false
+		-- Normalize his model so it always equips and activates: strip
+		-- stray scripts, unanchor every part, weld loose parts to the
+		-- Handle, and if no part is named Handle, promote the biggest
+		-- part — a Tool with no Handle can never be held, so clicks
+		-- silently do nothing.
+		local handle = nil
+		local biggest = nil
+		local biggestVolume = -1
+		local parts = {}
+		for _, d in ipairs(axe:GetDescendants()) do
+			if d:IsA("Script") or d:IsA("LocalScript") then
+				d:Destroy()
+			elseif d:IsA("BasePart") then
+				d.Anchored = false
+				table.insert(parts, d)
+				if d.Name == "Handle" then
+					handle = d
+				end
+				local volume = d.Size.X * d.Size.Y * d.Size.Z
+				if volume > biggestVolume then
+					biggestVolume = volume
+					biggest = d
+				end
+			end
+		end
+		if not handle and biggest then
+			biggest.Name = "Handle"
+			handle = biggest
+		end
+		if handle then
+			for _, part in ipairs(parts) do
+				if part ~= handle then
+					part.Massless = true
+					part.CanCollide = false
+					local welded = false
+					for _, c in ipairs(part:GetDescendants()) do
+						if c:IsA("WeldConstraint") or c:IsA("Weld") then
+							welded = true
+							break
+						end
+					end
+					if not welded then
+						local weld = Instance.new("WeldConstraint")
+						weld.Part0 = handle
+						weld.Part1 = part
+						weld.Parent = part
+					end
+				end
+			end
+		end
+		axe.RequiresHandle = handle ~= nil
 		axe.Parent = StarterPack
 		return
 	end
@@ -864,9 +915,20 @@ function Gameplay:_onAxeActivated(player)
 	if treesFolder then
 		for _, tree in ipairs(treesFolder:GetChildren()) do
 			if not tree:GetAttribute("Falling") then
-				local distance = (tree:GetPivot().Position - root.Position).Magnitude
+				-- Range is measured to the nearest point of the tree's
+				-- bounding box, not its pivot: his tree models are tall
+				-- and their pivots sit high, so pivot distance put big
+				-- trees out of ChopRange even when he stood at the trunk.
+				local cf, size = tree:GetBoundingBox()
+				local localPos = cf:PointToObjectSpace(root.Position)
+				local closest = cf:PointToWorldSpace(Vector3.new(
+					math.clamp(localPos.X, -size.X / 2, size.X / 2),
+					math.clamp(localPos.Y, -size.Y / 2, size.Y / 2),
+					math.clamp(localPos.Z, -size.Z / 2, size.Z / 2)
+				))
+				local distance = (closest - root.Position).Magnitude
 				if distance <= Config.Tree.ChopRange then
-					table.insert(candidates, { model = tree, distance = distance })
+					table.insert(candidates, { model = tree, distance = distance, point = closest })
 				end
 			end
 		end
@@ -878,11 +940,13 @@ function Gameplay:_onAxeActivated(player)
 	local target = nil
 	local origin = root.Position + Vector3.new(0, 1, 0)
 	for _, candidate in ipairs(candidates) do
-		local targetPos = candidate.model:GetPivot().Position
-		local direction = targetPos - origin
+		local direction = candidate.point - origin
 		local rayParams = RaycastParams.new()
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
-		rayParams.FilterDescendantsInstances = { character, candidate.model }
+		-- Terrain is excluded: trees stand ON terrain, and a snow bump
+		-- between the player and the trunk was silently eating swings.
+		-- Rocks, cabins and props still block the line of sight.
+		rayParams.FilterDescendantsInstances = { character, candidate.model, workspace.Terrain }
 		rayParams.IgnoreWater = true
 		local hit = workspace:Raycast(origin, direction, rayParams)
 		if not hit or hit.Distance >= direction.Magnitude - 2 then
