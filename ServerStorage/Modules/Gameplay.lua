@@ -60,6 +60,7 @@ function Gameplay.new(world, clock, temperature)
 	self._sprinting = {}
 	self._wood = {}
 	self._digReady = {}
+	self._published = {}
 	self.LogsFolder = nil
 	self._setSprinting = nil
 	return self
@@ -99,7 +100,6 @@ function Gameplay:Start()
 			return false
 		end
 		self._wood[player] -= 1
-		player:SetAttribute("Wood", self._wood[player])
 		return true
 	end
 
@@ -130,6 +130,8 @@ function Gameplay:Start()
 		self._survivals[player] = nil
 		self._sprinting[player] = nil
 		self._wood[player] = nil
+		self._published[player] = nil
+		self._digReady[player] = nil
 	end)
 end
 
@@ -239,11 +241,26 @@ function Gameplay:_syncAttributes(player)
 	if not survival then
 		return
 	end
-	player:SetAttribute("Health", math.floor(survival.Health))
-	player:SetAttribute("Warmth", math.floor(survival.Warmth))
-	player:SetAttribute("Hunger", math.floor(survival.Hunger:Get()))
-	player:SetAttribute("IsSick", survival.IsSick)
-	player:SetAttribute("Wood", self._wood[player] or 0)
+	-- Publish only what the HUD displays, and only when it changed.
+	-- The simulation keeps full float precision; clients get integers.
+	local values = {
+		Health = math.floor(survival.Health),
+		Warmth = math.floor(survival.Warmth),
+		Hunger = math.floor(survival.Hunger:Get()),
+		IsSick = survival.IsSick,
+		Wood = self._wood[player] or 0,
+	}
+	local published = self._published[player]
+	if not published then
+		published = {}
+		self._published[player] = published
+	end
+	for name, value in pairs(values) do
+		if published[name] ~= value then
+			published[name] = value
+			player:SetAttribute(name, value)
+		end
+	end
 end
 
 function Gameplay:_makeSurvival(player)
@@ -501,7 +518,6 @@ function Gameplay:_cutLog(player, log)
 	local volume = size.X * size.Y * size.Z
 	local woodAmount = math.max(1, math.floor(volume * Config.Log.WoodPerVolume + 0.5))
 	self._wood[player] = (self._wood[player] or 0) + woodAmount
-	player:SetAttribute("Wood", self._wood[player])
 	if logPart:GetAttribute("DraggedBy") then
 		DragSystem.ForceStop(logPart)
 	end

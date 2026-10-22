@@ -37,6 +37,7 @@ function WorldBuilder.new(layout)
 	self._fireTitle = nil
 	self._fireFill = nil
 	self._fireState = nil
+	self._publishedWorld = {}
 	self.TreesFolder = nil
 	self.FireCore = nil
 	self.TreeTemplate = nil
@@ -327,13 +328,20 @@ function WorldBuilder:UpdateState(clock, temperature)
 	end
 	Lighting.ClockTime = timeOfDay
 
-	ReplicatedStorage:SetAttribute("Day", clock:GetDay())
-	ReplicatedStorage:SetAttribute("Phase", clock:GetPhase())
-	ReplicatedStorage:SetAttribute("Multiplier", clock:GetMultiplier())
-	ReplicatedStorage:SetAttribute("Weather", temperature:GetWeather())
-	ReplicatedStorage:SetAttribute("AmbientTempC", temperature:GetAmbientTempC(clock:GetPhase()))
-	ReplicatedStorage:SetAttribute("CampfireFuel", math.floor(self.Fuel))
-	ReplicatedStorage:SetAttribute("CampfireLevel", self.Level)
+	local published = self._publishedWorld
+	local function publish(name, value)
+		if published[name] ~= value then
+			published[name] = value
+			ReplicatedStorage:SetAttribute(name, value)
+		end
+	end
+	publish("Day", clock:GetDay())
+	publish("Phase", clock:GetPhase())
+	publish("Multiplier", clock:GetMultiplier())
+	publish("Weather", temperature:GetWeather())
+	publish("AmbientTempC", math.floor(temperature:GetAmbientTempC(clock:GetPhase())))
+	publish("CampfireFuel", math.floor(self.Fuel))
+	publish("CampfireLevel", self.Level)
 
 	if self._ring and self._ringLevel ~= self.Level then
 		self._ringLevel = self.Level
