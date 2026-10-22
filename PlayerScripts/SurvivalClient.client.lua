@@ -655,7 +655,8 @@ for _, log in ipairs(logsFolder:GetChildren()) do
 end
 logsFolder.ChildAdded:Connect(trackLog)
 
--- Center aim dot, visible only while dragging.
+-- Center aim dot: the game's main interaction pointer. Visible
+-- while dragging and while a center-dot tool is equipped.
 local dragDot = Instance.new("Frame")
 dragDot.Name = "DragDot"
 dragDot.Size = UDim2.fromOffset(8, 8)
@@ -668,6 +669,54 @@ dragDot.Parent = gui
 local dotCorner = Instance.new("UICorner")
 dotCorner.CornerRadius = UDim.new(1, 0)
 dotCorner.Parent = dragDot
+
+-- Center-dot tools: the shovel and the lighter act where the dot
+-- is pointing. The client raycasts the center of the camera and
+-- reports the hit; the server validates and decides (ToolAim).
+local toolAimRemote = remotes:WaitForChild("ToolAim")
+local aimParams = RaycastParams.new()
+aimParams.FilterType = Enum.RaycastFilterType.Exclude
+aimParams.IgnoreWater = true
+local wiredAimTools = {}
+local function watchAimTool(tool)
+	if wiredAimTools[tool] then
+		return
+	end
+	if tool.Name ~= "Shovel" and tool.Name ~= "Lighter" then
+		return
+	end
+	wiredAimTools[tool] = true
+	tool.Activated:Connect(function()
+		local camera = workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		aimParams.FilterDescendantsInstances = { player.Character }
+		local hit = workspace:Raycast(
+			camera.CFrame.Position,
+			camera.CFrame.LookVector * 40,
+			aimParams
+		)
+		if hit then
+			toolAimRemote:FireServer(tool.Name, hit.Instance, hit.Position)
+		end
+	end)
+end
+local aimBackpack = player:WaitForChild("Backpack")
+for _, tool in ipairs(aimBackpack:GetChildren()) do
+	watchAimTool(tool)
+end
+aimBackpack.ChildAdded:Connect(watchAimTool)
+local function hookAimCharacter(character)
+	for _, child in ipairs(character:GetChildren()) do
+		watchAimTool(child)
+	end
+	character.ChildAdded:Connect(watchAimTool)
+end
+if player.Character then
+	hookAimCharacter(player.Character)
+end
+player.CharacterAdded:Connect(hookAimCharacter)
 
 local function nearestFish()
 	local fishFolder = workspace:FindFirstChild("Fish")
@@ -693,7 +742,10 @@ end
 
 RunService.RenderStepped:Connect(function(dt)
 	local myPart = myDragPart
-	dragDot.Visible = myPart ~= nil
+	local characterNow = player.Character
+	local aimEquipped = characterNow
+		and (characterNow:FindFirstChild("Shovel") or characterNow:FindFirstChild("Lighter"))
+	dragDot.Visible = myPart ~= nil or aimEquipped ~= nil
 	if not myPart then
 		dragSmoothedPart = nil
 		dragSmoothedTarget = nil

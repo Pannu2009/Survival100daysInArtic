@@ -79,14 +79,22 @@ Config.Campfire = {
 	BurningLogWarmRate = 1.8,
 	BurningLogCookRange = 4,
 	BuildFuelSeconds = 45,
-	FuelPerBurnUnit = 30,
+	FuelPerBurnUnit = 20,
+	-- A log burning loose in the open dies faster than the same
+	-- log feeding a campfire: wind and snow eat it.
+	OpenBurnSecondsPerUnit = 12,
+	-- Fire spread: a burnable log whose surface sits within
+	-- SpreadGap of burning wood catches after SpreadSeconds of
+	-- exposure. Wood piles chain; sled cargo is not exempt.
+	SpreadGap = 1.5,
+	SpreadSeconds = 2.5,
 	FuelDisplayMax = 600,
 	FeedRange = 10,
 }
 
 Config.Sled = {
 	MaxCargoWeight = 100,
-	Weight = 25,
+	Weight = 0,
 	RopeLength = 7,
 	PullSlowPerWeight = 0.004,
 	MinPullSpeedFactor = 0.35,
@@ -111,11 +119,13 @@ Config.Blueprint = {
 Config.Lighter = {
 	StartFuel = 100,
 	LightCost = 5,
+	AimRange = 12,
 }
 
 Config.Digging = {
 	Radius = 2.6,
 	Reach = 4,
+	AimRange = 9,
 	Cooldown = 0.35,
 	SafeRadius = 5,
 }
@@ -132,8 +142,11 @@ Config.Log = {
 	BigTreeLength = 14,
 	BigPieceTargetLength = 5,
 	BigTreeMaxPieces = 5,
-	BurnUnitsPerVolume = 0.2,
+	-- Burn value derives from weight, so thickness and length both
+	-- count: a fat log is more kilos and burns longer everywhere.
+	KgPerBurnUnit = 12.5,
 	WeightPerVolume = 2.5,
+	MaxWeight = 50,
 	DragSlowPerWeight = 0.008,
 	MinDragSpeedFactor = 0.35,
 	DragDistance = 7,

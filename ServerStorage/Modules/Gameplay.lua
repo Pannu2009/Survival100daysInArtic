@@ -23,13 +23,12 @@ end
 
 local function logWeight(logPart)
 	local size = logPart.Size
-	return math.floor(size.X * size.Y * size.Z * Config.Log.WeightPerVolume + 0.5)
+	local weight = math.floor(size.X * size.Y * size.Z * Config.Log.WeightPerVolume + 0.5)
+	return math.min(weight, Config.Log.MaxWeight)
 end
 
 local function logBurnUnits(logPart)
-	local size = logPart.Size
-	local volume = size.X * size.Y * size.Z
-	return math.max(1, math.floor(volume * Config.Log.BurnUnitsPerVolume + 0.5))
+	return math.max(1, math.floor(logWeight(logPart) / Config.Log.KgPerBurnUnit + 0.5))
 end
 
 local function lengthAxis(size)
@@ -68,6 +67,7 @@ function Gameplay.new(world, clock, temperature)
 	self._lighterFuel = {}
 	self._tutorial = {}
 	self._burning = {}
+	self._spread = {}
 	self.Fish = FishSystem.new(self)
 	self._digReady = {}
 	self._axeReady = {}
@@ -150,6 +150,13 @@ function Gameplay:Start()
 	eatFish.Parent = remotes
 	eatFish.OnServerEvent:Connect(function(player, fish)
 		self.Fish:Eat(player, fish)
+	end)
+
+	local toolAim = Instance.new("RemoteEvent")
+	toolAim.Name = "ToolAim"
+	toolAim.Parent = remotes
+	toolAim.OnServerEvent:Connect(function(player, toolName, hitInstance, hitPosition)
+		self:_onToolAim(player, toolName, hitInstance, hitPosition)
 	end)
 
 	setSprinting.OnServerEvent:Connect(function(player, value)
@@ -405,13 +412,13 @@ function Gameplay:_buildLighter()
 	tool.Parent = StarterPack
 end
 
-function Gameplay:_onShovelActivated(player)
+-- Dig one snow column at (tx, tz). The target comes from the
+-- player's center-dot aim; every check runs server-side.
+function Gameplay:_digAt(player, tx, tz)
 	local now = os.clock()
 	if now < (self._digReady[player] or 0) then
 		return
 	end
-	self._digReady[player] = now + Config.Digging.Cooldown
-
 	local character = player.Character
 	if not character then
 		return
@@ -423,10 +430,12 @@ function Gameplay:_onShovelActivated(player)
 	if not root then
 		return
 	end
-
-	local look = root.CFrame.LookVector
-	local tx = root.Position.X + look.X * Config.Digging.Reach
-	local tz = root.Position.Z + look.Z * Config.Digging.Reach
+	local dx = tx - root.Position.X
+	local dz = tz - root.Position.Z
+	if dx * dx + dz * dz > Config.Digging.AimRange * Config.Digging.AimRange then
+		return
+	end
+	self._digReady[player] = now + Config.Digging.Cooldown
 
 	if self.World:IsNearStructure(tx, tz, Config.Digging.SafeRadius) then
 		return
@@ -441,6 +450,64 @@ function Gameplay:_onShovelActivated(player)
 	local center = hit.Position - Vector3.new(0, Config.Digging.Radius * 0.35, 0)
 	terrain:FillBall(center, Config.Digging.Radius, Enum.Material.Air)
 	self:_markTutorial(player, "Dug")
+end
+
+-- Center-dot tool aim: the client raycasts the middle of the
+-- screen and reports what the dot is on; the server decides what
+-- happens. The shovel digs where the dot points; the lighter
+-- lights the exact log or fire the dot is on. This is the pattern
+-- future dot tools plug into.
+function Gameplay:_onToolAim(player, toolName, hitInstance, hitPosition)
+	if typeof(hitPosition) ~= "Vector3" then
+		return
+	end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
+	if toolName == "Shovel" then
+		if not character:FindFirstChild("Shovel") then
+			return
+		end
+		-- The claimed point must sit on the real terrain column.
+		local hit = self.World:TerrainRaycastDown(hitPosition.X, hitPosition.Z)
+		if not hit or (hit.Position - hitPosition).Magnitude > 3.5 then
+			return
+		end
+		self:_digAt(player, hitPosition.X, hitPosition.Z)
+	elseif toolName == "Lighter" then
+		if not character:FindFirstChild("Lighter") then
+			return
+		end
+		if (hitPosition - root.Position).Magnitude > Config.Lighter.AimRange then
+			return
+		end
+		-- Dot on a log: that exact log catches.
+		if typeof(hitInstance) == "Instance" and hitInstance:IsA("BasePart") then
+			local model = hitInstance.Parent
+			if model and model.Parent == self.LogsFolder
+				and model:GetAttribute("Burnable")
+				and model:GetAttribute("Burning") ~= true
+				and not model:GetAttribute("OnSled")
+			then
+				local lp = getLogPart(model)
+				if lp and lp:GetAttribute("DraggedBy") == nil then
+					self:_igniteLog(player, model)
+					return
+				end
+			end
+		end
+		-- Dot on a campfire: light that fire.
+		for _, fire in ipairs(self.World.Fires) do
+			if not fire.Lit and fire.Fuel > 0
+				and (fire.Core.Position - hitPosition).Magnitude <= 4
+			then
+				self:_lightFire(player, fire)
+				return
+			end
+		end
+	end
 end
 
 function Gameplay:_syncAttributes(player)
@@ -543,12 +610,8 @@ function Gameplay:_onCharacter(player, character)
 			self:_onAxeActivated(player)
 		end)
 	end
-	local playerShovel = backpack:WaitForChild("Shovel", 5) or character:FindFirstChild("Shovel")
-	if playerShovel then
-		playerShovel.Activated:Connect(function()
-			self:_onShovelActivated(player)
-		end)
-	end
+	-- Shovel and Lighter no longer act from server-side Activated:
+	-- they are center-dot tools now (see _onToolAim).
 	local playerBlueprint = backpack:WaitForChild("Blueprint", 5) or character:FindFirstChild("Blueprint")
 	if playerBlueprint then
 		playerBlueprint.Activated:Connect(function()
@@ -557,46 +620,6 @@ function Gameplay:_onCharacter(player, character)
 			end
 		end)
 	end
-	local playerLighter = backpack:WaitForChild("Lighter", 5) or character:FindFirstChild("Lighter")
-	if playerLighter then
-		playerLighter.Activated:Connect(function()
-			local charRoot = character:FindFirstChild("HumanoidRootPart")
-			if not charRoot then
-				return
-			end
-			-- Burnable wood first: the lighter sets the nearest log
-			-- itself burning. Otherwise it lights a campfire.
-			local bestLog = nil
-			local bestDistance = 9
-			for _, log in ipairs(self.LogsFolder:GetChildren()) do
-				if log:GetAttribute("Burnable")
-					and not log:GetAttribute("OnSled")
-					and log:GetAttribute("Burning") ~= true
-				then
-					local lp = getLogPart(log)
-					if lp and lp:GetAttribute("DraggedBy") == nil then
-						local d = (lp.Position - charRoot.Position).Magnitude
-						if d < bestDistance then
-							bestLog = log
-							bestDistance = d
-						end
-					end
-				end
-			end
-			if bestLog and self:_igniteLog(player, bestLog) then
-				return
-			end
-			for _, fire in ipairs(self.World.Fires) do
-				if not fire.Lit and fire.Fuel > 0
-					and (fire.Core.Position - charRoot.Position).Magnitude <= 9
-				then
-					self:_lightFire(player, fire)
-					break
-				end
-			end
-		end)
-	end
-
 	self:_syncAttributes(player)
 end
 
@@ -709,10 +732,23 @@ function Gameplay:_igniteLog(player, log)
 		return false
 	end
 	self._lighterFuel[player] = fuel - Config.Lighter.LightCost
+	self:_setBurning(log)
+	return true
+end
+
+-- The shared catch-fire path: lighter ignition and fire spread
+-- both land here. Burning wood leaves the drag system for good,
+-- and sled cargo claimed by fire leaves the sled's books.
+function Gameplay:_setBurning(log)
+	local logPart = getLogPart(log)
+	if not logPart or log:GetAttribute("Burning") == true then
+		return
+	end
 	log:SetAttribute("Burning", true)
-	-- Burning wood leaves the drag system for good: release any
-	-- hold on it and hide its drag prompt.
 	DragSystem.ForceStop(logPart)
+	if log:GetAttribute("OnSled") and self.Sleds then
+		self.Sleds:RemovePiece(log)
+	end
 	self:_refreshLog(log)
 
 	local flame = Instance.new("Fire")
@@ -727,8 +763,7 @@ function Gameplay:_igniteLog(player, log)
 	light.Brightness = 1.5
 	light.Parent = logPart
 
-	self._burning[log] = logBurnUnits(logPart) * Config.Campfire.FuelPerBurnUnit
-	return true
+	self._burning[log] = logBurnUnits(logPart) * Config.Campfire.OpenBurnSecondsPerUnit
 end
 
 function Gameplay:_tickBurning(dt)
@@ -746,6 +781,56 @@ function Gameplay:_tickBurning(dt)
 				log:Destroy()
 			else
 				self._burning[log] = timeLeft
+			end
+		end
+	end
+end
+
+-- Fire spread: a burnable log resting against burning wood builds
+-- up exposure and catches too. Wood piles chain-react, and sled
+-- cargo is not exempt — park a burning log against your storage
+-- and the whole stock goes up. A log being dragged is held clear
+-- of the pile, so it only catches once it's dropped.
+function Gameplay:_spreadFire(dt)
+	if not next(self._burning) then
+		if next(self._spread) then
+			table.clear(self._spread)
+		end
+		return
+	end
+	local burningParts = {}
+	for log in pairs(self._burning) do
+		local part = getLogPart(log)
+		if part then
+			table.insert(burningParts, part)
+		end
+	end
+	for _, log in ipairs(self.LogsFolder:GetChildren()) do
+		if log:GetAttribute("Burnable") and log:GetAttribute("Burning") ~= true then
+			local part = getLogPart(log)
+			if part and part:GetAttribute("DraggedBy") == nil then
+				local touching = false
+				for _, other in ipairs(burningParts) do
+					if other ~= part then
+						local gap = (other.Position - part.Position).Magnitude
+							- (other.Size.Magnitude + part.Size.Magnitude) / 2
+						if gap <= Config.Campfire.SpreadGap then
+							touching = true
+							break
+						end
+					end
+				end
+				if touching then
+					local exposure = (self._spread[log] or 0) + dt
+					if exposure >= Config.Campfire.SpreadSeconds then
+						self._spread[log] = nil
+						self:_setBurning(log)
+					else
+						self._spread[log] = exposure
+					end
+				elseif self._spread[log] then
+					self._spread[log] = nil
+				end
 			end
 		end
 	end
@@ -1046,6 +1131,7 @@ function Gameplay:Update(dt)
 	self.Fish:Cook(dt)
 	self:_feedFires()
 	self:_tickBurning(dt)
+	self:_spreadFire(dt)
 	for player, survival in pairs(self._survivals) do
 		local context = { IsSprinting = self._sprinting[player] == true }
 		local character = player.Character

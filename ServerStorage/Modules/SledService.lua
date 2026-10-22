@@ -545,6 +545,41 @@ function SledService:_unloadLast(player)
 	self:_recalcCargoWeight()
 end
 
+-- External removal (fire claimed a cargo log): the unload
+-- bookkeeping, without the drop placement or a new drag prompt.
+-- The piece stays where it lies and burns where it lies.
+function SledService:RemovePiece(piece)
+	local found = false
+	for i, p in ipairs(self._cargo) do
+		if p == piece then
+			table.remove(self._cargo, i)
+			found = true
+			break
+		end
+	end
+	if not found then
+		return
+	end
+	self._cargoDims[piece] = nil
+	self._slots[piece] = nil
+	piece:SetAttribute("OnSled", nil)
+
+	local origSize = self._origSize[piece]
+	local part = getLogPart(piece)
+	if origSize then
+		self._origSize[piece] = nil
+		if part then
+			part.Size = origSize
+		end
+	end
+	if part then
+		part.Anchored = false
+	end
+
+	self:_relayout()
+	self:_recalcCargoWeight()
+end
+
 function SledService:_togglePull(player)
 	local sled = self.Sled
 	if not sled then
