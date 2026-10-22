@@ -308,8 +308,8 @@ end)
 
 local hotbar = Instance.new("Frame")
 hotbar.Name = "Hotbar"
-hotbar.Size = UDim2.fromOffset(154, 56)
-hotbar.Position = UDim2.new(0.5, -77, 1, -64)
+hotbar.Size = UDim2.fromOffset(302, 56)
+hotbar.Position = UDim2.new(0.5, -151, 1, -64)
 hotbar.BackgroundColor3 = AUBERGINE
 hotbar.BackgroundTransparency = 0.25
 hotbar.BorderSizePixel = 0
@@ -373,10 +373,12 @@ local function makeSlot(index, name, isTool)
 end
 makeSlot(1, "Axe", true)
 makeSlot(2, "Shovel", true)
+makeSlot(3, "Blueprint", true)
+makeSlot(4, "Lighter", true)
 
 local function refreshHotbar()
 	local character = player.Character
-	for _, toolName in ipairs({ "Axe", "Shovel" }) do
+	for _, toolName in ipairs({ "Axe", "Shovel", "Blueprint", "Lighter" }) do
 		local equipped = character and character:FindFirstChild(toolName) ~= nil
 		local slot = slotFrames[toolName]
 		if slot then
@@ -429,6 +431,12 @@ local function applyMode()
 	if slotHints["Shovel"] then
 		slotHints["Shovel"].Text = inputMode == "Keyboard" and "2" or inputMode == "Gamepad" and "▶" or ""
 	end
+	if slotHints["Blueprint"] then
+		slotHints["Blueprint"].Text = inputMode == "Keyboard" and "3" or inputMode == "Gamepad" and "▲" or ""
+	end
+	if slotHints["Lighter"] then
+		slotHints["Lighter"].Text = inputMode == "Keyboard" and "4" or inputMode == "Gamepad" and "▼" or ""
+	end
 	storeHint.Text = inputMode == "Keyboard" and "press E" or inputMode == "Gamepad" and "press X" or "tap"
 end
 UserInputService.LastInputTypeChanged:Connect(applyMode)
@@ -464,6 +472,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			toggleTool("Axe")
 		elseif input.KeyCode == Enum.KeyCode.Two then
 			toggleTool("Shovel")
+		elseif input.KeyCode == Enum.KeyCode.Three then
+			toggleTool("Blueprint")
+		elseif input.KeyCode == Enum.KeyCode.Four then
+			toggleTool("Lighter")
 		elseif input.KeyCode == Enum.KeyCode.E then
 			tryStore()
 		end
@@ -474,6 +486,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			toggleTool("Axe")
 		elseif input.KeyCode == Enum.KeyCode.DPadRight then
 			toggleTool("Shovel")
+		elseif input.KeyCode == Enum.KeyCode.DPadUp then
+			toggleTool("Blueprint")
+		elseif input.KeyCode == Enum.KeyCode.DPadDown then
+			toggleTool("Lighter")
 		elseif input.KeyCode == Enum.KeyCode.ButtonX then
 			tryStore()
 		end
