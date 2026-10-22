@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local StarterGui = game:GetService("StarterGui")
@@ -66,28 +67,53 @@ local function addStroke(parent, color, thickness, transparency)
 end
 
 
-local topPanel = Instance.new("Frame")
-topPanel.Name = "TopPanel"
-topPanel.Size = UDim2.fromOffset(216, 128)
-topPanel.Position = UDim2.fromOffset(12, 12)
-topPanel.BackgroundColor3 = AUBERGINE
-topPanel.BackgroundTransparency = 0.25
-topPanel.BorderSizePixel = 0
-topPanel.Parent = gui
+-- Day counter (Ajay's layout): top center, plain white text with
+-- a thin black stroke, dashes either side. When the day rolls
+-- over it pops — grows, flips the number at the peak, settles back.
+local dayBanner = Instance.new("TextLabel")
+dayBanner.Name = "DayBanner"
+dayBanner.BackgroundTransparency = 1
+dayBanner.AnchorPoint = Vector2.new(0.5, 0)
+dayBanner.Position = UDim2.new(0.5, 0, 0, 8)
+dayBanner.Size = UDim2.fromOffset(520, 34)
+dayBanner.Text = "------------ Day: 1 ------------"
+dayBanner.TextColor3 = Color3.new(1, 1, 1)
+dayBanner.TextSize = 24
+dayBanner.Font = Enum.Font.GothamBold
+dayBanner.TextXAlignment = Enum.TextXAlignment.Center
+dayBanner.Parent = gui
+local dayStroke = Instance.new("UIStroke")
+dayStroke.Color = Color3.new(0, 0, 0)
+dayStroke.Thickness = 1
+dayStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+dayStroke.Parent = dayBanner
+local dayScale = Instance.new("UIScale")
+dayScale.Parent = dayBanner
 
-local topCorner = Instance.new("UICorner")
-topCorner.CornerRadius = UDim.new(0, 10)
-topCorner.Parent = topPanel
-addStroke(topPanel, SILVER, 1, 0.55)
+local function dayText(day)
+	return "------------ Day: " .. tostring(day) .. " ------------"
+end
 
-local dayLabel = makeLabel(topPanel, "DAY 1", UDim2.new(1, -16, 0, 26), UDim2.fromOffset(8, 6), SILVER, 22)
-local phaseLabel = makeLabel(topPanel, "Day", UDim2.new(0.5, -8, 0, 20), UDim2.fromOffset(8, 36), SILVER, 15)
-local tempLabel = makeLabel(topPanel, "-12C", UDim2.new(0.5, -8, 0, 20), UDim2.new(0.5, 0, 0, 36), MARIGOLD, 15)
-local multLabel = makeLabel(topPanel, "x1", UDim2.new(0.5, -8, 0, 20), UDim2.fromOffset(8, 58), MARIGOLD, 15)
-local lighterLabel = makeLabel(topPanel, "Lighter: 100", UDim2.new(0.5, -8, 0, 20), UDim2.new(0.5, 0, 0, 58), SILVER, 15)
-local fuelLabel = makeLabel(topPanel, "Fires lit: 0", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 80), SILVER, 13)
-local seedLabel = makeLabel(topPanel, "Seed: ------", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 100), SILVER, 13)
-local sickLabel = makeLabel(topPanel, "SICK", UDim2.new(0, 60, 0, 20), UDim2.new(1, -66, 0, 6), MARIGOLD, 16)
+local function popDay(day)
+	task.spawn(function()
+		local up = TweenService:Create(
+			dayScale,
+			TweenInfo.new(0.16, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+			{ Scale = 1.3 }
+		)
+		up:Play()
+		up.Completed:Wait()
+		dayBanner.Text = dayText(day)
+		local down = TweenService:Create(
+			dayScale,
+			TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+			{ Scale = 1 }
+		)
+		down:Play()
+	end)
+end
+
+local sickLabel = makeLabel(gui, "SICK", UDim2.fromOffset(80, 22), UDim2.new(1, -96, 0, 46), MARIGOLD, 16)
 sickLabel.TextXAlignment = Enum.TextXAlignment.Right
 sickLabel.Visible = false
 
@@ -95,7 +121,7 @@ sickLabel.Visible = false
 local objectivePanel = Instance.new("Frame")
 objectivePanel.Name = "ObjectivePanel"
 objectivePanel.Size = UDim2.fromOffset(330, 30)
-objectivePanel.Position = UDim2.new(0.5, -165, 0, 10)
+objectivePanel.Position = UDim2.new(0.5, -165, 0, 50)
 objectivePanel.BackgroundColor3 = AUBERGINE
 objectivePanel.BackgroundTransparency = 0.25
 objectivePanel.BorderSizePixel = 0
@@ -115,28 +141,35 @@ local OBJECTIVES = {
 	"Base ready - keep the fire fed",
 }
 
-local barPanel = Instance.new("Frame")
-barPanel.Name = "BarPanel"
-barPanel.Size = UDim2.fromOffset(216, 104)
-barPanel.Position = UDim2.new(0, 12, 1, -116)
-barPanel.BackgroundColor3 = AUBERGINE
-barPanel.BackgroundTransparency = 0.25
-barPanel.BorderSizePixel = 0
-barPanel.Parent = gui
+-- Stat bars (Ajay's layout): each stat gets its OWN frame.
+-- Health sits top-right where Roblox's health bar usually lives;
+-- Warmth and Hunger stack on the left above the hotbar corner.
+local function makeStatFrame(name, size, position, anchorPoint)
+	local frame = Instance.new("Frame")
+	frame.Name = name
+	frame.Size = size
+	frame.Position = position
+	frame.AnchorPoint = anchorPoint
+	frame.BackgroundColor3 = AUBERGINE
+	frame.BackgroundTransparency = 0.25
+	frame.BorderSizePixel = 0
+	frame.Parent = gui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = frame
+	addStroke(frame, SILVER, 1, 0.55)
+	return frame
+end
 
-local barCorner = Instance.new("UICorner")
-barCorner.CornerRadius = UDim.new(0, 10)
-barCorner.Parent = barPanel
-
-local function makeBar(rowY, name)
-	makeLabel(barPanel, name, UDim2.fromOffset(58, 16), UDim2.fromOffset(8, rowY), SILVER, 12)
+local function makeBar(parent, name)
+	makeLabel(parent, name, UDim2.fromOffset(58, 16), UDim2.fromOffset(8, 10), SILVER, 12)
 	local track = Instance.new("Frame")
 	track.Size = UDim2.fromOffset(140, 12)
-	track.Position = UDim2.fromOffset(66, rowY + 2)
+	track.Position = UDim2.fromOffset(66, 12)
 	track.BackgroundColor3 = SILVER
 	track.BackgroundTransparency = 0.6
 	track.BorderSizePixel = 0
-	track.Parent = barPanel
+	track.Parent = parent
 	local trackCorner = Instance.new("UICorner")
 	trackCorner.CornerRadius = UDim.new(0, 6)
 	trackCorner.Parent = track
@@ -151,9 +184,19 @@ local function makeBar(rowY, name)
 	return fill
 end
 
-local healthFill = makeBar(10, "Health")
-local warmthFill = makeBar(40, "Warmth")
-local hungerFill = makeBar(70, "Hunger")
+local healthFrame = makeStatFrame("HealthFrame", UDim2.fromOffset(216, 36), UDim2.new(1, -12, 0, 12), Vector2.new(1, 0))
+local healthFill = makeBar(healthFrame, "Health")
+local warmthFrame = makeStatFrame("WarmthFrame", UDim2.fromOffset(216, 36), UDim2.new(0, 12, 1, -158), Vector2.new(0, 0))
+local warmthFill = makeBar(warmthFrame, "Warmth")
+local hungerFrame = makeStatFrame("HungerFrame", UDim2.fromOffset(216, 36), UDim2.new(0, 12, 1, -116), Vector2.new(0, 0))
+local hungerFill = makeBar(hungerFrame, "Hunger")
+
+-- Lighter fuel: a small pill floating just over the hotbar,
+-- visible only while the lighter is in hand.
+local lighterFuelPill = makeStatFrame("LighterFuel", UDim2.fromOffset(120, 26), UDim2.new(0.5, -60, 1, -98), Vector2.new(0, 0))
+lighterFuelPill.Visible = false
+local lighterFuelLabel = makeLabel(lighterFuelPill, "Fuel: 100", UDim2.new(1, 0, 1, 0), UDim2.fromOffset(0, 0), SILVER, 13)
+lighterFuelLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 local sprintButton = Instance.new("TextButton")
 sprintButton.Name = "SprintButton"
@@ -568,13 +611,15 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
+local dayShown = nil
 local function refreshWorld()
-	dayLabel.Text = "DAY " .. tostring(ReplicatedStorage:GetAttribute("Day") or 1)
-	phaseLabel.Text = tostring(ReplicatedStorage:GetAttribute("Phase") or "Day")
-	tempLabel.Text = tostring(ReplicatedStorage:GetAttribute("AmbientTempC") or 0) .. "C"
-	multLabel.Text = "x" .. tostring(ReplicatedStorage:GetAttribute("Multiplier") or 1)
-	fuelLabel.Text = "Fires lit: " .. tostring(ReplicatedStorage:GetAttribute("LitFires") or 0)
-	seedLabel.Text = "Seed: " .. tostring(ReplicatedStorage:GetAttribute("WorldSeed") or "------")
+	local day = ReplicatedStorage:GetAttribute("Day") or 1
+	if dayShown ~= nil and day ~= dayShown then
+		popDay(day)
+	else
+		dayBanner.Text = dayText(day)
+	end
+	dayShown = day
 end
 
 local function setBar(fill, value, maxValue)
@@ -592,7 +637,7 @@ local function refreshPlayer()
 		frost.BackgroundTransparency = 1
 	end
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
-	lighterLabel.Text = "Lighter: " .. tostring(player:GetAttribute("LighterFuel") or 0)
+	lighterFuelLabel.Text = "Fuel: " .. tostring(player:GetAttribute("LighterFuel") or 0)
 	objectiveLabel.Text = OBJECTIVES[player:GetAttribute("TutorialStep") or 1] or OBJECTIVES[1]
 	sickLabel.Visible = player:GetAttribute("IsSick") == true
 	refreshHotbar()
@@ -746,6 +791,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local aimEquipped = characterNow
 		and (characterNow:FindFirstChild("Shovel") or characterNow:FindFirstChild("Lighter"))
 	dragDot.Visible = myPart ~= nil or aimEquipped ~= nil
+	lighterFuelPill.Visible = characterNow ~= nil and characterNow:FindFirstChild("Lighter") ~= nil
 	if not myPart then
 		dragSmoothedPart = nil
 		dragSmoothedTarget = nil
