@@ -693,9 +693,6 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 	eatButton.Visible = eatTarget ~= nil
 	eatHint.Visible = eatButton.Visible
-	if eatTarget then
-		eatButton.Text = "EAT FISH (" .. tostring(eatTarget:GetAttribute("Pieces") or 5) .. ")"
-	end
 
 	if not myPart then
 		return
