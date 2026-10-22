@@ -58,7 +58,6 @@ function SledService.new(world, gameplay)
 	self._yawVel = 0
 	self._orientOffset = CFrame.identity
 	self._groundOffset = 0.5
-	self._loadPrompt = nil
 	self._unloadPrompt = nil
 	self._pullPrompt = nil
 	return self
@@ -290,18 +289,6 @@ function SledService:_makePrompts()
 	local cargo = self._cargoPart
 	local rootPart = self._rootPart
 
-	local loadPrompt = Instance.new("ProximityPrompt")
-	loadPrompt.ActionText = "Load piece"
-	loadPrompt.ObjectText = "Sled cargo 0/" .. Config.Sled.MaxCargoWeight .. "kg"
-	loadPrompt.HoldDuration = 0.3
-	loadPrompt.MaxActivationDistance = 9
-	loadPrompt.RequiresLineOfSight = false
-	loadPrompt.Parent = cargo or rootPart
-	loadPrompt.Triggered:Connect(function(player)
-		self:_loadNearest(player)
-	end)
-	self._loadPrompt = loadPrompt
-
 	local function makeAnchor(name, offset)
 		local anchor = Instance.new("Part")
 		anchor.Name = name
@@ -350,11 +337,9 @@ function SledService:_makePrompts()
 end
 
 function SledService:_refreshPrompts()
-	if self._loadPrompt then
-		self._loadPrompt.ObjectText = ("Sled cargo %d/%dkg"):format(self._cargoWeight, Config.Sled.MaxCargoWeight)
-	end
 	if self._unloadPrompt then
 		self._unloadPrompt.Enabled = #self._cargo > 0
+		self._unloadPrompt.ObjectText = ("Sled cargo %d/%dkg"):format(self._cargoWeight, Config.Sled.MaxCargoWeight)
 	end
 	if self._pullPrompt then
 		local pulled = self.Sled and self.Sled:GetAttribute("PulledBy") ~= nil
@@ -413,41 +398,6 @@ function SledService:_placePiece(piece)
 	local desired = CFrame.new(center) * CFrame.Angles(0, yawDelta, 0) * (partCF - partCF.Position)
 	local delta = desired * partCF:Inverse()
 	piece:PivotTo(delta * piece:GetPivot())
-end
-
-function SledService:_loadNearest(player)
-	local sled = self.Sled
-	if not sled or not self._cargoPart then
-		return
-	end
-	local root = playerRoot(player)
-	if not root then
-		return
-	end
-	local sledPos = sled:GetPivot().Position
-	if not withinRange(root, sledPos, Config.Sled.InteractRange) then
-		return
-	end
-
-	local best = nil
-	local bestDistance = Config.Sled.LoadRange
-	for _, log in ipairs(self.Gameplay.LogsFolder:GetChildren()) do
-		local lp = getLogPart(log)
-		if not log:GetAttribute("OnSled") and (not lp or lp:GetAttribute("DraggedBy") == nil) then
-			local pivot = log:GetPivot().Position
-			local dx = pivot.X - sledPos.X
-			local dz = pivot.Z - sledPos.Z
-			local distance = math.sqrt(dx * dx + dz * dz)
-			if distance < bestDistance then
-				best = log
-				bestDistance = distance
-			end
-		end
-	end
-	if not best then
-		return
-	end
-	self:_loadPiece(player, best)
 end
 
 -- True while a world position sits over the cargo zone (with

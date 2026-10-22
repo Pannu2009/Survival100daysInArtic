@@ -83,7 +83,6 @@ Config.Sled = {
 	RopeLength = 7,
 	PullSlowPerWeight = 0.004,
 	MinPullSpeedFactor = 0.35,
-	LoadRange = 9,
 	InteractRange = 13,
 	PullRange = 17,
 	RopeSpring = 15,
