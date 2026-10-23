@@ -10,7 +10,13 @@ function SurvivalPlayer.new(clock, temperature)
 	local self = setmetatable({}, SurvivalPlayer)
 	self.Clock = clock
 	self.Temperature = temperature
+	-- Health IS the Roblox Humanoid's health now (Ajay's call):
+	-- self.Health is a mirror, kept in sync by BindHumanoid,
+	-- _setHealth and Update. Everything still routes through
+	-- Heal()/Damage()/Update -- they just land on the Humanoid.
 	self.Health = Config.Survival.MaxHealth
+	self.Humanoid = nil
+	self._diedConn = nil
 	self.Warmth = Config.Survival.MaxWarmth
 	self.Hunger = Hunger.new()
 	self.IsSick = false
@@ -21,6 +27,24 @@ function SurvivalPlayer.new(clock, temperature)
 	self._coldExposure = 0
 	self._cureTime = 0
 	return self
+end
+
+function SurvivalPlayer:BindHumanoid(humanoid)
+	if self._diedConn then
+		self._diedConn:Disconnect()
+		self._diedConn = nil
+	end
+	self.Humanoid = humanoid
+	humanoid.MaxHealth = Config.Survival.MaxHealth
+	humanoid.Health = Config.Survival.MaxHealth
+	self.Health = humanoid.Health
+	self._diedConn = humanoid.Died:Connect(function()
+		if not self.Dead then
+			self.Health = 0
+			self.Dead = true
+			self.OnDied:Fire()
+		end
+	end)
 end
 
 function SurvivalPlayer:Heal(amount)
@@ -34,7 +58,12 @@ function SurvivalPlayer:Damage(amount)
 	if self.Dead then
 		return
 	end
-	self:_setHealth(self.Health - amount)
+	if self.Humanoid and self.Humanoid.Parent then
+		self.Humanoid:TakeDamage(amount)
+		self:_setHealth(self.Humanoid.Health)
+	else
+		self:_setHealth(self.Health - amount)
+	end
 end
 
 function SurvivalPlayer:Update(dt, context)
@@ -42,6 +71,17 @@ function SurvivalPlayer:Update(dt, context)
 		return
 	end
 	context = context or {}
+
+	-- Mirror the Humanoid: damage that arrived outside our own
+	-- routing still counts, and 0 is death however it happened.
+	if self.Humanoid and self.Humanoid.Parent then
+		if self.Humanoid.Health ~= self.Health then
+			self:_setHealth(self.Humanoid.Health)
+			if self.Dead then
+				return
+			end
+		end
+	end
 
 	-- Day 1 is the tutorial: hunger drains at the gentle rate.
 	-- From Day 2 the journey begins and the drain steps up.
@@ -74,6 +114,9 @@ end
 
 function SurvivalPlayer:_setHealth(value)
 	local clamped = math.clamp(value, 0, Config.Survival.MaxHealth)
+	if self.Humanoid and self.Humanoid.Parent and self.Humanoid.Health ~= clamped then
+		self.Humanoid.Health = clamped
+	end
 	if clamped ~= self.Health then
 		self.Health = clamped
 		self.OnHealthChanged:Fire(clamped)

@@ -36,6 +36,7 @@ function Gameplay.new(world, clock, temperature)
 	self._sprinting = {}
 	self._tutorial = {}
 	self._burning = {}
+	self._burn = {}
 	self._spread = {}
 	self.Fish = FishSystem.new(self)
 	self.Animals = Animals.new(self)
@@ -334,6 +335,7 @@ function Gameplay:_onCharacter(player, character)
 
 	local humanoid = character:WaitForChild("Humanoid")
 	humanoid.WalkSpeed = Config.Survival.WalkSpeed
+	self._survivals[player]:BindHumanoid(humanoid)
 
 	local root = character:WaitForChild("HumanoidRootPart")
 	root.CFrame = CFrame.new(7, self.World:GroundY(7, 0) + 4, 0)
@@ -644,6 +646,68 @@ function Gameplay:Notify(player, text)
 	end
 end
 
+-- Standing IN a fire is not warmth, it's ignition: lit
+-- campfires and burning logs both count (horizontal distance --
+-- the root rides ~3 studs over the core).
+local function standingInFire(gameplay, position)
+	for _, fire in ipairs(gameplay.World.Fires or {}) do
+		if fire.Lit and fire.Fuel > 0 then
+			local anchor = fire.CookingPart or fire.Core
+			if anchor then
+				local dx = anchor.Position.X - position.X
+				local dz = anchor.Position.Z - position.Z
+				if dx * dx + dz * dz <= Config.Campfire.BurnRadius * Config.Campfire.BurnRadius then
+					return true
+				end
+			end
+		end
+	end
+	for log in pairs(gameplay._burning) do
+		if log and log.Parent then
+			local lp = log:GetPivot().Position
+			local dx = lp.X - position.X
+			local dz = lp.Z - position.Z
+			if dx * dx + dz * dz <= 2.2 * 2.2 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function Gameplay:_tickBurn(player, survival, root, dt)
+	local now = os.clock()
+	local state = self._burn[player]
+	if root and standingInFire(self, root.Position) then
+		if not state then
+			state = { Acc = 0 }
+			self._burn[player] = state
+			local flame = Instance.new("Fire")
+			flame.Name = "BurnFlames"
+			flame.Heat = 9
+			flame.Size = 4
+			flame.Parent = root
+			state.Flame = flame
+			self:Notify(player, "You're on fire!")
+		end
+		state.Until = now + math.random(Config.Campfire.BurnSecondsMin, Config.Campfire.BurnSecondsMax)
+	end
+	if state then
+		if not root or now > (state.Until or 0) then
+			if state.Flame then
+				state.Flame:Destroy()
+			end
+			self._burn[player] = nil
+			return
+		end
+		state.Acc += dt
+		while state.Acc >= 1 do
+			state.Acc -= 1
+			survival:Damage(Config.Campfire.BurnDamagePerSecond)
+		end
+	end
+end
+
 function Gameplay:Update(dt)
 	local world = self.World
 	self.Fish:Cook(dt)
@@ -698,6 +762,8 @@ function Gameplay:Update(dt)
 				end
 			end
 		end
+
+		self:_tickBurn(player, survival, root, dt)
 
 		-- Why is your warmth moving? Published for the HUD label
 		-- under the warmth bar.

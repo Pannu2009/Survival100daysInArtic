@@ -56,6 +56,21 @@ function Animals.new(gameplay)
 	return self
 end
 
+function Animals:_population()
+	local day = self.Gameplay.Clock and self.Gameplay.Clock:GetDay() or 1
+	return W.Population[math.min(day, #W.Population)]
+end
+
+function Animals:_wildCount()
+	local n = 0
+	for _, wolf in ipairs(self.Wolves) do
+		if not wolf.Owner then
+			n += 1
+		end
+	end
+	return n
+end
+
 function Animals:Start()
 	local folder = Instance.new("Folder")
 	folder.Name = "Animals"
@@ -71,8 +86,14 @@ function Animals:Start()
 		return
 	end
 
-	for _ = 1, W.PacksToSpawn do
-		self:_spawnPack()
+	-- Fill the world to today's population target.
+	local target = self:_population().Total
+	local guard = 0
+	while self:_wildCount() < target and guard < 12 do
+		guard += 1
+		if self:_spawnPack() == 0 then
+			break
+		end
 	end
 
 	RunService.Heartbeat:Connect(function(dt)
@@ -103,6 +124,8 @@ end
 
 function Animals:_buildWolf()
 	local walkTrack = nil
+	local attackTrack = nil
+	local idleTrack = nil
 	local biteSoundFound = nil
 	local wolf = self.Template:Clone()
 	for _, d in ipairs(wolf:GetDescendants()) do
@@ -148,8 +171,14 @@ function Animals:_buildWolf()
 		end
 	end
 	-- His WalkAnim + bite sound live in the model: wire both up.
-	local walkAnim = wolf:FindFirstChild("WalkAnim", true)
-	if walkAnim and walkAnim:IsA("Animation") then
+	-- His animations, all optional and loaded if present:
+	-- WalkAnim loops while moving, IdleAnim while standing,
+	-- AttackAnim fires on a bite.
+	local function loadAnim(name)
+		local anim = wolf:FindFirstChild(name, true)
+		if not (anim and anim:IsA("Animation")) then
+			return nil
+		end
 		local host = wolf:FindFirstChildOfClass("AnimationController")
 			or wolf:FindFirstChildOfClass("Humanoid")
 		if not host then
@@ -162,13 +191,19 @@ function Animals:_buildWolf()
 			animator.Parent = host
 		end
 		local ok, track = pcall(function()
-			return animator:LoadAnimation(walkAnim)
+			return animator:LoadAnimation(anim)
 		end)
-		if ok and track then
-			track.Looped = true
-			wolf:SetAttribute("WalkTrackReady", true)
-			walkTrack = track
-		end
+		return ok and track or nil
+	end
+	walkTrack = loadAnim("WalkAnim")
+	if walkTrack then
+		walkTrack.Looped = true
+		wolf:SetAttribute("WalkTrackReady", true)
+	end
+	attackTrack = loadAnim("AttackAnim")
+	idleTrack = loadAnim("IdleAnim")
+	if idleTrack then
+		idleTrack.Looped = true
 	end
 	local biteSound = wolf:FindFirstChild("damage", true)
 	if biteSound and biteSound:IsA("Sound") then
@@ -205,6 +240,8 @@ function Animals:_buildWolf()
 		Model = wolf,
 		Root = root,
 		WalkTrack = walkTrack,
+		AttackTrack = attackTrack,
+		IdleTrack = idleTrack,
 		BiteSound = biteSoundFound,
 		Tag = tag,
 		TagLabel = label,
@@ -255,21 +292,50 @@ function Animals:_packSpawnPosition()
 	local layout = world and world.Layout
 	local radius = (layout and layout.WorldRadius) or 500
 	local lake = layout and layout.Lake
-	for _ = 1, 14 do
-		local angle = math.random() * math.pi * 2
-		local dist = math.random(110, math.min(380, radius - 50))
-		local x = math.cos(angle) * dist
-		local z = math.sin(angle) * dist
+	local function clearOf(x, z)
+		-- Not in the lake, not on top of another pack, and never
+		-- in sight of a player: packs arrive from far away.
 		if lake then
 			local dx = x - lake.X
 			local dz = z - lake.Z
 			if dx * dx + dz * dz < (lake.Radius + 25) * (lake.Radius + 25) then
-				continue
+				return false
 			end
 		end
-		return Vector3.new(x, 0, z)
+		for _, pack in pairs(self._packs) do
+			if pack.Home then
+				local dx = x - pack.Home.X
+				local dz = z - pack.Home.Z
+				if dx * dx + dz * dz < W.PackSeparation * W.PackSeparation then
+					return false
+				end
+			end
+		end
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if root then
+				local dx = x - root.Position.X
+				local dz = z - root.Position.Z
+				if dx * dx + dz * dz < 140 * 140 then
+					return false
+				end
+			end
+		end
+		return true
 	end
-	return Vector3.new(150, 0, 150)
+	for _ = 1, 24 do
+		local angle = math.random() * math.pi * 2
+		local dist = math.random(120, math.max(140, radius - 40))
+		local x = math.cos(angle) * dist
+		local z = math.sin(angle) * dist
+		if clearOf(x, z) then
+			return Vector3.new(x, 0, z)
+		end
+	end
+	-- Crowded world: accept a farther-out point unchecked.
+	local angle = math.random() * math.pi * 2
+	return Vector3.new(math.cos(angle) * (radius - 30), 0, math.sin(angle) * (radius - 30))
 end
 
 function Animals:_spawnPack()
@@ -278,14 +344,15 @@ function Animals:_spawnPack()
 	end
 	-- World population cap (Ajay): never more than MaxAlive
 	-- wolves in the world at once, wild or tamed.
-	local room = W.MaxAlive - #self.Wolves
+	local room = math.min(W.MaxAlive - #self.Wolves, self:_population().Total - self:_wildCount())
 	if room <= 0 then
 		return 0
 	end
 	self._nextPackId += 1
 	local packId = self._nextPackId
 	local home = self:_packSpawnPosition()
-	local count = math.min(math.random(W.PackMin, W.PackMax), room)
+	local pop = self:_population()
+	local count = math.min(math.random(pop.PackMin, pop.PackMax), room)
 	local pack = { Id = packId, Home = home, RespawnAt = nil }
 	self._packs[packId] = pack
 	local spawned = 0
@@ -297,8 +364,9 @@ function Animals:_spawnPack()
 		spawned += 1
 		record.PackId = packId
 		record.Home = home
-		if i == 1 then
-			-- The pack leader: bigger pool, harder bite.
+		if i == 1 and count >= 2 then
+			-- The pack leader: bigger pool, harder bite. (A lone
+			-- wolf is just a wolf -- no leader buff solo.)
 			record.Leader = true
 			record.MaxHealth = W.LeaderMaxHealth
 			record.Health = W.LeaderMaxHealth
@@ -398,24 +466,11 @@ function Animals:_killWolf(wolf)
 	if wolf.Owner then
 		self:_removeFromOwner(wolf)
 	end
-	local pack = wolf.PackId and self._packs[wolf.PackId]
 	wolf.Model:Destroy()
 	for i, w in ipairs(self.Wolves) do
 		if w == wolf then
 			table.remove(self.Wolves, i)
 			break
-		end
-	end
-	if pack then
-		local anyLeft = false
-		for _, w in ipairs(self.Wolves) do
-			if w.PackId == pack.Id and not w.Owner then
-				anyLeft = true
-				break
-			end
-		end
-		if not anyLeft then
-			pack.RespawnAt = os.clock() + W.RespawnSeconds
 		end
 	end
 end
@@ -690,6 +745,68 @@ function Animals:_shelteredByFire(position)
 	return false
 end
 
+-- Fire hurts wolves exactly like players: stand in it and you
+-- burn (1.5/s for 5-7s, flames included).
+function Animals:_burnCheck(wolf, dt, now)
+	local pos = wolf.Root.Position
+	local inFire = false
+	for _, fire in ipairs(self.Gameplay.World.Fires or {}) do
+		if fire.Lit and fire.Fuel > 0 then
+			local anchor = fire.CookingPart or fire.Core
+			if anchor then
+				local dx = anchor.Position.X - pos.X
+				local dz = anchor.Position.Z - pos.Z
+				if dx * dx + dz * dz <= Config.Campfire.BurnRadius ^ 2 then
+					inFire = true
+					break
+				end
+			end
+		end
+	end
+	if not inFire then
+		for log in pairs(self.Gameplay._burning) do
+			if log and log.Parent then
+				local lp = log:GetPivot().Position
+				local dx = lp.X - pos.X
+				local dz = lp.Z - pos.Z
+				if dx * dx + dz * dz <= 2.2 * 2.2 then
+					inFire = true
+					break
+				end
+			end
+		end
+	end
+	if inFire then
+		wolf.BurnUntil = now + math.random(Config.Campfire.BurnSecondsMin, Config.Campfire.BurnSecondsMax)
+		if not wolf.Root:FindFirstChild("BurnFlames") then
+			local flame = Instance.new("Fire")
+			flame.Name = "BurnFlames"
+			flame.Heat = 8
+			flame.Size = 3
+			flame.Parent = wolf.Root
+		end
+	end
+	if wolf.BurnUntil then
+		if now > wolf.BurnUntil then
+			wolf.BurnUntil = nil
+			wolf.BurnAcc = 0
+			local flame = wolf.Root:FindFirstChild("BurnFlames")
+			if flame then
+				flame:Destroy()
+			end
+		else
+			wolf.BurnAcc = (wolf.BurnAcc or 0) + dt
+			while wolf.BurnAcc >= 1 do
+				wolf.BurnAcc -= 1
+				self:DamageWolf(wolf, Config.Campfire.BurnDamagePerSecond, nil)
+				if wolf.Health <= 0 then
+					return
+				end
+			end
+		end
+	end
+end
+
 function Animals:_nearestPlayer(position, maxDist)
 	local best, bestDist = nil, maxDist
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -728,6 +845,13 @@ function Animals:_moveToward(wolf, targetPos, speed, dt)
 			wolf.WalkTrack:Stop(0.2)
 		end
 	end
+	if wolf.IdleTrack then
+		if not moving and not wolf.IdleTrack.IsPlaying then
+			wolf.IdleTrack:Play(0.25)
+		elseif moving and wolf.IdleTrack.IsPlaying then
+			wolf.IdleTrack:Stop(0.15)
+		end
+	end
 	local groundY = self.Gameplay.World:GroundY(pos.X, pos.Z)
 	local bob = moving and math.sin(wolf.WalkCycle * 2) * 0.07 or 0
 	local y = groundY + wolf.GroundOffset + bob
@@ -742,6 +866,9 @@ function Animals:_bitePlayer(wolf, player)
 	end
 	if wolf.BiteSound then
 		wolf.BiteSound:Play()
+	end
+	if wolf.AttackTrack and not wolf.AttackTrack.IsPlaying then
+		wolf.AttackTrack:Play(0.05)
 	end
 	local damage = W.BiteDamage * (wolf.Leader and W.LeaderDamageMult or 1)
 	survival:Damage(damage)
@@ -776,16 +903,15 @@ function Animals:_step(dt)
 	local clock = self.Gameplay.Clock
 	local isNight = clock and clock:GetPhase() == "Night"
 
-	-- Pack respawns.
-	for _, pack in pairs(self._packs) do
-		if pack.RespawnAt and now >= pack.RespawnAt then
-			pack.RespawnAt = nil
-			if self:_spawnPack() == 0 then
-				-- The 24-wolf cap (or a missing template) blocked
-				-- it: stay pending and retry shortly instead of
-				-- vanishing forever.
-				pack.RespawnAt = now + 30
-			end
+	-- Population top-up: the world refills toward the day's
+	-- target (checked on a slow tick; spawns land far away, so
+	-- nothing pops in next to a player).
+	self._topUpTick = (self._topUpTick or 0) - dt
+	if self._topUpTick <= 0 then
+		self._topUpTick = W.TopUpSeconds
+		local target = self:_population().Total
+		if self:_wildCount() < target then
+			self:_spawnPack()
 		end
 	end
 
@@ -799,6 +925,11 @@ function Animals:_step(dt)
 			wolf.Think = 0.2
 		end
 		local pos = wolf.Root.Position
+
+		self:_burnCheck(wolf, dt, now)
+		if wolf.Health <= 0 then
+			continue
+		end
 
 		if wolf.Owner then
 			local survival = self.Gameplay._survivals[wolf.Owner]

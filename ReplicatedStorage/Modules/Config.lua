@@ -74,6 +74,10 @@ Config.World = {
 }
 
 Config.Campfire = {
+	BurnRadius = 2.6,
+	BurnDamagePerSecond = 1.5,
+	BurnSecondsMin = 5,
+	BurnSecondsMax = 7,
 	WarmthRadius = 23,
 	WarmthRate = 2.4,
 	BurningLogRadius = 10,
@@ -208,6 +212,16 @@ Config.Wolves = {
 	PacksToSpawn = 4,
 	PackMin = 2,
 	PackMax = 5,
+	-- Population scales with the day (Ajay): Day 1 is the
+	-- tutorial -- six wolves in pairs or alone. Day 2 the map
+	-- holds 16 in packs of 2-3. Day 3+ is the full world.
+	Population = {
+		{ Total = 6, PackMin = 1, PackMax = 2 },
+		{ Total = 16, PackMin = 2, PackMax = 3 },
+		{ Total = 24, PackMin = 2, PackMax = 5 },
+	},
+	PackSeparation = 130,
+	TopUpSeconds = 20,
 	RespawnSeconds = 300,
 	AttackSeconds = 12,
 	AttackDamage = 10,
