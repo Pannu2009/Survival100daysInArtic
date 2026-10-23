@@ -128,6 +128,11 @@ function FishSystem:Eat(player, fish)
 	if not survival or not root or not part then
 		return
 	end
+	-- Not out of someone else's hands.
+	local draggedBy = part:GetAttribute("DraggedBy")
+	if draggedBy ~= nil and draggedBy ~= player.UserId then
+		return
+	end
 	if (part.Position - root.Position).Magnitude > 11 then
 		return
 	end
@@ -195,15 +200,6 @@ function FishSystem:Cook(dt)
 					local t = (fish:GetAttribute("CookTime") or 0) + dt
 					if t >= Config.Food.CookSeconds then
 						fish:SetAttribute("Cooked", true)
-						-- Whoever is standing by the fire hears it:
-						-- dinner's ready.
-						for _, pl in ipairs(Players:GetPlayers()) do
-							local ch = pl.Character
-							local rt = ch and ch:FindFirstChild("HumanoidRootPart")
-							if rt and part and (rt.Position - part.Position).Magnitude <= 12 then
-								self.Gameplay:Notify(pl, "Fish cooked!")
-							end
-						end
 						for _, p in ipairs(fish:GetDescendants()) do
 							if p:IsA("BasePart") then
 								p.Color = Color3.fromRGB(198, 124, 56)

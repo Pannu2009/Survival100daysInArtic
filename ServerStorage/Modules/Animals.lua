@@ -204,7 +204,7 @@ function Animals:_buildWolf()
 		wolf:SetAttribute("WalkTrackReady", true)
 	end
 	attackTrack = loadAnim("AttackAnim")
-	idleTrack = loadAnim("IdleAnim")
+	idleTrack = loadAnim("Idle_1_Anim") or loadAnim("IdleAnim")
 	if idleTrack then
 		idleTrack.Looped = true
 	end
@@ -1085,8 +1085,10 @@ function Animals:_step(dt)
 					end
 				end
 				if not wolf.RoamTarget or (wolf.RoamTarget - pos).Magnitude < 2 then
+					-- Wander the pack's 50x50 home range, spread
+					-- evenly over it (sqrt keeps it off-center).
 					local a = math.random() * math.pi * 2
-					local r = math.random() * W.RoamRadius
+					local r = math.sqrt(math.random()) * W.RoamRadius
 					wolf.RoamTarget = wolf.Home + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
 				end
 			end
@@ -1193,7 +1195,7 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 		end
 		if not wolf.RoamTarget or (wolf.RoamTarget - pos).Magnitude < 2 then
 			local a = math.random() * math.pi * 2
-			local r = math.random() * 45
+			local r = math.sqrt(math.random()) * 25
 			wolf.RoamTarget = anchor + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
 		end
 		self:_moveToward(wolf, wolf.RoamTarget, W.RoamSpeed + 1.5, dt)

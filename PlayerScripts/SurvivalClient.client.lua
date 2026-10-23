@@ -1404,6 +1404,35 @@ RunService.RenderStepped:Connect(function()
 	grabParams.FilterDescendantsInstances = { character }
 	local hit = workspace:Raycast(camera.CFrame.Position, camera.CFrame.LookVector * 14, grabParams)
 	local part = draggablePartOf(hit and hit.Instance)
+	if not part then
+		-- Forgiving probe: thin items (a flat fish on the ice)
+		-- slip past a pixel-perfect ray and the grab feels stuck.
+		-- Anything draggable passing within ~1.9 studs of the
+		-- aim line counts.
+		local origin = camera.CFrame.Position
+		local dir = camera.CFrame.LookVector
+		local bestT = math.huge
+		local fishFolderNow = workspace:FindFirstChild("Fish")
+		for _, folder in ipairs({ logsFolder, fishFolderNow }) do
+			if folder then
+				for _, model in ipairs(folder:GetChildren()) do
+					local anyPart = model:IsA("BasePart") and model or model:FindFirstChildWhichIsA("BasePart", true)
+					local candidate = anyPart and draggablePartOf(anyPart)
+					if candidate and candidate:GetAttribute("DraggedBy") == nil then
+						local rel = candidate.Position - origin
+						local t = rel:Dot(dir)
+						if t > 1.5 and t < 14 and t < bestT then
+							local closest = origin + dir * t
+							if (candidate.Position - closest).Magnitude <= 1.9 then
+								part = candidate
+								bestT = t
+							end
+						end
+					end
+				end
+			end
+		end
+	end
 	if part and part:GetAttribute("DraggedBy") == nil then
 		grabTarget = part
 		grabButton.Text = "GRAB"
