@@ -17,6 +17,33 @@ local cellCount = 0
 
 function TrackMarks.Init(w)
 	world = w
+	-- One-time self-test: try the voxel read three ways and report
+	-- which form this place accepts, so a failure is diagnosable
+	-- from the server-start Output lines alone.
+	task.spawn(function()
+		local terrain = workspace.Terrain
+		local okA, errA = pcall(function()
+			local region = Region3int16.new(
+				Vector3int16.new(0, 0, 0),
+				Vector3int16.new(16, 16, 16)
+			)
+			return terrain:ReadVoxels(region, 4)
+		end)
+		print("[Arctic] TrackMarks self-test A (docs form):", okA, okA and "read ok" or errA)
+		local okB, errB = pcall(function()
+			local region = Region3.new(Vector3.new(0, 0, 0), Vector3.new(16, 16, 16)):ExpandToGrid(4)
+			return terrain:ReadVoxels(region, 4)
+		end)
+		print("[Arctic] TrackMarks self-test B (Region3 grid):", okB, okB and "read ok" or errB)
+		local okC, errC = pcall(function()
+			local region = Region3int16.new(
+				Vector3int16.new(8, 8, 8),
+				Vector3int16.new(12, 20, 12)
+			)
+			return terrain:ReadVoxels(region, 4)
+		end)
+		print("[Arctic] TrackMarks self-test C (mark-sized):", okC, okC and "read ok" or errC)
+	end)
 end
 
 local function cellKey(vx, vy, vz)
