@@ -230,13 +230,13 @@ end
 
 function Animals:_spawnPack()
 	if not self.Template then
-		return
+		return 0
 	end
 	-- World population cap (Ajay): never more than MaxAlive
 	-- wolves in the world at once, wild or tamed.
 	local room = W.MaxAlive - #self.Wolves
 	if room <= 0 then
-		return
+		return 0
 	end
 	self._nextPackId += 1
 	local packId = self._nextPackId
@@ -244,11 +244,13 @@ function Animals:_spawnPack()
 	local count = math.min(math.random(W.PackMin, W.PackMax), room)
 	local pack = { Id = packId, Home = home, RespawnAt = nil }
 	self._packs[packId] = pack
+	local spawned = 0
 	for i = 1, count do
 		local record = self:_buildWolf()
 		if not record then
-			return
+			return spawned
 		end
+		spawned += 1
 		record.PackId = packId
 		record.Home = home
 		if i == 1 then
@@ -262,6 +264,7 @@ function Animals:_spawnPack()
 		self:_placeAt(record, home + Vector3.new(math.cos(angle) * 4, 0, math.sin(angle) * 4))
 		table.insert(self.Wolves, record)
 	end
+	return spawned
 end
 
 -- ---------- queries used by other systems ----------
@@ -656,7 +659,12 @@ function Animals:_step(dt)
 	for _, pack in pairs(self._packs) do
 		if pack.RespawnAt and now >= pack.RespawnAt then
 			pack.RespawnAt = nil
-			self:_spawnPack()
+			if self:_spawnPack() == 0 then
+				-- The 24-wolf cap (or a missing template) blocked
+				-- it: stay pending and retry shortly instead of
+				-- vanishing forever.
+				pack.RespawnAt = now + 30
+			end
 		end
 	end
 

@@ -491,6 +491,14 @@ end
 -- same trust pattern as drag streaming): the server clamps the
 -- bar's speed and keeps the authoritative copy.
 function FishSystem:SyncBar(player, barPos)
+	-- The value is client-provided: it must be a real, finite
+	-- number before it touches any arithmetic (NaN would poison
+	-- the session's bar and wedge the whole reel).
+	if typeof(barPos) ~= "number" or barPos ~= barPos
+		or barPos == math.huge or barPos == -math.huge
+	then
+		return
+	end
 	local session = self.Sessions[player]
 	if not session or session.Phase ~= "Reel" then
 		return
