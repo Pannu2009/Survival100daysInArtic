@@ -63,9 +63,11 @@ function Animals:Start()
 	self.Folder = folder
 
 	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
-	self.Template = assets and assets:FindFirstChild("WolfModel")
+	local animalsFolder = assets and assets:FindFirstChild("Animals")
+	self.Template = (animalsFolder and animalsFolder:FindFirstChild("WolfModel"))
+		or (assets and assets:FindFirstChild("WolfModel", true))
 	if not self.Template then
-		warn("[Arctic] Animals: no Assets/WolfModel - no wolves will spawn")
+		warn("[Arctic] Animals: no Assets.Animals.WolfModel - no wolves will spawn")
 		return
 	end
 
@@ -219,7 +221,10 @@ function Animals:_buildWolf()
 		Home = Vector3.zero,
 		RoamTarget = nil,
 		TargetPlayer = nil,
-		WeakSince = nil,
+		FishNeeded = nil,
+		FishEaten = 0,
+		RefuseUntil = 0,
+		EatingUntil = nil,
 		SledService = nil,
 		SlotIndex = 0,
 		AttackWolf = nil,
@@ -361,18 +366,22 @@ function Animals:DamageWolf(wolf, amount, attacker)
 		self:_killWolf(wolf)
 		return
 	end
-	if not wolf.Owner then
-		if wolf.Health <= W.TameHealth then
-			if wolf.State ~= "Weakened" and attacker then
-				self.Gameplay:Notify(attacker, "It's weak -- drop a fish to tame it!")
-			end
-			wolf.State = "Weakened"
-			wolf.WeakSince = os.clock()
-			wolf.TargetPlayer = nil
-		elseif attacker then
-			-- The whole pack answers an attack.
+	if not wolf.Owner and attacker then
+		-- Crossing into tameable range does NOT calm him: he
+		-- keeps fighting until he notices a dropped fish. Better
+		-- wolves ask more: the leader always wants 2 fish, a
+		-- regular wolf wants 2 half the time.
+		if wolf.Health <= W.TameHealth and wolf.FishNeeded == nil then
+			wolf.FishNeeded = (wolf.Leader or math.random() < W.TwoFishChance) and 2 or 1
+			wolf.FishEaten = 0
+			wolf.TameableSince = os.clock()
+			self.Gameplay:Notify(attacker, "It's weak -- drop a fish to tame it!")
+		end
+		-- The whole pack answers an attack -- except a wolf who
+		-- has already noticed a fish: he keeps going for it.
+		if wolf.State ~= "GoEat" then
 			for _, other in ipairs(self.Wolves) do
-				if other.PackId == wolf.PackId and not other.Owner and other.Health > W.TameHealth then
+				if other.PackId == wolf.PackId and not other.Owner and other.State ~= "GoEat" then
 					other.State = "Aggro"
 					other.TargetPlayer = attacker
 				end
@@ -451,9 +460,12 @@ end
 -- ---------- taming ----------
 
 function Animals:_tryTame(wolf)
-	-- A weakened wolf scans for a fish somebody dropped: a loose
-	-- fish whose LastDragger is set. The wolf walks to it, eats
-	-- it, and belongs to that player (team cap applies).
+	-- A hurt wolf scans for a fish somebody dropped: a loose
+	-- fish whose LastDragger is set. Unless he was betrayed
+	-- recently -- a snatched fish means no trust for a while.
+	if os.clock() < (wolf.RefuseUntil or 0) then
+		return false
+	end
 	local fishFolder = self.Gameplay.Fish and self.Gameplay.Fish.Folder
 	if not fishFolder then
 		return false
@@ -480,22 +492,84 @@ function Animals:_tryTame(wolf)
 	return true
 end
 
-function Animals:_finishTame(wolf, fish)
+-- Eating is a timed act, and it can be ruined: snatch the fish
+-- back mid-tame and the wolf turns on you (and refuses fish for
+-- a while). A full fish is eaten whole; some wolves need two.
+function Animals:_stepGoEat(wolf, dt, now)
+	local fish = wolf.EatTarget
+	local primary = fish and fish.Parent and (fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true))
+	if not primary then
+		wolf.EatTarget = nil
+		wolf.EatingUntil = nil
+		wolf.State = wolf.TargetPlayer and "Aggro" or "Roam"
+		return
+	end
+	local draggedBy = primary:GetAttribute("DraggedBy")
+	if draggedBy ~= nil then
+		self:_failTame(wolf, draggedBy)
+		return
+	end
+	if wolf.EatingUntil then
+		self:_moveToward(wolf, wolf.Root.Position, 0, dt)
+		if now >= wolf.EatingUntil then
+			wolf.EatingUntil = nil
+			wolf.EatTarget = nil
+			self:_consumeFish(wolf, fish)
+		end
+		return
+	end
+	local d = self:_moveToward(wolf, primary.Position, 6, dt)
+	if d <= 2.2 then
+		wolf.EatingUntil = now + W.EatSeconds
+		if wolf.BiteSound then
+			wolf.BiteSound:Play()
+		end
+	end
+end
+
+function Animals:_failTame(wolf, draggedBy)
+	wolf.EatTarget = nil
+	wolf.EatingUntil = nil
+	wolf.RefuseUntil = os.clock() + W.TameRefuseSeconds
+	local grabber = typeof(draggedBy) == "number" and Players:GetPlayerByUserId(draggedBy) or nil
+	wolf.State = grabber and "Aggro" or "Roam"
+	wolf.TargetPlayer = grabber
+	if grabber then
+		self.Gameplay:Notify(grabber, "Tame failed -- the wolf turned on you!")
+	end
+end
+
+function Animals:_consumeFish(wolf, fish)
 	local lastDragger = fish:GetAttribute("LastDragger")
 	fish:Destroy()
+	wolf.FishEaten = (wolf.FishEaten or 0) + 1
+	local needed = wolf.FishNeeded or 1
+	if wolf.FishEaten < needed then
+		local owner = lastDragger and Players:GetPlayerByUserId(lastDragger)
+		if owner then
+			self.Gameplay:Notify(owner, ("It wants another fish! (%d/%d)"):format(wolf.FishEaten, needed))
+		end
+		wolf.State = "Roam"
+		return
+	end
+	self:_claimWolf(wolf, lastDragger)
+end
+
+function Animals:_claimWolf(wolf, lastDragger)
 	local owner = lastDragger and Players:GetPlayerByUserId(lastDragger)
+	wolf.FishNeeded = nil
+	wolf.FishEaten = 0
+	wolf.TameableSince = nil
 	if not owner or self:Count(owner) >= W.TeamLimit then
 		-- Fed but not claimed (nobody there, or their team is
 		-- full): the wolf recovers and stays wild.
 		wolf.Health = math.min(wolf.MaxHealth, wolf.Health + 40)
 		wolf.State = "Roam"
-		wolf.WeakSince = nil
 		self:_refreshTag(wolf)
 		return
 	end
 	wolf.Owner = owner
 	wolf.State = "Tamed"
-	wolf.WeakSince = nil
 	wolf.TargetPlayer = nil
 	local list = self._byOwner[owner]
 	if not list then
@@ -510,8 +584,6 @@ function Animals:_finishTame(wolf, fish)
 	self:_refreshTag(wolf)
 	print(("[Arctic] %s tamed a wolf (%d/%d)"):format(owner.Name, #list, W.TeamLimit))
 end
-
--- ---------- commands ----------
 
 function Animals:SetCommand(player, mode, targetPos)
 	self._commands[player] = mode
@@ -736,6 +808,27 @@ function Animals:_step(dt)
 			end
 		end
 
+		-- A hurt wild wolf who notices a dropped fish diverts to
+		-- it from ANY state -- even mid-chase. And one left alone
+		-- long enough slowly heals back over the tameable line
+		-- (the offer expires).
+		if not wolf.Owner and wolf.State ~= "GoEat" and wolf.Health <= W.TameHealth then
+			if think then
+				self:_tryTame(wolf)
+			end
+			if (wolf.State == "Roam" or wolf.State == "Wary")
+				and wolf.TameableSince and now - wolf.TameableSince > 20
+			then
+				wolf.Health += 7.5 * dt
+				if wolf.Health > W.TameHealth then
+					wolf.FishNeeded = nil
+					wolf.FishEaten = 0
+					wolf.TameableSince = nil
+					self:_refreshTag(wolf)
+				end
+			end
+		end
+
 		if wolf.State == "Roam" then
 			if think then
 				local near, dist = self:_nearestPlayer(pos, W.WaryRange)
@@ -797,40 +890,8 @@ function Animals:_step(dt)
 					wolf.TargetPlayer = nil
 				end
 			end
-		elseif wolf.State == "Weakened" then
-			-- Hurt and hungry: no fight left. A dropped fish with
-			-- an owner is a second chance (see _tryTame).
-			if think then
-				if not self:_tryTame(wolf) then
-					if wolf.WeakSince and now - wolf.WeakSince > 30 then
-						wolf.Health = math.min(60, wolf.Health + 5)
-						if wolf.Health > W.TameHealth then
-							wolf.State = "Roam"
-							wolf.WeakSince = nil
-							self:_refreshTag(wolf)
-						end
-					end
-				end
-			end
-			self:_moveToward(wolf, pos, 0, dt)
 		elseif wolf.State == "GoEat" then
-			local fish = wolf.EatTarget
-			if not fish or not fish.Parent then
-				wolf.State = "Weakened"
-				wolf.EatTarget = nil
-			else
-				local primary = fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true)
-				if not primary then
-					wolf.State = "Weakened"
-					wolf.EatTarget = nil
-				else
-					local d = self:_moveToward(wolf, primary.Position, 6, dt)
-					if d <= 2.2 then
-						wolf.EatTarget = nil
-						self:_finishTame(wolf, fish)
-					end
-				end
-			end
+			self:_stepGoEat(wolf, dt, now)
 		elseif wolf.State == "Tamed" then
 			self:_stepTamed(wolf, dt, now, isNight)
 		elseif wolf.State == "Harness" then
