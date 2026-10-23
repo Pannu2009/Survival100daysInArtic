@@ -10,6 +10,17 @@ local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 local SledService = {}
 SledService.__index = SledService
 
+-- Handling per terrain surface under the sled: powder snow drags
+-- and turns soft, glacier ice glides far and barely grips, rock
+-- bites hard. friction multiplies forward drag, grip multiplies
+-- lateral (anti-slide) grip.
+local SURFACE_PROFILES = {
+	[Enum.Material.Snow] = { friction = 1.25, grip = 0.8 },
+	[Enum.Material.Glacier] = { friction = 0.4, grip = 0.28 },
+	[Enum.Material.Rock] = { friction = 1.1, grip = 1.15 },
+}
+local DEFAULT_PROFILE = { friction = 1, grip = 1 }
+
 local function getLogPart(log)
 	return log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
 end
@@ -599,6 +610,28 @@ function SledService:_unloadLast(player)
 	self:_recalcCargoWeight()
 end
 
+-- A brutal impact knocks the top cargo piece loose: it comes off
+-- the pile and lands behind the sled as a normal loose log again.
+function SledService:_throwTopPiece(vel)
+	local piece = self._cargo[#self._cargo]
+	if not piece then
+		return
+	end
+	self:RemovePiece(piece)
+	local part = getLogPart(piece)
+	if not part then
+		return
+	end
+	local sled = self.Sled
+	local center = sled and sled:GetPivot().Position or part.Position
+	local behind = Vector3.new(math.sin(self._yaw), 0, math.cos(self._yaw))
+	local dropXZ = center + behind * (self._halfLength + 2.5)
+	local dropPos = Vector3.new(dropXZ.X, self.World:GroundY(dropXZ.X, dropXZ.Z) + 1.2, dropXZ.Z)
+	piece:PivotTo(CFrame.new(dropPos))
+	part.AssemblyLinearVelocity = (vel or Vector3.zero) * 0.4 + Vector3.new(0, 4, 0)
+	part.AssemblyAngularVelocity = Vector3.new(0, 1.5, 0)
+end
+
 -- External removal (fire claimed a cargo log): the unload
 -- bookkeeping, without the drop placement or a new drag prompt.
 -- The piece stays where it lies and burns where it lies.
@@ -784,6 +817,34 @@ function SledService:_stepSled(dt)
 	-- never divide by it): empty = 1, 100kg of cargo = 5.
 	local massFactor = 1 + self._cargoWeight / 25
 
+	-- Surface under the sled, smoothed so borders do not pop.
+	local surfHit = world:TerrainRaycastDown(pos.X, pos.Z)
+	local prof = (surfHit and SURFACE_PROFILES[surfHit.Material]) or DEFAULT_PROFILE
+	self._surfF = self._surfF or 1
+	self._surfG = self._surfG or 1
+	local blend = 1 - math.exp(-dt * 3)
+	self._surfF += (prof.friction - self._surfF) * blend
+	self._surfG += (prof.grip - self._surfG) * blend
+
+	-- Cargo balance: a pile stacked to one side (mean lateral
+	-- offset of the load) tips the sled and upsets its turns.
+	local comAcross = 0
+	if self._cargoWeight > 0 then
+		local moment = 0
+		for _, piece in ipairs(self._cargo) do
+			local slot = self._slots[piece]
+			if slot then
+				moment += slot.across * (piece:GetAttribute("Weight") or 0)
+			end
+		end
+		comAcross = moment / self._cargoWeight
+	end
+	self._comAcross = comAcross
+
+	-- Runner load from last tick's suspension: unloaded runners
+	-- (airborne over a crest) cannot grip or steer.
+	local gripState = self._gripState or 1
+
 	local s = 3
 	local hx1 = world:GroundY(pos.X + s, pos.Z)
 	local hx0 = world:GroundY(pos.X - s, pos.Z)
@@ -819,14 +880,14 @@ function SledService:_stepSled(dt)
 		end
 		local desired = horizontalDir(root.Position - pos)
 		local err = yawBetween(fwdH, desired)
-		self._yawVel += err * Config.Sled.YawResponse * dt
+		self._yawVel += err * Config.Sled.YawResponse * gripState * dt
 	elseif self._vel.Magnitude > 1 then
 		local desired = horizontalDir(self._vel)
 		if fwdH:Dot(desired) < 0 then
 			desired = -desired
 		end
 		local err = yawBetween(fwdH, desired)
-		self._yawVel += err * Config.Sled.YawResponse * 0.5 * dt
+		self._yawVel += err * Config.Sled.YawResponse * 0.5 * gripState * dt
 	end
 
 	local slopeAccel = Vector3.new(-gradX, 0, -gradZ) * Config.Sled.SlopeGravity
@@ -842,9 +903,28 @@ function SledService:_stepSled(dt)
 	local rightNow = Vector3.new(-fwdH.Z, 0, fwdH.X)
 	local fwdV = self._vel:Dot(fwdH)
 	local sideV = self._vel:Dot(rightNow)
-	fwdV *= math.exp(-dt * Config.Sled.Friction * invMass)
-	sideV *= math.exp(-dt * Config.Sled.LateralGrip * invMass)
+	-- Brake: while the puller holds the rope standing still, the
+	-- brake ramps up over ~0.7s -- a slide to a stop, not a wall.
+	if root then
+		if root.AssemblyLinearVelocity.Magnitude > 1 then
+			self._brake = 0
+		else
+			self._brake = math.min(1, (self._brake or 0) + dt / 0.7)
+		end
+	else
+		self._brake = 0
+	end
+	local turnDrag = math.abs(self._yawVel) * 0.35
+	local fwdRate = Config.Sled.Friction * self._surfF + self._brake * 2.2 + turnDrag
+	fwdV *= math.exp(-dt * fwdRate * invMass)
+	-- Runner bite: the harder and faster the turn, the wider the
+	-- drift before grip catches; a lopsided pile upsets it further.
+	local turnDemand = 1 + math.abs(self._yawVel) * math.abs(fwdV) * 0.05
+	local gripRate = Config.Sled.LateralGrip * self._surfG * gripState / turnDemand
+	gripRate *= 1 - math.min(0.3, math.abs(comAcross) * 0.05)
+	sideV *= math.exp(-dt * gripRate * invMass)
 	self._vel = fwdH * fwdV + rightNow * sideV
+	self._fwdV = fwdV
 	if self._vel.Magnitude > Config.Sled.MaxSpeed then
 		self._vel = self._vel.Unit * Config.Sled.MaxSpeed
 	end
@@ -911,9 +991,13 @@ function SledService:_stepSled(dt)
 				newPos = Vector3.new(pos.X, pos.Y, newPos.Z)
 				self._vel = Vector3.new(0, 0, self._vel.Z)
 			else
+				local impactVel = self._vel
 				newPos = pos
 				self._vel *= 0.2
 				self._yawVel *= 0.5
+				if impactVel.Magnitude > 13 then
+					self:_throwTopPiece(impactVel)
+				end
 			end
 		end
 	end
@@ -929,9 +1013,36 @@ function SledService:_stepSled(dt)
 	local yAccel = (targetY - self._yPos) * 110 - (self._yVel or 0) * 12
 	self._yVel = (self._yVel or 0) + yAccel * dt
 	self._yPos += self._yVel * dt
-	-- Lean into turns: body roll grows with turn rate and speed.
-	local lean = math.clamp(self._yawVel * self._vel.Magnitude * 0.035, -0.3, 0.3)
-	sled:PivotTo(CFrame.new(newPos.X, self._yPos, newPos.Z) * canon * CFrame.Angles(0, 0, lean) * self._orientOffset)
+
+	-- Runner load from the spring extension: airborne sleds cannot
+	-- grip or steer; landing from a crest wobbles the sled sideways,
+	-- and a brutal landing at speed throws the top cargo piece loose.
+	local ext = self._yPos - targetY
+	self._gripState = math.clamp(1 - math.max(0, ext) * 1.6, 0.2, 1)
+	local airborne = ext > 0.35
+	if self._wasAirborne and not airborne then
+		local severity = -(self._yVel or 0)
+		if severity > 4 then
+			local sideSign = self._vel:Dot(rightH) >= 0 and 1 or -1
+			self._vel += rightH * (sideSign * severity * 0.12)
+			self._yawVel += sideSign * severity * 0.03
+			if severity > 8 and self._vel.Magnitude > 10 then
+				self:_throwTopPiece(self._vel)
+			end
+		end
+	end
+	self._wasAirborne = airborne
+
+	-- Body language: pitch from acceleration (nose dives under
+	-- braking, tail squats under a hard pull), roll from turns with
+	-- the weight shifting toward the OUTSIDE runners, plus a steady
+	-- tip toward a lopsided cargo pile.
+	local accelF = ((self._fwdV or 0) - (self._prevFwdV or self._fwdV or 0)) / math.max(dt, 0.001)
+	self._prevFwdV = self._fwdV or 0
+	local pitch = math.clamp(accelF * 0.006, -0.1, 0.12)
+	local lean = math.clamp(-self._yawVel * self._vel.Magnitude * 0.035, -0.3, 0.3)
+	lean += math.clamp((self._comAcross or 0) * 0.02, -0.12, 0.12)
+	sled:PivotTo(CFrame.new(newPos.X, self._yPos, newPos.Z) * canon * CFrame.Angles(pitch, 0, lean) * self._orientOffset)
 
 	local ropes = puller and self._ropes[puller]
 	if ropes and ropes.hitch then
