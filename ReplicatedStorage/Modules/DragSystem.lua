@@ -253,6 +253,13 @@ function DragSystem.Stop(player, item)
 	if item and item.Parent then
 		item:SetAttribute("DraggedBy", nil)
 		item:SetAttribute("DragTarget", nil)
+		-- Who had it last (network owner a moment ago). The
+		-- taming rule reads this: a fish you dropped is yours.
+		item:SetAttribute("LastDragger", state.Player.UserId)
+		local model = item.Parent
+		if model and model:IsA("Model") then
+			model:SetAttribute("LastDragger", state.Player.UserId)
+		end
 
 		pcall(function()
 			item:SetNetworkOwnershipAuto()

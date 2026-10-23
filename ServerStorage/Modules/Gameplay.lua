@@ -6,6 +6,7 @@ local Config = require(Modules:WaitForChild("Config"))
 local DragSystem = require(Modules:WaitForChild("DragSystem"))
 local SurvivalPlayer = require(script.Parent:WaitForChild("SurvivalPlayer"))
 local FishSystem = require(script.Parent:WaitForChild("FishSystem"))
+local Animals = require(script.Parent:WaitForChild("Animals"))
 local Weapons = require(script.Parent:WaitForChild("Weapons"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 
@@ -37,6 +38,7 @@ function Gameplay.new(world, clock, temperature)
 	self._burning = {}
 	self._spread = {}
 	self.Fish = FishSystem.new(self)
+	self.Animals = Animals.new(self)
 	self.Weapons = Weapons.new(self)
 	self._foot = {}
 	self._published = {}
@@ -60,6 +62,7 @@ function Gameplay:Start()
 
 	TrackMarks.Init(self.World)
 	self.Fish:Start()
+	self.Animals:Start()
 
 	DragSystem.OnStopped = function(item)
 		local model = item.Parent
@@ -141,6 +144,15 @@ function Gameplay:Start()
 		end
 	end)
 
+	local wolfCommand = Instance.new("RemoteEvent")
+	wolfCommand.Name = "WolfCommand"
+	wolfCommand.Parent = remotes
+	wolfCommand.OnServerEvent:Connect(function(player, mode, targetPos)
+		if mode == "Follow" or mode == "Wander" or mode == "Alert" or mode == "Attack" then
+			self.Animals:SetCommand(player, mode, targetPos)
+		end
+	end)
+
 	local dragAction = Instance.new("RemoteEvent")
 	dragAction.Name = "DragAction"
 	dragAction.Parent = remotes
@@ -207,6 +219,7 @@ function Gameplay:Start()
 		self:_setupPlayer(player)
 	end
 	Players.PlayerRemoving:Connect(function(player)
+		self.Animals:CleanupPlayer(player)
 		self.Fish:_endSession(player)
 		self._rodGranted[player] = nil
 		self:_releaseLogs(player)

@@ -95,6 +95,10 @@ Config.Campfire = {
 
 Config.Sled = {
 	MaxCargoPieces = 10,
+	TeamSpeedBase = 8,
+	TeamSpeedPerWolf = 2.2,
+	TeamAccelBase = 5,
+	TeamAccelPerWolf = 1.1,
 	Weight = 0,
 	RopeLength = 7,
 	PullSlowPerWeight = 0.004,
@@ -174,6 +178,34 @@ Config.ViewportIcons = {
 	Pitch = 0.38,
 	Zoom = 1,
 	PerTool = {},
+}
+
+-- Wolves: wild packs, taming, commands, the sled team.
+Config.Wolves = {
+	MaxHealth = 100,
+	LeaderMaxHealth = 160,
+	LeaderDamageMult = 1.5,
+	BiteDamage = 8,
+	BiteRange = 3.4,
+	BiteCooldown = 1.2,
+	AxeDamage = 12,
+	AggroRangeDay = 16,
+	AggroRangeNight = 38,
+	WaryRange = 26,
+	RoamRadius = 26,
+	RoamSpeed = 4,
+	ChaseSpeed = 15,
+	FollowSpeed = 15.5,
+	HarnessSpeed = 18,
+	TameHealth = 50,
+	TeamLimit = 6,
+	PacksToSpawn = 4,
+	PackMin = 2,
+	PackMax = 5,
+	RespawnSeconds = 300,
+	AttackSeconds = 12,
+	AttackDamage = 10,
+	ModelYawOffset = 0,
 }
 
 -- Day 2 ice fishing. The rod arrives at Day 2 start (Weapons list,

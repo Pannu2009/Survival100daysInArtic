@@ -376,6 +376,16 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 		if not character:FindFirstChild("Axe") then
 			return
 		end
+		-- A wolf under the dot eats the swing first.
+		if typeof(hitInstance) == "Instance" then
+			local wolf = self.Gameplay.Animals:WolfFromInstance(hitInstance)
+			if wolf and not wolf.Owner and (hitPosition - root.Position).Magnitude <= def.Range + 4 then
+				if self:_cooldownReady(player, "Axe", def.Cooldown) then
+					self.Gameplay.Animals:DamageWolf(wolf, Config.Wolves.AxeDamage, player)
+				end
+				return
+			end
+		end
 		local world = self.Gameplay.World
 		-- Ice: the dot is ON the lake, crack it there.
 		if (hitPosition - root.Position).Magnitude <= def.Range + 4
@@ -651,6 +661,23 @@ function Weapons:SwingAxe(player)
 		end
 	end
 	if not target then
+		-- No tree: a wild wolf in front of the swing takes it
+		-- instead. (NearestWildWolf only returns wild wolves --
+		-- tamed dogs can't be hit by their owner's axe.)
+		local wolf = self.Gameplay.Animals:NearestWildWolf(root.Position, def.Range + 2.5)
+		if wolf then
+			local toWolf = wolf.Root.Position - root.Position
+			toWolf = Vector3.new(toWolf.X, 0, toWolf.Z)
+			local look = root.CFrame.LookVector
+			look = Vector3.new(look.X, 0, look.Z)
+			if toWolf.Magnitude > 0.1 and look.Magnitude > 0.1
+				and toWolf.Unit:Dot(look.Unit) > 0.2
+			then
+				if self:_cooldownReady(player, "Axe", def.Cooldown) then
+					self.Gameplay.Animals:DamageWolf(wolf, Config.Wolves.AxeDamage, player)
+				end
+			end
+		end
 		return
 	end
 	self:_hitTree(player, target, def)

@@ -67,6 +67,7 @@ function SledService.new(world, gameplay)
 	self._cargoWeight = 0
 	self._footprint = Vector3.new(4, 2, 7)
 	self._pulling = {}
+	self._team = nil
 	self._ropes = {}
 	self._vel = Vector3.zero
 	self._yaw = 0
@@ -345,6 +346,9 @@ function SledService:Start()
 
 	Players.PlayerRemoving:Connect(function(player)
 		self:_releasePull(player)
+		if self._team and self._team.Owner == player then
+			self:_unhitch()
+		end
 	end)
 
 	local function watchPlayer(player)
@@ -416,6 +420,21 @@ function SledService:_makePrompts()
 		self:_unloadLast(player)
 	end)
 	self._unloadPrompt = unloadPrompt
+
+	local rideAnchorPos = backOffset + Vector3.new(0, 1.1, 0)
+	local rideAnchor = makeAnchor("RideAnchor", rideAnchorPos)
+	local ridePrompt = Instance.new("ProximityPrompt")
+	ridePrompt.ActionText = "Ride sled"
+	ridePrompt.ObjectText = "Wolf team"
+	ridePrompt.HoldDuration = 0.3
+	ridePrompt.MaxActivationDistance = 10
+	ridePrompt.RequiresLineOfSight = false
+	ridePrompt.Enabled = false
+	ridePrompt.Parent = rideAnchor
+	ridePrompt.Triggered:Connect(function(player)
+		self:_toggleRide(player)
+	end)
+	self._ridePrompt = ridePrompt
 end
 
 function SledService:_refreshPrompts()
@@ -425,8 +444,17 @@ function SledService:_refreshPrompts()
 	end
 	if self._pullPrompt then
 		local pulled = self.Sled and self.Sled:GetAttribute("PulledBy") ~= nil
-		self._pullPrompt.ActionText = pulled and "Drop sled" or "Pull sled"
-		self._pullPrompt.ObjectText = "Sled " .. (Config.Sled.Weight + self._cargoWeight) .. "kg"
+		if self._team then
+			self._pullPrompt.ActionText = "Unhitch team"
+			self._pullPrompt.ObjectText = "Sled " .. (Config.Sled.Weight + self._cargoWeight) .. "kg"
+		else
+			self._pullPrompt.ActionText = pulled and "Drop sled" or "Pull sled"
+			self._pullPrompt.ObjectText = "Sled " .. (Config.Sled.Weight + self._cargoWeight) .. "kg"
+		end
+	end
+	if self._ridePrompt then
+		self._ridePrompt.Enabled = self._team ~= nil
+		self._ridePrompt.ActionText = (self._team and self._team.Riding) and "Stop riding" or "Ride sled"
 	end
 end
 
@@ -695,6 +723,22 @@ function SledService:_togglePull(player)
 	if not sled then
 		return
 	end
+	-- Wolf team hitched: the front prompt unhitches (owner only).
+	if self._team then
+		if self._team.Owner == player then
+			self:_unhitch()
+		end
+		return
+	end
+	-- A player with tamed wolves hitches the team instead of
+	-- hand-pulling: the dogs become the engine.
+	if sled:GetAttribute("PulledBy") == nil and self.Gameplay.Animals:Count(player) > 0 then
+		local rootP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if rootP and withinRange(rootP, sled:GetPivot().Position, Config.Sled.PullRange) then
+			self:_hitch(player)
+		end
+		return
+	end
 	if sled:GetAttribute("PulledBy") == player.UserId then
 		self:_releasePull(player)
 	elseif sled:GetAttribute("PulledBy") == nil then
@@ -728,6 +772,95 @@ function SledService:_togglePull(player)
 		self:_makeRopes(player)
 	end
 	self:_refreshPrompts()
+end
+
+function SledService:_hitch(player)
+	local sled = self.Sled
+	sled:SetAttribute("PulledBy", player.UserId)
+	self._team = { Owner = player, Riding = false, HasInput = false }
+	self.Gameplay.Animals:SetHarnessed(player, true, self)
+	self:_refreshPrompts()
+	print(("[Arctic] %s hitched a wolf team (%d)"):format(player.Name, self.Gameplay.Animals:Count(player)))
+end
+
+function SledService:_unhitch()
+	local team = self._team
+	if not team then
+		return
+	end
+	self:_stopRiding()
+	self._team = nil
+	if team.Owner then
+		self.Gameplay.Animals:SetHarnessed(team.Owner, false, nil)
+		local sled = self.Sled
+		if sled and sled:GetAttribute("PulledBy") == team.Owner.UserId then
+			sled:SetAttribute("PulledBy", nil)
+		end
+	end
+	self:_refreshPrompts()
+end
+
+function SledService:_toggleRide(player)
+	local team = self._team
+	if not team or team.Owner ~= player then
+		return
+	end
+	if team.Riding then
+		self:_stopRiding()
+	else
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not humanoid then
+			return
+		end
+		team.Riding = true
+		team.JumpConn = humanoid.StateChanged:Connect(function(_, newState)
+			if newState == Enum.HumanoidStateType.Jumping then
+				self:_stopRiding()
+				self:_refreshPrompts()
+			end
+		end)
+	end
+	self:_refreshPrompts()
+end
+
+function SledService:_stopRiding()
+	local team = self._team
+	if not team then
+		return
+	end
+	team.Riding = false
+	if team.JumpConn then
+		team.JumpConn:Disconnect()
+		team.JumpConn = nil
+	end
+end
+
+-- Formation slot (world position) for the index-th team wolf:
+-- ladder ahead of the nose -- lead, swing pair, wheel pair, and
+-- a sixth wolf steps up beside the lead.
+function SledService:GetHarnessSlot(index, count)
+	local sled = self.Sled
+	if not sled then
+		return nil
+	end
+	local pos = sled:GetPivot().Position
+	local fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
+	local rightH = Vector3.new(-fwdH.Z, 0, fwdH.X)
+	local slots = {
+		{ 0, 10.5 },
+		{ -1.7, 7 },
+		{ 1.7, 7 },
+		{ -1.9, 3.5 },
+		{ 1.9, 3.5 },
+		{ 0, 12.5 },
+	}
+	if count >= 6 then
+		slots[1] = { -0.95, 11 }
+		slots[6] = { 0.95, 11 }
+	end
+	local slot = slots[index] or slots[1]
+	return pos + fwdH * (self._halfLength + slot[2]) + rightH * slot[1]
 end
 
 function SledService:_makeRopes(player)
@@ -965,6 +1098,30 @@ function SledService:_stepSled(dt)
 		-- Steering softens with speed: less twitchy flat-out.
 		local softening = 1 + self._vel.Magnitude * 0.03
 		self._yawVel += err * Config.Sled.YawResponse * 0.3 * gripState / softening * dt
+	elseif self._team then
+		-- The team is the engine: the rider steers with movement
+		-- input, the dogs supply steady power up to a top speed
+		-- that grows with team size (cargo still weighs through
+		-- massFactor).
+		local team = self._team
+		local character = team.Owner.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local moveDir = humanoid and humanoid.MoveDirection or Vector3.zero
+		local hasInput = moveDir.Magnitude > 0.15
+		team.HasInput = hasInput
+		if hasInput then
+			local desired = horizontalDir(moveDir)
+			local err = yawBetween(fwdH, desired)
+			local softening = 1 + self._vel.Magnitude * 0.02
+			self._yawVel += err * Config.Sled.YawResponse * 1.6 * gripState / softening * dt
+			local count = self.Gameplay.Animals:Count(team.Owner)
+			local topSpeed = Config.Sled.TeamSpeedBase + Config.Sled.TeamSpeedPerWolf * count
+			if self._vel:Dot(fwdH) < topSpeed then
+				local power = (Config.Sled.TeamAccelBase + Config.Sled.TeamAccelPerWolf * count) / math.sqrt(massFactor)
+				accel += fwdH * power
+			end
+			tension01 = 0.7
+		end
 	elseif self._vel.Magnitude > 1 then
 		local desired = horizontalDir(self._vel)
 		if fwdH:Dot(desired) < 0 then
@@ -975,7 +1132,7 @@ function SledService:_stepSled(dt)
 	end
 
 	local slopeAccel = Vector3.new(-gradX, 0, -gradZ) * Config.Sled.SlopeGravity
-	if root or slopeAccel.Magnitude > Config.Sled.StaticHold then
+	if root or self._team or slopeAccel.Magnitude > Config.Sled.StaticHold then
 		accel += slopeAccel
 	end
 
@@ -991,6 +1148,12 @@ function SledService:_stepSled(dt)
 	-- brake ramps up over ~0.7s -- a slide to a stop, not a wall.
 	if root then
 		if root.AssemblyLinearVelocity.Magnitude > 1 then
+			self._brake = 0
+		else
+			self._brake = math.min(1, (self._brake or 0) + dt / 0.7)
+		end
+	elseif self._team then
+		if self._team.HasInput then
 			self._brake = 0
 		else
 			self._brake = math.min(1, (self._brake or 0) + dt / 0.7)
@@ -1191,6 +1354,22 @@ function SledService:_stepSled(dt)
 	else
 		self._markL = nil
 		self._markR = nil
+	end
+
+	-- The rider stands on the back of a team sled (his
+	-- IdleSledWolfPulling spot): pinned to the rear platform,
+	-- facing the nose. Jump or the prompt steps off.
+	local teamNow = self._team
+	if teamNow and teamNow.Riding and teamNow.Owner then
+		local character = teamNow.Owner.Character
+		local ownerRoot = character and character:FindFirstChild("HumanoidRootPart")
+		if ownerRoot then
+			local sledPos = sled:GetPivot().Position
+			local fwdNow = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
+			local standPos = sledPos - fwdNow * (self._halfLength + 0.2) + Vector3.new(0, 3.4, 0)
+			ownerRoot.CFrame = CFrame.new(standPos, standPos + fwdNow)
+			ownerRoot.AssemblyLinearVelocity = Vector3.zero
+		end
 	end
 end
 

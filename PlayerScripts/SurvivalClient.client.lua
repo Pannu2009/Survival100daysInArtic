@@ -954,6 +954,59 @@ player.AttributeChanged:Connect(refreshPlayer)
 refreshWorld()
 refreshPlayer()
 
+-- Wolf command buttons (bottom-left circles): appear once you
+-- own a wolf. The active mode is marigold. ATTACK sends where
+-- your center dot is pointing; your dogs charge the animal
+-- nearest that spot.
+local wolfCommandRemote = remotes:WaitForChild("WolfCommand")
+local wolfButtons = {}
+for i, mode in ipairs({ "Follow", "Wander", "Alert", "Attack" }) do
+	local b = Instance.new("TextButton")
+	b.Name = "Wolf" .. mode
+	b.Size = UDim2.fromOffset(56, 56)
+	b.Position = UDim2.new(0, 14, 1, -76 - (i - 1) * 64)
+	b.BackgroundColor3 = SILVER
+	b.BackgroundTransparency = 0.25
+	b.TextColor3 = AUBERGINE
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 10
+	b.Text = mode:upper()
+	b.AutoButtonColor = true
+	b.Visible = false
+	b.Parent = gui
+	local bc = Instance.new("UICorner")
+	bc.CornerRadius = UDim.new(0.5, 0)
+	bc.Parent = b
+	addStroke(b, AUBERGINE, 1.5, 0.5)
+	b.Activated:Connect(function()
+		local targetPos
+		if mode == "Attack" then
+			local cam = workspace.CurrentCamera
+			if cam then
+				local params = RaycastParams.new()
+				params.FilterType = Enum.RaycastFilterType.Exclude
+				params.FilterDescendantsInstances = { player.Character }
+				local hit = workspace:Raycast(cam.CFrame.Position, cam.CFrame.LookVector * 60, params)
+				targetPos = hit and hit.Position or (cam.CFrame.Position + cam.CFrame.LookVector * 35)
+			end
+		end
+		wolfCommandRemote:FireServer(mode, targetPos)
+	end)
+	wolfButtons[mode] = b
+end
+
+local function refreshWolfButtons()
+	local count = player:GetAttribute("WolfCount") or 0
+	local active = player:GetAttribute("WolfCommand") or "Follow"
+	for m, b in pairs(wolfButtons) do
+		b.Visible = count > 0
+		b.BackgroundColor3 = m == active and MARIGOLD or SILVER
+	end
+end
+player:GetAttributeChangedSignal("WolfCount"):Connect(refreshWolfButtons)
+player:GetAttributeChangedSignal("WolfCommand"):Connect(refreshWolfButtons)
+refreshWolfButtons()
+
 -- Fishing panel: driven by server-published attributes
 -- (FishingPhase / FishingProgress / FishingStartAt / FishingSeed).
 -- The reel needle and zone are pure functions of elapsed time from
