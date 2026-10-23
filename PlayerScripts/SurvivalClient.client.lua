@@ -228,8 +228,9 @@ lighterFuelLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 local sprintButton = Instance.new("TextButton")
 sprintButton.Name = "SprintButton"
-sprintButton.Size = UDim2.fromOffset(112, 54)
-sprintButton.Position = UDim2.new(1, -124, 1, -124)
+sprintButton.Size = UDim2.fromOffset(72, 72)
+sprintButton.Position = UDim2.new(1, -88, 1, -84)
+sprintButton.TextSize = 13
 sprintButton.BackgroundColor3 = MARIGOLD
 sprintButton.Text = "SPRINT"
 sprintButton.TextColor3 = AUBERGINE
@@ -239,7 +240,7 @@ sprintButton.BorderSizePixel = 0
 sprintButton.Parent = gui
 
 local sprintCorner = Instance.new("UICorner")
-sprintCorner.CornerRadius = UDim.new(0, 12)
+sprintCorner.CornerRadius = UDim.new(0.5, 0)
 sprintCorner.Parent = sprintButton
 addStroke(sprintButton, AUBERGINE, 1.5, 0.25)
 
@@ -248,8 +249,9 @@ addStroke(sprintButton, AUBERGINE, 1.5, 0.25)
 -- platform (E on keyboard, X on gamepad).
 local storeButton = Instance.new("TextButton")
 storeButton.Name = "StoreButton"
-storeButton.Size = UDim2.fromOffset(132, 54)
-storeButton.Position = UDim2.new(1, -144, 1, -190)
+storeButton.Size = UDim2.fromOffset(72, 72)
+storeButton.Position = UDim2.new(1, -88, 1, -164)
+storeButton.TextSize = 14
 storeButton.BackgroundColor3 = MARIGOLD
 storeButton.Text = ""
 storeButton.AutoButtonColor = true
@@ -258,13 +260,13 @@ storeButton.Visible = false
 storeButton.Parent = gui
 
 local storeCorner = Instance.new("UICorner")
-storeCorner.CornerRadius = UDim.new(0, 12)
+storeCorner.CornerRadius = UDim.new(0.5, 0)
 storeCorner.Parent = storeButton
 addStroke(storeButton, AUBERGINE, 1.5, 0.25)
 
 local storeTitle = makeLabel(storeButton, "STORE ITEM", UDim2.new(1, -8, 0, 22), UDim2.fromOffset(4, 6), AUBERGINE, 15)
 storeTitle.TextXAlignment = Enum.TextXAlignment.Center
-local storeHint = makeLabel(storeButton, "", UDim2.new(1, -8, 0, 16), UDim2.fromOffset(4, 31), AUBERGINE, 12)
+local storeHint = makeLabel(storeButton, "", UDim2.fromOffset(100, 14), UDim2.new(0.5, -50, 1, 2), SILVER, 11)
 storeHint.TextXAlignment = Enum.TextXAlignment.Center
 
 local canStore = false
@@ -279,10 +281,11 @@ storeButton.Activated:Connect(tryStore)
 -- while dragging a fish or standing near one.
 local eatButton = Instance.new("TextButton")
 eatButton.Name = "EatButton"
-eatButton.Size = UDim2.fromOffset(132, 54)
-eatButton.Position = UDim2.new(1, -156, 1, -206)
+eatButton.Size = UDim2.fromOffset(72, 72)
+eatButton.Position = UDim2.new(1, -88, 1, -244)
 eatButton.BackgroundColor3 = MARIGOLD
-eatButton.Text = "EAT FISH"
+eatButton.Text = "EAT"
+eatButton.TextSize = 14
 eatButton.TextColor3 = AUBERGINE
 eatButton.TextSize = 16
 eatButton.Font = Enum.Font.GothamBold
@@ -290,10 +293,10 @@ eatButton.BorderSizePixel = 0
 eatButton.Visible = false
 eatButton.Parent = gui
 local eatCorner = Instance.new("UICorner")
-eatCorner.CornerRadius = UDim.new(0, 12)
+eatCorner.CornerRadius = UDim.new(0.5, 0)
 eatCorner.Parent = eatButton
 addStroke(eatButton, AUBERGINE, 1.5, 0.25)
-local eatHint = makeLabel(gui, "tap", UDim2.fromOffset(132, 16), UDim2.new(1, -156, 1, -148), SILVER, 11)
+local eatHint = makeLabel(eatButton, "tap", UDim2.fromOffset(100, 14), UDim2.new(0.5, -50, 1, 2), SILVER, 11)
 eatHint.TextXAlignment = Enum.TextXAlignment.Center
 eatHint.Visible = false
 
@@ -304,8 +307,9 @@ eatHint.Visible = false
 local dragActionRemote = remotes:WaitForChild("DragAction")
 local grabButton = Instance.new("TextButton")
 grabButton.Name = "GrabButton"
-grabButton.Size = UDim2.fromOffset(132, 54)
-grabButton.Position = UDim2.new(1, -144, 1, -322)
+grabButton.Size = UDim2.fromOffset(72, 72)
+grabButton.Position = UDim2.new(1, -88, 1, -324)
+grabButton.TextSize = 14
 grabButton.BackgroundColor3 = MARIGOLD
 grabButton.Text = "GRAB"
 grabButton.TextColor3 = AUBERGINE
@@ -315,7 +319,7 @@ grabButton.BorderSizePixel = 0
 grabButton.Visible = false
 grabButton.Parent = gui
 local grabCorner = Instance.new("UICorner")
-grabCorner.CornerRadius = UDim.new(0, 12)
+grabCorner.CornerRadius = UDim.new(0.5, 0)
 grabCorner.Parent = grabButton
 addStroke(grabButton, AUBERGINE, 1.5, 0.25)
 local grabTarget = nil
@@ -957,8 +961,8 @@ refreshPlayer()
 -- with -- so they render locally at full frame rate.
 local fishingPanel = Instance.new("Frame")
 fishingPanel.Name = "FishingPanel"
-fishingPanel.Size = UDim2.fromOffset(340, 104)
-fishingPanel.Position = UDim2.new(0.5, -170, 1, -196)
+fishingPanel.Size = UDim2.fromOffset(472, 124)
+fishingPanel.Position = UDim2.new(0.5, -236, 1, -208)
 fishingPanel.BackgroundTransparency = 1
 fishingPanel.BorderSizePixel = 0
 fishingPanel.Visible = false
@@ -970,8 +974,8 @@ fishingTitleStroke.Thickness = 1.4
 fishingTitleStroke.Parent = fishingTitle
 fishingTitle.TextXAlignment = Enum.TextXAlignment.Center
 local reelTrack = Instance.new("Frame")
-reelTrack.Size = UDim2.fromOffset(308, 20)
-reelTrack.Position = UDim2.fromOffset(16, 42)
+reelTrack.Size = UDim2.fromOffset(440, 26)
+reelTrack.Position = UDim2.fromOffset(16, 46)
 reelTrack.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
 reelTrack.BackgroundTransparency = 0.35
 reelTrack.BorderSizePixel = 0
@@ -980,20 +984,29 @@ local reelTrackCorner = Instance.new("UICorner")
 reelTrackCorner.CornerRadius = UDim.new(0, 6)
 reelTrackCorner.Parent = reelTrack
 addStroke(reelTrack, SILVER, 1, 0.4)
-local reelZoneFrame = Instance.new("Frame")
-reelZoneFrame.BackgroundColor3 = MARIGOLD
-reelZoneFrame.BackgroundTransparency = 0.25
-reelZoneFrame.BorderSizePixel = 0
-reelZoneFrame.Size = UDim2.fromOffset(80, 20)
-reelZoneFrame.Parent = reelTrack
-local reelNeedle = Instance.new("Frame")
-reelNeedle.Size = UDim2.fromOffset(3, 20)
-reelNeedle.BackgroundColor3 = Color3.new(1, 1, 1)
-reelNeedle.BorderSizePixel = 0
-reelNeedle.Parent = reelTrack
+local catchBar = Instance.new("Frame")
+catchBar.BackgroundColor3 = Color3.new(1, 1, 1)
+catchBar.BackgroundTransparency = 0.45
+catchBar.BorderSizePixel = 0
+catchBar.Size = UDim2.fromOffset(120, 26)
+catchBar.Parent = reelTrack
+local catchBarCorner = Instance.new("UICorner")
+catchBarCorner.CornerRadius = UDim.new(0, 6)
+catchBarCorner.Parent = catchBar
+addStroke(catchBar, Color3.new(1, 1, 1), 1.5, 0.15)
+local fishMarker = Instance.new("Frame")
+fishMarker.Size = UDim2.fromOffset(16, 16)
+fishMarker.BackgroundColor3 = Color3.fromRGB(240, 120, 40)
+fishMarker.BorderSizePixel = 0
+fishMarker.Rotation = 45
+fishMarker.ZIndex = 3
+fishMarker.Parent = reelTrack
+local fishMarkerCorner = Instance.new("UICorner")
+fishMarkerCorner.CornerRadius = UDim.new(0, 4)
+fishMarkerCorner.Parent = fishMarker
 local progressTrack = Instance.new("Frame")
-progressTrack.Size = UDim2.fromOffset(308, 10)
-progressTrack.Position = UDim2.fromOffset(16, 72)
+progressTrack.Size = UDim2.fromOffset(440, 10)
+progressTrack.Position = UDim2.fromOffset(16, 84)
 progressTrack.BackgroundColor3 = SILVER
 progressTrack.BackgroundTransparency = 0.7
 progressTrack.BorderSizePixel = 0
@@ -1004,19 +1017,72 @@ progressFill.BorderSizePixel = 0
 progressFill.Size = UDim2.fromScale(0, 1)
 progressFill.Parent = progressTrack
 
-local function clientReelNeedle(elapsed)
-	local phase = (elapsed % Config.Fishing.ReelSweepSeconds) / Config.Fishing.ReelSweepSeconds
-	if phase < 0.5 then
-		return phase * 2
-	end
-	return 2 - phase * 2
-end
-local function clientReelZone(elapsed, seed)
-	return 0.5 + 0.38 * math.sin(elapsed * 0.9 + seed)
+-- Bite badge: a big marigold circle with a "!" -- impossible to
+-- miss. Waiting gets a small pulsing bobber dot instead.
+local biteBadge = Instance.new("Frame")
+biteBadge.Size = UDim2.fromOffset(64, 64)
+biteBadge.Position = UDim2.new(0.5, -32, 0, 30)
+biteBadge.BackgroundColor3 = MARIGOLD
+biteBadge.BorderSizePixel = 0
+biteBadge.Visible = false
+biteBadge.Parent = fishingPanel
+local biteBadgeCorner = Instance.new("UICorner")
+biteBadgeCorner.CornerRadius = UDim.new(0.5, 0)
+biteBadgeCorner.Parent = biteBadge
+local biteBadgeText = makeLabel(biteBadge, "!", UDim2.new(1, 0, 1, 0), UDim2.fromOffset(0, -2), AUBERGINE, 42)
+biteBadgeText.TextXAlignment = Enum.TextXAlignment.Center
+local bobberDot = Instance.new("Frame")
+bobberDot.Size = UDim2.fromOffset(14, 14)
+bobberDot.Position = UDim2.new(0.5, -7, 0, 42)
+bobberDot.BackgroundColor3 = Color3.fromRGB(214, 48, 43)
+bobberDot.BorderSizePixel = 0
+bobberDot.Visible = false
+bobberDot.Parent = fishingPanel
+local bobberDotCorner = Instance.new("UICorner")
+bobberDotCorner.CornerRadius = UDim.new(0.5, 0)
+bobberDotCorner.Parent = bobberDot
+
+local fishingSyncRemote = remotes:WaitForChild("FishingSync")
+
+-- Same wander the server judges with (shared start + seed).
+local function clientFishPos(elapsed, seed)
+	local p = 0.5
+		+ 0.36 * math.sin(elapsed * 0.8 + seed)
+		+ 0.12 * math.sin(elapsed * 2.3 + seed * 2)
+	return math.clamp(p, 0.08, 0.92)
 end
 
-game:GetService("RunService").Heartbeat:Connect(function()
+-- Hold to raise your catch bar; let go and it sinks. Mouse, touch,
+-- space, or gamepad A all count.
+local reelHolding = false
+UserInputService.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch
+		or input.KeyCode == Enum.KeyCode.Space
+		or input.KeyCode == Enum.KeyCode.ButtonA
+	then
+		reelHolding = true
+	end
+end)
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch
+		or input.KeyCode == Enum.KeyCode.Space
+		or input.KeyCode == Enum.KeyCode.ButtonA
+	then
+		reelHolding = false
+	end
+end)
+
+local localBar = 0.5
+local lastSync = 0
+local lastPhase = ""
+game:GetService("RunService").Heartbeat:Connect(function(dt)
 	local phase = player:GetAttribute("FishingPhase")
+	if phase == "Reel" and lastPhase ~= "Reel" then
+		localBar = 0.5
+	end
+	lastPhase = phase or ""
 	fishingPanel.Visible = phase ~= nil and phase ~= ""
 	if not fishingPanel.Visible then
 		return
@@ -1024,25 +1090,44 @@ game:GetService("RunService").Heartbeat:Connect(function()
 	local inReel = phase == "Reel"
 	reelTrack.Visible = inReel
 	progressTrack.Visible = inReel
+	biteBadge.Visible = phase == "Bite"
+	bobberDot.Visible = phase == "Waiting"
 	if phase == "Waiting" then
 		fishingTitle.Text = "Waiting for a bite..."
-		fishingTitle.TextSize = 16
+		local pulse = 14 + math.sin(os.clock() * 3) * 2.5
+		bobberDot.Size = UDim2.fromOffset(pulse, pulse)
+		bobberDot.Position = UDim2.new(0.5, -pulse / 2, 0, 42)
 	elseif phase == "Bite" then
-		fishingTitle.Text = "! TAP !"
-		fishingTitle.TextSize = 26
+		fishingTitle.Text = ""
+		local pulse = 1 + math.sin(os.clock() * 10) * 0.08
+		biteBadge.Size = UDim2.fromOffset(64 * pulse, 64 * pulse)
+		biteBadge.Position = UDim2.new(0.5, -32 * pulse, 0, 30)
 	elseif inReel then
-		fishingTitle.Text = "Reel it in -- tap in the gold zone!"
-		fishingTitle.TextSize = 16
+		fishingTitle.Text = "Keep the fish in your bar -- HOLD to raise it!"
 		local startAt = player:GetAttribute("FishingStartAt") or 0
 		local seed = player:GetAttribute("FishingSeed") or 0
 		local elapsed = math.max(0, workspace:GetServerTimeNow() - startAt)
-		local zone = clientReelZone(elapsed, seed)
-		local needle = clientReelNeedle(elapsed)
+		-- Your bar is integrated locally (smooth) and streamed to
+		-- the server, which keeps the judging copy.
+		if reelHolding then
+			localBar += Config.Fishing.ReelRiseSpeed * dt
+		else
+			localBar -= Config.Fishing.ReelFallSpeed * dt
+		end
+		localBar = math.clamp(localBar, 0.03, 0.97)
+		local now = os.clock()
+		if now - lastSync > 0.066 then
+			lastSync = now
+			fishingSyncRemote:FireServer(localBar)
+		end
+		local fish = clientFishPos(elapsed, seed)
 		local trackWidth = reelTrack.AbsoluteSize.X
-		local zoneHalf = Config.Fishing.ReelZoneHalf
-		reelZoneFrame.Size = UDim2.fromOffset(trackWidth * zoneHalf * 2, 20)
-		reelZoneFrame.Position = UDim2.fromOffset((zone - zoneHalf) * trackWidth, 0)
-		reelNeedle.Position = UDim2.fromOffset(needle * trackWidth - 1, 0)
+		local half = Config.Fishing.ReelBarHalf
+		catchBar.Size = UDim2.fromOffset(trackWidth * half * 2, 26)
+		catchBar.Position = UDim2.fromOffset((localBar - half) * trackWidth, 0)
+		local overlap = math.abs(localBar - fish) <= half
+		catchBar.BackgroundColor3 = overlap and MARIGOLD or Color3.new(1, 1, 1)
+		fishMarker.Position = UDim2.fromOffset(fish * trackWidth - 8, 5)
 		local progress = (player:GetAttribute("FishingProgress") or 0) / 100
 		progressFill.Size = UDim2.fromScale(math.clamp(progress, 0, 1), 1)
 	end
@@ -1101,7 +1186,36 @@ end
 logsFolder.ChildAdded:Connect(trackLog)
 
 -- GRAB/DROP button state: DROP while carrying; otherwise GRAB
--- when the center dot rests on a free draggable item.
+-- when the center dot rests on a free draggable item. Any part of
+-- an item counts (a fish is five parts) -- resolve to the part
+-- the server marked Draggable, and outline the whole item so
+-- it's obvious WHICH one will be grabbed.
+local grabHighlight = Instance.new("Highlight")
+grabHighlight.Name = "GrabHighlight"
+grabHighlight.FillColor = Color3.fromRGB(234, 160, 0)
+grabHighlight.FillTransparency = 0.82
+grabHighlight.OutlineColor = Color3.new(1, 1, 1)
+grabHighlight.OutlineTransparency = 0.1
+grabHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+
+local function draggablePartOf(instance)
+	if not instance then
+		return nil
+	end
+	if instance:IsA("BasePart") and instance:GetAttribute("Draggable") == true then
+		return instance
+	end
+	local model = instance.Parent
+	if model and model:GetAttribute("Draggable") == true then
+		for _, d in ipairs(model:GetDescendants()) do
+			if d:IsA("BasePart") and d:GetAttribute("Draggable") == true then
+				return d
+			end
+		end
+		return model:FindFirstChildWhichIsA("BasePart", true)
+	end
+	return nil
+end
 function myDragPartRef()
 	return myDragPart
 end
@@ -1119,6 +1233,7 @@ RunService.RenderStepped:Connect(function()
 		grabTarget = nil
 		grabButton.Text = "DROP"
 		grabButton.Visible = true
+		grabHighlight.Parent = nil
 		return
 	end
 	local camera = workspace.CurrentCamera
@@ -1129,16 +1244,17 @@ RunService.RenderStepped:Connect(function()
 	end
 	grabParams.FilterDescendantsInstances = { character }
 	local hit = workspace:Raycast(camera.CFrame.Position, camera.CFrame.LookVector * 14, grabParams)
-	local part = hit and hit.Instance
-	if part and part:IsA("BasePart") and part:GetAttribute("Draggable") == true
-		and part:GetAttribute("DraggedBy") == nil
-	then
+	local part = draggablePartOf(hit and hit.Instance)
+	if part and part:GetAttribute("DraggedBy") == nil then
 		grabTarget = part
 		grabButton.Text = "GRAB"
 		grabButton.Visible = true
+		local model = part.Parent
+		grabHighlight.Parent = (model and model:IsA("Model")) and model or part
 	else
 		grabTarget = nil
 		grabButton.Visible = false
+		grabHighlight.Parent = nil
 	end
 end)
 -- Fish live in their own folder but drag exactly like logs; the
@@ -1241,7 +1357,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local aimEquipped = characterNow
 		and (characterNow:FindFirstChild("Shovel") or characterNow:FindFirstChild("Lighter")
 			or characterNow:FindFirstChild("FishingRod") or characterNow:FindFirstChild("Axe"))
-	dragDot.Visible = myPart ~= nil or aimEquipped ~= nil
+	dragDot.Visible = true -- the dot is always on: it is your aim
 	lighterFuelPill.Visible = characterNow ~= nil and characterNow:FindFirstChild("Lighter") ~= nil
 	if not myPart then
 		dragSmoothedPart = nil

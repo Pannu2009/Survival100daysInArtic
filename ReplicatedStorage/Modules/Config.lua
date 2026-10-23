@@ -189,12 +189,14 @@ Config.Fishing = {
 	BiteWaitMin = 3,
 	BiteWaitMax = 8,
 	BiteWindow = 1.2,
-	ReelSeconds = 20,
-	ReelZoneHalf = 0.15,
-	ReelSweepSeconds = 1.9,
-	ReelGoodGain = 26,
-	ReelBadLoss = 12,
-	ReelDecayPerSecond = 4,
+	ReelSeconds = 25,
+	ReelStartProgress = 25,
+	ReelBarHalf = 0.14,
+	ReelBarMaxSpeed = 2.4,
+	ReelRiseSpeed = 1.5,
+	ReelFallSpeed = 1.1,
+	ReelGainPerSecond = 26,
+	ReelLossPerSecond = 16,
 }
 
 Config.Food = {

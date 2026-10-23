@@ -132,6 +132,15 @@ function Gameplay:Start()
 		self.Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 	end)
 
+	local fishingSync = Instance.new("RemoteEvent")
+	fishingSync.Name = "FishingSync"
+	fishingSync.Parent = remotes
+	fishingSync.OnServerEvent:Connect(function(player, barPos)
+		if typeof(barPos) == "number" then
+			self.Fish:SyncBar(player, barPos)
+		end
+	end)
+
 	local dragAction = Instance.new("RemoteEvent")
 	dragAction.Name = "DragAction"
 	dragAction.Parent = remotes
@@ -142,14 +151,29 @@ function Gameplay:Start()
 				DragSystem.Stop(player, item)
 			end
 		elseif action == "Grab" then
-			if typeof(target) == "Instance" and target:IsA("BasePart")
-				and target:GetAttribute("Draggable") == true
-			then
-				local model = target.Parent
+			if typeof(target) == "Instance" and target:IsA("BasePart") then
+				-- The client may send any part of the item (a fish
+				-- is five parts); resolve to the marked part.
+				local part = target
+				if part:GetAttribute("Draggable") ~= true then
+					local model = target.Parent
+					if model and model:GetAttribute("Draggable") == true then
+						for _, d in ipairs(model:GetDescendants()) do
+							if d:IsA("BasePart") and d:GetAttribute("Draggable") == true then
+								part = d
+								break
+							end
+						end
+					end
+				end
+				if part:GetAttribute("Draggable") ~= true then
+					return
+				end
+				local model = part.Parent
 				if model and model:GetAttribute("Burning") == true then
 					return -- burning wood is hands-off
 				end
-				DragSystem.Start(player, target)
+				DragSystem.Start(player, part)
 			end
 		end
 	end)

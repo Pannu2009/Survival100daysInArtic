@@ -225,16 +225,14 @@ local function iceKey(x, z)
 	return math.floor(x / ICE_CELL) .. "," .. math.floor(z / ICE_CELL)
 end
 
-local function reelNeedle(elapsed)
-	local phase = (elapsed % Config.Fishing.ReelSweepSeconds) / Config.Fishing.ReelSweepSeconds
-	if phase < 0.5 then
-		return phase * 2
-	end
-	return 2 - phase * 2
-end
-
-local function reelZone(elapsed, seed)
-	return 0.5 + 0.38 * math.sin(elapsed * 0.9 + seed)
+-- The fish's position on the reel bar: a deterministic wander
+-- (the client renders the same function from the shared start
+-- values; the server judges overlap with its own copy).
+local function fishPos(elapsed, seed)
+	local p = 0.5
+		+ 0.36 * math.sin(elapsed * 0.8 + seed)
+		+ 0.12 * math.sin(elapsed * 2.3 + seed * 2)
+	return math.clamp(p, 0.08, 0.92)
 end
 
 -- Is this point lake ice? The glacier slab sits UNDER the snow
@@ -358,6 +356,7 @@ function FishSystem:_publishSession(player)
 	if session.Phase == "Reel" then
 		player:SetAttribute("FishingStartAt", session.ReelStartAt)
 		player:SetAttribute("FishingSeed", session.Seed)
+		player:SetAttribute("FishingBar", session.Bar or 0.5)
 	end
 end
 
@@ -388,6 +387,7 @@ function FishSystem:_startSession(player, hole)
 		Hole = hole,
 		BiteAt = os.clock() + math.random(Config.Fishing.BiteWaitMin, Config.Fishing.BiteWaitMax),
 		Progress = 0,
+		Bar = 0.5,
 		Seed = math.random() * 100,
 		LastTap = 0,
 	}
@@ -447,32 +447,9 @@ function FishSystem:OnAim(player, hitInstance, hitPosition)
 			session.Phase = "Reel"
 			session.ReelStartAt = workspace:GetServerTimeNow()
 			session.ReelEndsAt = now + Config.Fishing.ReelSeconds
-			session.Progress = 20
-			self:_publishSession(player)
-		elseif session.Phase == "Reel" then
-			local elapsed = workspace:GetServerTimeNow() - session.ReelStartAt
-			local needle = reelNeedle(elapsed)
-			local zone = reelZone(elapsed, session.Seed)
-			if math.abs(needle - zone) <= Config.Fishing.ReelZoneHalf then
-				session.Progress += Config.Fishing.ReelGoodGain
-			else
-				session.Progress -= Config.Fishing.ReelBadLoss
-			end
-			if session.Progress >= 100 then
-				-- Caught: the fish flops onto the ice beside the hole.
-				local holePos = session.Hole.Position
-				local toward = (root.Position - holePos)
-				toward = Vector3.new(toward.X, 0, toward.Z)
-				if toward.Magnitude > 0.1 then
-					toward = toward.Unit * 1.6
-				end
-				self:_endSession(player)
-				self:Spawn(holePos.X + toward.X, holePos.Z + toward.Z)
-				return
-			elseif session.Progress <= 0 then
-				self:_endSession(player)
-				return
-			end
+			session.Progress = Config.Fishing.ReelStartProgress
+			session.Bar = 0.5
+			session.LastSync = now
 			self:_publishSession(player)
 		end
 		return
@@ -498,6 +475,22 @@ function FishSystem:OnAim(player, hitInstance, hitPosition)
 		return
 	end
 	self:_startSession(player, best)
+end
+
+-- The client streams its catch-bar position while reeling (the
+-- same trust pattern as drag streaming): the server clamps the
+-- bar's speed and keeps the authoritative copy.
+function FishSystem:SyncBar(player, barPos)
+	local session = self.Sessions[player]
+	if not session or session.Phase ~= "Reel" then
+		return
+	end
+	local now = os.clock()
+	local dtSync = math.max(now - (session.LastSync or now), 0.03)
+	session.LastSync = now
+	local allowed = Config.Fishing.ReelBarMaxSpeed * dtSync
+	local delta = math.clamp(barPos - session.Bar, -allowed, allowed)
+	session.Bar = math.clamp(session.Bar + delta, 0, 1)
 end
 
 function FishSystem:TickFishing(dt)
@@ -534,9 +527,25 @@ function FishSystem:TickFishing(dt)
 		elseif session.Phase == "Bite" and now > session.BiteEndsAt then
 			self:_endSession(player) -- missed it: fish is gone
 		elseif session.Phase == "Reel" then
-			session.Progress -= Config.Fishing.ReelDecayPerSecond * dt
-			if session.Progress <= 0 or now > session.ReelEndsAt then
+			local elapsed = workspace:GetServerTimeNow() - session.ReelStartAt
+			local fish = fishPos(elapsed, session.Seed)
+			if math.abs(session.Bar - fish) <= Config.Fishing.ReelBarHalf then
+				session.Progress += Config.Fishing.ReelGainPerSecond * dt
+			else
+				session.Progress -= Config.Fishing.ReelLossPerSecond * dt
+			end
+			if session.Progress >= 100 then
+				-- Caught: the fish flops onto the ice beside the hole.
+				local holePos = session.Hole.Position
+				local toward = (root.Position - holePos)
+				toward = Vector3.new(toward.X, 0, toward.Z)
+				if toward.Magnitude > 0.1 then
+					toward = toward.Unit * 1.6
+				end
 				self:_endSession(player)
+				self:Spawn(holePos.X + toward.X, holePos.Z + toward.Z)
+			elseif session.Progress <= 0 or now > session.ReelEndsAt then
+				self:_endSession(player) -- it slipped away
 			else
 				self:_publishSession(player)
 			end
