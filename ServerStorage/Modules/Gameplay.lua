@@ -630,8 +630,13 @@ function Gameplay:Update(dt)
 					foot.Dist = 0
 					foot.Side = -foot.Side
 					local dir = moved.Unit
-					local pos = root.Position + root.CFrame.RightVector * (0.4 * foot.Side)
-					TrackMarks.SpawnPoint(pos, 0.6, Config.Tracks.FootLife)
+					local footName = foot.Side == 1 and "RightFoot" or "LeftFoot"
+					local legName = foot.Side == 1 and "Right Leg" or "Left Leg"
+					local footPart = character
+						and (character:FindFirstChild(footName) or character:FindFirstChild(legName))
+					local pos = footPart and footPart.Position
+						or (root.Position + root.CFrame.RightVector * (0.4 * foot.Side))
+					TrackMarks.SpawnFoot(pos, math.atan2(dir.X, dir.Z), Config.Tracks.FootLife)
 				end
 			end
 		end

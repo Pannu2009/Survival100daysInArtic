@@ -955,7 +955,7 @@ function SledService:_stepSled(dt)
 			end
 			local dist = (p - last).Magnitude
 			if dist >= Config.Tracks.SledStep then
-				TrackMarks.SpawnPoint(p, depth, Config.Tracks.SledLife)
+				TrackMarks.SpawnSegment(last, p, depth, Config.Tracks.SledLife)
 				self[key] = p
 			end
 		end
