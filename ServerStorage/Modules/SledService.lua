@@ -286,11 +286,17 @@ function SledService:Start()
 
 	-- The sled's feet (Ajay's models): tracks and kicked snow come
 	-- from the LeftSide/RightSide runners when the model has them.
+	-- They are Models (FBX imports), not parts — position comes from
+	-- the pivot, and emitters parent to a real part inside.
 	self._runnerL = sled:FindFirstChild("LeftSide", true)
 	self._runnerR = sled:FindFirstChild("RightSide", true)
 	for _, runner in ipairs({ self._runnerL, self._runnerR }) do
-		if runner and runner:IsA("BasePart") then
-			table.insert(self._snowEmitters, makeSnowEmitter(runner))
+		if runner then
+			local part = runner:IsA("BasePart") and runner
+				or runner:FindFirstChildWhichIsA("BasePart", true)
+			if part then
+				table.insert(self._snowEmitters, makeSnowEmitter(part))
+			end
 		end
 	end
 	if #self._snowEmitters == 0 then
@@ -939,7 +945,7 @@ function SledService:_stepSled(dt)
 		local function pressTrack(runner, key, sideSign)
 			local p
 			if runner then
-				p = runner.Position
+				p = runner:IsA("BasePart") and runner.Position or runner:GetPivot().Position
 			else
 				p = newPos + rightV * (sideSign * (self._footprint.X / 2 - 0.3))
 			end
