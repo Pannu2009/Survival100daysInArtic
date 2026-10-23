@@ -1,17 +1,23 @@
--- TrackMarks: pressed-snow visuals. Terrain dips turned out to be
--- whole 4-stud cells sinking (the voxel grid limit), so marks are
--- thin visual pieces hugging the snow instead: two-lobe boot prints
--- for feet, narrow pitched segments for sled runners. Everything
--- fades out over its life and destroys itself; the terrain itself
--- is never touched.
+-- TrackMarks: pressed-snow marks, HYBRID. Two layers per mark:
+-- (1) a thin visual piece hugging the snow -- two-lobe boot prints
+-- for feet, narrow pitched segments for sled runners -- giving the
+-- crisp shape; (2) a shallow single-column terrain dip under it
+-- giving real pressed depth (never a patch: exactly one 4-stud
+-- cell, whose true original voxel is restored when the mark dies,
+-- unless a shovel dig changed it meanwhile -- the dig wins).
 local TrackMarks = {}
 
 local MAX_MARKS = 320
 local PRESSED_COLOR = Color3.fromRGB(169, 184, 201)
 
+local RESOLUTION = 4
+local MAX_CELLS = 1500
+
 local world = nil
 local folder = nil
 local marks = {}
+local cells = {}
+local cellCount = 0
 
 function TrackMarks.Init(w)
 	world = w
@@ -33,6 +39,124 @@ local function snowHit(x, z)
 	end
 	return hit
 end
+
+-- Voxel press layer (single column only).
+
+local function cellKey(vx, vy, vz)
+	return vx .. "," .. vy .. "," .. vz
+end
+
+local function voxelRegion(minVx, minVy, minVz, maxVx, maxVy, maxVz)
+	local min = Vector3.new(minVx * RESOLUTION, minVy * RESOLUTION, minVz * RESOLUTION)
+	local max = Vector3.new((maxVx + 1) * RESOLUTION, (maxVy + 1) * RESOLUTION, (maxVz + 1) * RESOLUTION)
+	return Region3.new(min, max):ExpandToGrid(RESOLUTION)
+end
+
+local function pressColumn(vx, vz, surfaceY, dip, expiresAt)
+	local centerVy = math.floor(surfaceY / RESOLUTION)
+	local region = voxelRegion(vx, centerVy - 1, vz, vx, centerVy + 1, vz)
+	local ok, materials, occupancies = pcall(function()
+		return workspace.Terrain:ReadVoxels(region, RESOLUTION)
+	end)
+
+	if not ok then
+		warn("[TrackMarks] ReadVoxels failed:", materials)
+		return
+	end
+
+	-- Find the topmost solid voxel in this column.
+	local topY = nil
+	for yi = 3, 1, -1 do
+		if materials[1][yi][1] ~= Enum.Material.Air and occupancies[1][yi][1] > 0 then
+			topY = yi
+			break
+		end
+	end
+	if not topY then
+		return
+	end
+	if materials[1][topY][1] ~= Enum.Material.Snow then
+		return
+	end
+
+	local vy = (centerVy - 1) + (topY - 1)
+	local key = cellKey(vx, vy, vz)
+	local cell = cells[key]
+	local baselineOcc = occupancies[1][topY][1]
+	local baselineMat = materials[1][topY][1]
+	if cell then
+		-- Already pressed: the stored baseline is the true original.
+		baselineOcc = cell.BaselineOcc
+		baselineMat = cell.BaselineMat
+	end
+
+	local targetOcc = math.max(0.08, baselineOcc - dip)
+	if cell and cell.WrittenOcc <= targetOcc then
+		targetOcc = cell.WrittenOcc
+	end
+
+	occupancies[1][topY][1] = targetOcc
+	local wrote = pcall(function()
+		workspace.Terrain:WriteVoxels(region, RESOLUTION, materials, occupancies)
+	end)
+	if not wrote then
+		warn("[TrackMarks] WriteVoxels failed for cell", key)
+		return
+	end
+
+	if not cell then
+		cellCount += 1
+		cells[key] = {
+			VX = vx,
+			VY = vy,
+			VZ = vz,
+			BaselineOcc = baselineOcc,
+			BaselineMat = baselineMat,
+			WrittenOcc = targetOcc,
+			ExpiresAt = expiresAt,
+		}
+	else
+		cell.WrittenOcc = targetOcc
+		cell.ExpiresAt = math.max(cell.ExpiresAt, expiresAt)
+	end
+end
+
+local function pressAtPoint(position, depth01, life)
+	local hit = snowHit(position.X, position.Z)
+	if not hit then
+		return
+	end
+	if cellCount > MAX_CELLS then
+		return
+	end
+	local dip = 0.12 + 0.33 * math.clamp(depth01, 0, 1)
+	local vx = math.floor(position.X / RESOLUTION)
+	local vz = math.floor(position.Z / RESOLUTION)
+	pressColumn(vx, vz, hit.Position.Y, dip, os.clock() + life)
+end
+
+local function restoreCell(cell)
+	local region = voxelRegion(cell.VX, cell.VY, cell.VZ, cell.VX, cell.VY, cell.VZ)
+	local ok, materials, occupancies = pcall(function()
+		return workspace.Terrain:ReadVoxels(region, RESOLUTION)
+	end)
+	if not ok or not materials then
+		return
+	end
+	-- Restore only if the voxel still holds exactly what we wrote;
+	-- if a player dug or built there meanwhile, their edit wins.
+	if materials[1][1][1] == cell.BaselineMat
+		and math.abs(occupancies[1][1][1] - cell.WrittenOcc) < 0.02
+	then
+		materials[1][1][1] = cell.BaselineMat
+		occupancies[1][1][1] = cell.BaselineOcc
+		pcall(function()
+			workspace.Terrain:WriteVoxels(region, RESOLUTION, materials, occupancies)
+		end)
+	end
+end
+
+-- Visual layer.
 
 local function newMarkPart(size)
 	local part = Instance.new("Part")
@@ -65,8 +189,8 @@ local function addMark(parts, baseTransparency, life)
 	})
 end
 
--- Boot print at a foot position, rotated to the movement yaw.
--- Two lobes (toe + heel) fake the boot shape on the snow surface.
+-- Boot print at a foot position, rotated to the movement yaw:
+-- two lobes (toe + heel) for the shape, one pressed cell under it.
 function TrackMarks.SpawnFoot(position, yaw, life)
 	local hit = snowHit(position.X, position.Z)
 	if not hit then
@@ -79,10 +203,12 @@ function TrackMarks.SpawnFoot(position, yaw, life)
 	local heel = newMarkPart(Vector3.new(0.68, 0.05, 0.5))
 	heel.CFrame = cf * CFrame.new(0, 0, -0.5)
 	addMark({ toe, heel }, 0.35, life)
+	pressAtPoint(position, 0.35, life)
 end
 
 -- One runner trail segment from `from` to `to`, pitched so it hugs
--- the terrain slope. Heavier cargo (depth01) presses a darker mark.
+-- the terrain slope, plus a pressed cell under the new end point.
+-- Heavier cargo (depth01) presses a darker mark and a deeper dip.
 function TrackMarks.SpawnSegment(from, to, depth01, life)
 	local hitA = snowHit(from.X, from.Z)
 	local hitB = snowHit(to.X, to.Z)
@@ -98,6 +224,7 @@ function TrackMarks.SpawnSegment(from, to, depth01, life)
 	local part = newMarkPart(Vector3.new(0.55, 0.05, length + 0.25))
 	part.CFrame = CFrame.lookAt((a + b) / 2, b)
 	addMark({ part }, 0.5 - 0.3 * math.clamp(depth01, 0, 1), life)
+	pressAtPoint(to, depth01, life)
 end
 
 function TrackMarks.Update(dt)
@@ -115,6 +242,22 @@ function TrackMarks.Update(dt)
 			for _, part in ipairs(mark.Parts) do
 				part.Transparency = transparency
 			end
+		end
+	end
+
+	local now = os.clock()
+	local expired = {}
+	for key, cell in pairs(cells) do
+		if now >= cell.ExpiresAt then
+			table.insert(expired, key)
+		end
+	end
+	for _, key in ipairs(expired) do
+		local cell = cells[key]
+		cells[key] = nil
+		cellCount -= 1
+		if cell then
+			restoreCell(cell)
 		end
 	end
 end
