@@ -4,6 +4,9 @@ local Players = game:GetService("Players")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
+local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
+
+local PathfindingService = game:GetService("PathfindingService")
 
 -- Animals: the parent system for every creature. Today it drives
 -- Ajay's WolfModel -- wild packs with a leader, day/night hunting
@@ -573,7 +576,7 @@ function Animals:_stepGoEat(wolf, dt, now)
 		end
 		return
 	end
-	local d = self:_moveToward(wolf, primary.Position, 6, dt)
+	local d = self:_moveSmart(wolf, primary.Position, 6, dt)
 	if d <= 2.2 then
 		wolf.EatingUntil = now + W.EatSeconds
 		if wolf.BiteSound then
@@ -825,6 +828,101 @@ function Animals:_nearestPlayer(position, maxDist)
 	return best, bestDist
 end
 
+-- Push a point out of every fire's scare disc (wolves path
+-- AROUND fire, never through it).
+function Animals:_pushOutOfFire(position)
+	local x, z = position.X, position.Z
+	for _, fire in ipairs(self.Gameplay.World.Fires or {}) do
+		if fire.Lit and fire.Fuel > 0 then
+			local anchor = fire.CookingPart or fire.Core
+			if anchor then
+				local radius = W.FireScareRadius + 1
+				local dx = x - anchor.Position.X
+				local dz = z - anchor.Position.Z
+				local d2 = dx * dx + dz * dz
+				if d2 < radius * radius then
+					local d = math.sqrt(d2)
+					if d < 0.01 then
+						dx, dz, d = 1, 0, 1
+					end
+					x = anchor.Position.X + dx / d * radius
+					z = anchor.Position.Z + dz / d * radius
+				end
+			end
+		end
+	end
+	return Vector3.new(x, position.Y, z)
+end
+
+function Animals:_computePath(from, to)
+	local path = PathfindingService:CreatePath({
+		AgentRadius = 1.2,
+		AgentHeight = 3,
+		AgentCanJump = false,
+		AgentCanClimb = false,
+	})
+	local ok = pcall(function()
+		path:ComputeAsync(from, to)
+	end)
+	if not ok or path.Status ~= Enum.PathStatus.Success then
+		return nil
+	end
+	local points = {}
+	for _, waypoint in ipairs(path:GetWaypoints()) do
+		table.insert(points, self:_pushOutOfFire(waypoint.Position))
+	end
+	if #points < 2 then
+		return nil
+	end
+	return points
+end
+
+-- Long moves go through real pathfinding (around trees, rocks,
+-- and fire); short moves go direct. Returns the true remaining
+-- distance to the final target.
+function Animals:_moveSmart(wolf, targetPos, speed, dt)
+	local pos = wolf.Root.Position
+	local targetDist = (Vector3.new(targetPos.X, 0, targetPos.Z) - Vector3.new(pos.X, 0, pos.Z)).Magnitude
+	if targetDist < 8 then
+		wolf.Path = nil
+		self:_moveToward(wolf, targetPos, speed, dt)
+		return targetDist
+	end
+	local now = os.clock()
+	local path = wolf.Path
+	if not path or (path.TargetPos - targetPos).Magnitude > 8 or now > path.ExpiresAt then
+		local points = self:_computePath(pos, targetPos)
+		if points then
+			wolf.Path = { Points = points, Index = 2, TargetPos = targetPos, ExpiresAt = now + 2.5 }
+			path = wolf.Path
+		else
+			wolf.Path = nil
+			path = nil
+		end
+	end
+	if not path then
+		self:_moveToward(wolf, targetPos, speed, dt)
+		return targetDist
+	end
+	while path.Index <= #path.Points do
+		local wp = path.Points[path.Index]
+		local dx = wp.X - pos.X
+		local dz = wp.Z - pos.Z
+		if dx * dx + dz * dz < 2.6 then
+			path.Index += 1
+		else
+			break
+		end
+	end
+	if path.Index > #path.Points then
+		wolf.Path = nil
+		self:_moveToward(wolf, targetPos, speed, dt)
+	else
+		self:_moveToward(wolf, path.Points[path.Index], speed, dt)
+	end
+	return targetDist
+end
+
 function Animals:_moveToward(wolf, targetPos, speed, dt)
 	local pos = wolf.Root.Position
 	local to = Vector3.new(targetPos.X - pos.X, 0, targetPos.Z - pos.Z)
@@ -850,6 +948,17 @@ function Animals:_moveToward(wolf, targetPos, speed, dt)
 			wolf.IdleTrack:Play(0.25)
 		elseif moving and wolf.IdleTrack.IsPlaying then
 			wolf.IdleTrack:Stop(0.15)
+		end
+	end
+	-- Paw prints: a pressed mark every stride while moving.
+	if moving then
+		wolf.MarkAcc = (wolf.MarkAcc or 0) + speed * dt
+		if wolf.MarkAcc >= 2.2 then
+			wolf.MarkAcc = 0
+			wolf.MarkSide = -(wolf.MarkSide or 1)
+			local right = Vector3.new(math.cos(wolf.Yaw), 0, -math.sin(wolf.Yaw))
+			local paw = Vector3.new(pos.X, pos.Y, pos.Z) + right * (0.35 * wolf.MarkSide)
+			TrackMarks.SpawnFoot(paw, wolf.Yaw, 6)
 		end
 	end
 	local groundY = self.Gameplay.World:GroundY(pos.X, pos.Z)
@@ -1012,7 +1121,7 @@ function Animals:_step(dt)
 				-- circle instead. The pack waits you out.
 				wolf.State = "Wary"
 			else
-				local d = self:_moveToward(wolf, root.Position, W.ChaseSpeed, dt)
+				local d = self:_moveSmart(wolf, root.Position, W.ChaseSpeed, dt)
 				if d <= W.BiteRange and wolf.BiteCd <= 0 then
 					self:_bitePlayer(wolf, target)
 				end
@@ -1033,7 +1142,7 @@ function Animals:_step(dt)
 			else
 				local slotPos = sledService:GetHarnessSlot(wolf.SlotIndex, self:Count(wolf.Owner))
 				if slotPos then
-					local d = self:_moveToward(wolf, slotPos, W.HarnessSpeed, dt)
+					local d = self:_moveSmart(wolf, slotPos, W.HarnessSpeed, dt)
 					if d > 26 then
 						-- Fell too far behind the moving sled:
 						-- snap back into formation.
@@ -1113,7 +1222,7 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 			side = 0
 		end
 		local slot = root.Position + back * (3.5 + row * 2.2) + right * (side * 1.7)
-		local d = self:_moveToward(wolf, slot, W.FollowSpeed, dt)
+		local d = self:_moveSmart(wolf, slot, W.FollowSpeed, dt)
 		if d > 70 then
 			self:_placeAt(wolf, slot)
 		end

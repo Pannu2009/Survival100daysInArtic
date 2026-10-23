@@ -648,6 +648,32 @@ function WorldBuilder:UpdateState(clock, temperature)
 	end
 	Lighting.ClockTime = timeOfDay
 
+	-- Realism pass (one-time): cold air haze, a touch of sun
+	-- glare, and a slight cool grade over everything. Per-phase
+	-- brightness/ambient below still owns the day-night feel.
+	if not Lighting:FindFirstChild("ArcticAtmosphere") then
+		local atmosphere = Instance.new("Atmosphere")
+		atmosphere.Name = "ArcticAtmosphere"
+		atmosphere.Density = 0.28
+		atmosphere.Offset = 0.2
+		atmosphere.Color = Color3.fromRGB(196, 214, 232)
+		atmosphere.Decay = Color3.fromRGB(96, 116, 148)
+		atmosphere.Glare = 0.35
+		atmosphere.Haze = 1.4
+		atmosphere.Parent = Lighting
+		local sun = Instance.new("SunRaysEffect")
+		sun.Name = "ArcticSunRays"
+		sun.Intensity = 0.05
+		sun.Spread = 0.85
+		sun.Parent = Lighting
+		local grade = Instance.new("ColorCorrectionEffect")
+		grade.Name = "ArcticGrade"
+		grade.Saturation = 0.05
+		grade.Contrast = 0.05
+		grade.TintColor = Color3.fromRGB(238, 244, 255)
+		grade.Parent = Lighting
+	end
+
 	-- Brightness and ambient follow the sun: full daylight at
 	-- midday, properly dark at night, smooth fades between.
 	local daylight = math.clamp(1 - math.abs(timeOfDay - 12.5) / 6.5, 0, 1)
