@@ -377,14 +377,12 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 			return
 		end
 		local world = self.Gameplay.World
-		-- Ice: the dot is ON the lake (glacier), crack it there.
-		local groundHit = world:TerrainRaycastDown(hitPosition.X, hitPosition.Z)
-		if groundHit and groundHit.Material == Enum.Material.Glacier
-			and (groundHit.Position - hitPosition).Magnitude <= 3.5
-			and (hitPosition - root.Position).Magnitude <= def.Range + 4
+		-- Ice: the dot is ON the lake, crack it there.
+		if (hitPosition - root.Position).Magnitude <= def.Range + 4
+			and self.Gameplay.Fish:IsIceAt(hitPosition)
 		then
 			if self:_cooldownReady(player, "Axe", def.Cooldown) then
-				self.Gameplay.Fish:HitIce(player, hitPosition)
+				self.Gameplay.Fish:HitIce(player, hitPosition, Config.Fishing.AxeIceWork)
 			end
 			return
 		end

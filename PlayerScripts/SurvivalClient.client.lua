@@ -929,38 +929,41 @@ local fishingPanel = Instance.new("Frame")
 fishingPanel.Name = "FishingPanel"
 fishingPanel.Size = UDim2.fromOffset(340, 104)
 fishingPanel.Position = UDim2.new(0.5, -170, 1, -196)
-fishingPanel.BackgroundColor3 = AUBERGINE
-fishingPanel.BackgroundTransparency = 0.25
+fishingPanel.BackgroundTransparency = 1
 fishingPanel.BorderSizePixel = 0
 fishingPanel.Visible = false
 fishingPanel.Parent = gui
-local fishingCorner = Instance.new("UICorner")
-fishingCorner.CornerRadius = UDim.new(0, 10)
-fishingCorner.Parent = fishingPanel
-addStroke(fishingPanel, SILVER, 1, 0.55)
-local fishingTitle = makeLabel(fishingPanel, "", UDim2.new(1, -16, 0, 26), UDim2.fromOffset(8, 6), SILVER, 16)
+local fishingTitle = makeLabel(fishingPanel, "", UDim2.new(1, -16, 0, 30), UDim2.fromOffset(8, 6), Color3.new(1, 1, 1), 18)
+local fishingTitleStroke = Instance.new("UIStroke")
+fishingTitleStroke.Color = Color3.new(0, 0, 0)
+fishingTitleStroke.Thickness = 1.4
+fishingTitleStroke.Parent = fishingTitle
 fishingTitle.TextXAlignment = Enum.TextXAlignment.Center
 local reelTrack = Instance.new("Frame")
-reelTrack.Size = UDim2.fromOffset(308, 18)
-reelTrack.Position = UDim2.fromOffset(16, 40)
-reelTrack.BackgroundColor3 = SILVER
-reelTrack.BackgroundTransparency = 0.7
+reelTrack.Size = UDim2.fromOffset(308, 20)
+reelTrack.Position = UDim2.fromOffset(16, 42)
+reelTrack.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+reelTrack.BackgroundTransparency = 0.35
 reelTrack.BorderSizePixel = 0
 reelTrack.Parent = fishingPanel
+local reelTrackCorner = Instance.new("UICorner")
+reelTrackCorner.CornerRadius = UDim.new(0, 6)
+reelTrackCorner.Parent = reelTrack
+addStroke(reelTrack, SILVER, 1, 0.4)
 local reelZoneFrame = Instance.new("Frame")
 reelZoneFrame.BackgroundColor3 = MARIGOLD
 reelZoneFrame.BackgroundTransparency = 0.25
 reelZoneFrame.BorderSizePixel = 0
-reelZoneFrame.Size = UDim2.fromOffset(80, 18)
+reelZoneFrame.Size = UDim2.fromOffset(80, 20)
 reelZoneFrame.Parent = reelTrack
 local reelNeedle = Instance.new("Frame")
-reelNeedle.Size = UDim2.fromOffset(3, 18)
+reelNeedle.Size = UDim2.fromOffset(3, 20)
 reelNeedle.BackgroundColor3 = Color3.new(1, 1, 1)
 reelNeedle.BorderSizePixel = 0
 reelNeedle.Parent = reelTrack
 local progressTrack = Instance.new("Frame")
 progressTrack.Size = UDim2.fromOffset(308, 10)
-progressTrack.Position = UDim2.fromOffset(16, 68)
+progressTrack.Position = UDim2.fromOffset(16, 72)
 progressTrack.BackgroundColor3 = SILVER
 progressTrack.BackgroundTransparency = 0.7
 progressTrack.BorderSizePixel = 0
@@ -972,7 +975,7 @@ progressFill.Size = UDim2.fromScale(0, 1)
 progressFill.Parent = progressTrack
 
 local function clientReelNeedle(elapsed)
-	local phase = (elapsed % 1.6) / 1.6
+	local phase = (elapsed % Config.Fishing.ReelSweepSeconds) / Config.Fishing.ReelSweepSeconds
 	if phase < 0.5 then
 		return phase * 2
 	end
@@ -1006,8 +1009,8 @@ game:GetService("RunService").Heartbeat:Connect(function()
 		local zone = clientReelZone(elapsed, seed)
 		local needle = clientReelNeedle(elapsed)
 		local trackWidth = reelTrack.AbsoluteSize.X
-		local zoneHalf = 0.13
-		reelZoneFrame.Size = UDim2.fromOffset(trackWidth * zoneHalf * 2, 18)
+		local zoneHalf = Config.Fishing.ReelZoneHalf
+		reelZoneFrame.Size = UDim2.fromOffset(trackWidth * zoneHalf * 2, 20)
 		reelZoneFrame.Position = UDim2.fromOffset((zone - zoneHalf) * trackWidth, 0)
 		reelNeedle.Position = UDim2.fromOffset(needle * trackWidth - 1, 0)
 		local progress = (player:GetAttribute("FishingProgress") or 0) / 100
@@ -1066,6 +1069,13 @@ for _, log in ipairs(logsFolder:GetChildren()) do
 	trackLog(log)
 end
 logsFolder.ChildAdded:Connect(trackLog)
+-- Fish live in their own folder but drag exactly like logs; the
+-- tracker must watch them too or a caught fish never moves.
+local fishFolder = workspace:WaitForChild("Fish")
+for _, fish in ipairs(fishFolder:GetChildren()) do
+	trackLog(fish)
+end
+fishFolder.ChildAdded:Connect(trackLog)
 
 -- Center aim dot: the game's main interaction pointer. Visible
 -- while dragging and while a center-dot tool is equipped.

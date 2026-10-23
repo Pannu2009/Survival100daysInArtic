@@ -236,7 +236,7 @@ local function iceKey(x, z)
 end
 
 local function reelNeedle(elapsed)
-	local phase = (elapsed % 1.6) / 1.6
+	local phase = (elapsed % Config.Fishing.ReelSweepSeconds) / Config.Fishing.ReelSweepSeconds
 	if phase < 0.5 then
 		return phase * 2
 	end
@@ -291,26 +291,19 @@ function FishSystem:HitIce(player, position, work)
 	end
 	self.IceHits[key] = nil
 
-	-- Break through: a dark water disc in the ice cell.
+	-- Break through: carve the ice sheet itself (same terrain
+	-- carving as digging snow) -- the water layer underneath
+	-- shows in the hole. Refreezing fills it back in.
 	local world = self.Gameplay.World
 	local cx = (math.floor(position.X / ICE_CELL) + 0.5) * ICE_CELL
 	local cz = (math.floor(position.Z / ICE_CELL) + 0.5) * ICE_CELL
 	local surfaceY = world:GroundY(cx, cz)
-	local part = Instance.new("Part")
-	part.Name = "FishingHole"
-	part.Shape = Enum.PartType.Cylinder
-	part.Size = Vector3.new(0.25, 3.4, 3.4)
-	part.CFrame = CFrame.new(cx, surfaceY + 0.1, cz) * CFrame.Angles(0, 0, math.rad(90))
-	part.Color = Color3.fromRGB(24, 52, 82)
-	part.Material = Enum.Material.SmoothPlastic
-	part.Transparency = 0.1
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanQuery = true
-	part.Parent = self.HolesFolder
+	local carveCenter = Vector3.new(cx, surfaceY - 0.4, cz)
+	local terrain = workspace:WaitForChild("Terrain")
+	terrain:FillBall(carveCenter, 2.1, Enum.Material.Air)
 	self.Holes[key] = {
-		Part = part,
 		Position = Vector3.new(cx, surfaceY, cz),
+		CarveCenter = carveCenter,
 		ExpiresAt = os.clock() + Config.Fishing.HoleLifeSeconds,
 	}
 end
@@ -376,7 +369,7 @@ function FishSystem:_startSession(player, hole)
 	bobber.Anchored = true
 	bobber.CanCollide = false
 	bobber.CanQuery = false
-	bobber.CFrame = CFrame.new(hole.Position + Vector3.new(0, 0.25, 0))
+	bobber.CFrame = CFrame.new(hole.Position + Vector3.new(0, -0.7, 0))
 	bobber.Parent = self.HolesFolder
 	session.Bobber = bobber
 	if handle then
@@ -473,16 +466,21 @@ end
 
 function FishSystem:TickFishing(dt)
 	local now = os.clock()
-	-- Holes refreeze.
+	-- Holes refreeze: the carved cell is filled back in with ice.
 	for key, hole in pairs(self.Holes) do
 		if now >= hole.ExpiresAt then
-			hole.Part:Destroy()
+			local terrain = workspace:WaitForChild("Terrain")
+			terrain:FillBlock(
+				CFrame.new(hole.CarveCenter.X, hole.Position.Y - 0.5, hole.CarveCenter.Z),
+				Vector3.new(4.4, 1.2, 4.4),
+				Enum.Material.Glacier
+			)
 			self.Holes[key] = nil
 		end
 	end
 	for player, session in pairs(self.Sessions) do
 		local root = sessionRoot(player)
-		if not root or not session.Hole.Part.Parent then
+		if not root or now >= session.Hole.ExpiresAt then
 			self:_endSession(player)
 			continue
 		end
@@ -494,7 +492,7 @@ function FishSystem:TickFishing(dt)
 			session.Phase = "Bite"
 			session.BiteEndsAt = now + Config.Fishing.BiteWindow
 			if session.Bobber then
-				session.Bobber.CFrame = CFrame.new(session.Hole.Position + Vector3.new(0, 0.02, 0))
+				session.Bobber.CFrame = CFrame.new(session.Hole.Position + Vector3.new(0, -0.95, 0))
 			end
 			self:_publishSession(player)
 		elseif session.Phase == "Bite" and now > session.BiteEndsAt then
