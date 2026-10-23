@@ -35,7 +35,17 @@ end
 local function pressColumn(vx, vz, surfaceY, dip, expiresAt)
 	local centerVy = math.floor(surfaceY / RESOLUTION)
 	local region = voxelRegion(vx, centerVy - 1, vz, vx, centerVy + 1, vz)
-	local materials, occupancies = workspace.Terrain:ReadVoxels(region, RESOLUTION)
+	local ok, materials, occupancies = pcall(function()
+		return workspace.Terrain:ReadVoxels(region, RESOLUTION)
+	end)
+	if not ok or not materials then
+		if not TrackMarks._warned then
+			TrackMarks._warned = true
+			warn("[Arctic] TrackMarks ReadVoxels failed:", materials,
+				"region:", region.Min, region.Max)
+		end
+		return
+	end
 
 	-- Find the topmost solid voxel in this column.
 	local topY = nil
@@ -69,7 +79,12 @@ local function pressColumn(vx, vz, surfaceY, dip, expiresAt)
 	end
 
 	occupancies[1][topY][1] = targetOcc
-	workspace.Terrain:WriteVoxels(region, RESOLUTION, materials, occupancies)
+	local wrote = pcall(function()
+		workspace.Terrain:WriteVoxels(region, RESOLUTION, materials, occupancies)
+	end)
+	if not wrote then
+		return
+	end
 
 	if not cell then
 		cellCount += 1
@@ -133,7 +148,12 @@ end
 
 local function restoreCell(cell)
 	local region = voxelRegion(cell.VX, cell.VY, cell.VZ, cell.VX, cell.VY, cell.VZ)
-	local materials, occupancies = workspace.Terrain:ReadVoxels(region, RESOLUTION)
+	local ok, materials, occupancies = pcall(function()
+		return workspace.Terrain:ReadVoxels(region, RESOLUTION)
+	end)
+	if not ok or not materials then
+		return
+	end
 	-- Restore only if the voxel still holds exactly what we wrote;
 	-- if a player dug or built there meanwhile, their edit wins.
 	if materials[1][1][1] == cell.BaselineMat
@@ -141,7 +161,9 @@ local function restoreCell(cell)
 	then
 		materials[1][1][1] = cell.BaselineMat
 		occupancies[1][1][1] = cell.BaselineOcc
-		workspace.Terrain:WriteVoxels(region, RESOLUTION, materials, occupancies)
+		pcall(function()
+			workspace.Terrain:WriteVoxels(region, RESOLUTION, materials, occupancies)
+		end)
 	end
 end
 
