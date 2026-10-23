@@ -72,8 +72,7 @@ Config.World = {
 }
 
 Config.Campfire = {
-	RadiusByLevel = { 18, 23, 28, 33, 38, 44, 50 },
-	LevelBurnUnits = { 0, 4, 10, 18, 28, 40, 55 },
+	WarmthRadius = 23,
 	WarmthRate = 2.4,
 	BurningLogRadius = 10,
 	BurningLogWarmRate = 1.8,
@@ -93,11 +92,11 @@ Config.Campfire = {
 }
 
 Config.Sled = {
-	MaxCargoWeight = 100,
+	MaxCargoPieces = 10,
 	Weight = 0,
 	RopeLength = 7,
 	PullSlowPerWeight = 0.004,
-	MinPullSpeedFactor = 0.35,
+	MinPullSpeedFactor = 0.15,
 	InteractRange = 13,
 	PullRange = 17,
 	RopeSpring = 15,
@@ -108,6 +107,13 @@ Config.Sled = {
 	MaxSpeed = 30,
 	YawResponse = 6,
 	YawDamp = 5,
+}
+
+Config.Tracks = {
+	SledLife = 7,
+	FootLife = 5,
+	SledStep = 2.2,
+	FootStep = 1.9,
 }
 
 Config.Blueprint = {

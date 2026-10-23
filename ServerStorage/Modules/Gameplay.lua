@@ -7,6 +7,7 @@ local DragSystem = require(Modules:WaitForChild("DragSystem"))
 local SurvivalPlayer = require(script.Parent:WaitForChild("SurvivalPlayer"))
 local FishSystem = require(script.Parent:WaitForChild("FishSystem"))
 local Weapons = require(script.Parent:WaitForChild("Weapons"))
+local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 
 local Gameplay = {}
 Gameplay.__index = Gameplay
@@ -37,6 +38,7 @@ function Gameplay.new(world, clock, temperature)
 	self._spread = {}
 	self.Fish = FishSystem.new(self)
 	self.Weapons = Weapons.new(self)
+	self._foot = {}
 	self._published = {}
 	self.LogsFolder = nil
 	self._setSprinting = nil
@@ -49,6 +51,7 @@ function Gameplay:Start()
 	logsFolder.Parent = workspace
 	self.LogsFolder = logsFolder
 
+	TrackMarks.Init(self.World)
 	self.Fish:Start()
 
 	DragSystem.OnStopped = function(item)
@@ -150,6 +153,7 @@ function Gameplay:Start()
 		self._sprinting[player] = nil
 		self._tutorial[player] = nil
 		self._published[player] = nil
+		self._foot[player] = nil
 		self.Weapons:CleanupPlayer(player)
 	end)
 end
@@ -570,6 +574,7 @@ function Gameplay:Update(dt)
 	self:_feedFires()
 	self:_tickBurning(dt)
 	self:_spreadFire(dt)
+	TrackMarks.Update(dt)
 	for player, survival in pairs(self._survivals) do
 		local context = { IsSprinting = self._sprinting[player] == true }
 		local character = player.Character
@@ -606,6 +611,27 @@ function Gameplay:Update(dt)
 				if lp and (lp.Position - root.Position).Magnitude <= Config.Campfire.BurningLogRadius then
 					context.FireRate = Config.Campfire.BurningLogWarmRate
 					break
+				end
+			end
+		end
+
+		-- Footprints: a pressed-snow mark every step while walking.
+		if root then
+			local foot = self._foot[player]
+			if not foot then
+				foot = { LastPos = root.Position, Dist = 0, Side = 1 }
+				self._foot[player] = foot
+			end
+			local moved = (root.Position - foot.LastPos) * Vector3.new(1, 0, 1)
+			foot.LastPos = root.Position
+			if moved.Magnitude > 0 then
+				foot.Dist += moved.Magnitude
+				if foot.Dist >= Config.Tracks.FootStep then
+					foot.Dist = 0
+					foot.Side = -foot.Side
+					local dir = moved.Unit
+					local pos = root.Position + root.CFrame.RightVector * (0.4 * foot.Side)
+					TrackMarks.Spawn(pos, math.atan2(dir.X, dir.Z), 0.95, 0.55, 0.3, Config.Tracks.FootLife)
 				end
 			end
 		end

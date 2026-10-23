@@ -5,14 +5,8 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 
 -- Weapons: every weapon and tool in the game lives here, driven by
--- the Definitions list below. Adding a weapon or tool = adding ONE
--- entry to the list (plus, only if it can't clone an Assets model, a
--- small code-built fallback). Building, giving, cooldowns, fuel and
--- the server-side actions all read from the list, so a new entry
--- works with the same validation as everything already here.
--- Gameplay owns the world effects a tool triggers (fires, tutorial);
--- this module owns the tools themselves and calls back into Gameplay
--- for those effects, the same seam FishSystem uses.
+-- the Definitions list below. Adding one = one new list entry plus a
+-- model in Assets/Tools. No model, no tool.
 
 local Weapons = {}
 Weapons.__index = Weapons
@@ -53,102 +47,6 @@ local function rotateAround(model, center, rotation)
 	model:PivotTo(CFrame.new(center) * rotation * CFrame.new(-center) * cf)
 end
 
--- Code-built fallback tools, used only when Ajay has no model for
--- the tool in ReplicatedStorage/Assets/Tools.
-local function buildAxeFallback()
-	local axe = Instance.new("Tool")
-	axe.Name = "Axe"
-	axe.RequiresHandle = true
-	axe.CanBeDropped = false
-
-	local handle = Instance.new("Part")
-	handle.Name = "Handle"
-	handle.Size = Vector3.new(0.45, 3.4, 0.45)
-	handle.Material = Enum.Material.Wood
-	handle.Color = Color3.fromRGB(110, 78, 48)
-	handle.Parent = axe
-
-	local axeHead = Instance.new("Part")
-	axeHead.Name = "Head"
-	axeHead.Size = Vector3.new(0.3, 1.1, 1.6)
-	axeHead.CFrame = CFrame.new(0, 1.5, 0)
-	axeHead.Material = Enum.Material.Metal
-	axeHead.Color = Color3.fromRGB(150, 155, 160)
-	axeHead.CanCollide = false
-	axeHead.Massless = true
-	axeHead.Parent = axe
-
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = handle
-	weld.Part1 = axeHead
-	weld.Parent = axeHead
-
-	return axe
-end
-
-local function buildShovelFallback()
-	local shovel = Instance.new("Tool")
-	shovel.Name = "Shovel"
-	shovel.RequiresHandle = true
-	shovel.CanBeDropped = false
-
-	local handle = Instance.new("Part")
-	handle.Name = "Handle"
-	handle.Size = Vector3.new(0.4, 3.6, 0.4)
-	handle.Material = Enum.Material.Wood
-	handle.Color = Color3.fromRGB(110, 78, 48)
-	handle.Parent = shovel
-
-	local blade = Instance.new("Part")
-	blade.Name = "Blade"
-	blade.Size = Vector3.new(1.1, 1.4, 0.18)
-	blade.CFrame = CFrame.new(0, -2.2, 0)
-	blade.Material = Enum.Material.Metal
-	blade.Color = Color3.fromRGB(150, 155, 160)
-	blade.CanCollide = false
-	blade.Massless = true
-	blade.Parent = shovel
-
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = handle
-	weld.Part1 = blade
-	weld.Parent = blade
-
-	return shovel
-end
-
-local function buildBlueprintFallback()
-	local tool = Instance.new("Tool")
-	tool.Name = "Blueprint"
-	tool.RequiresHandle = true
-	tool.CanBeDropped = false
-
-	local handle = Instance.new("Part")
-	handle.Name = "Handle"
-	handle.Size = Vector3.new(0.28, 3.2, 0.28)
-	handle.Material = Enum.Material.Wood
-	handle.Color = Color3.fromRGB(234, 160, 0)
-	handle.Parent = tool
-
-	return tool
-end
-
-local function buildLighterFallback()
-	local tool = Instance.new("Tool")
-	tool.Name = "Lighter"
-	tool.RequiresHandle = true
-	tool.CanBeDropped = false
-
-	local handle = Instance.new("Part")
-	handle.Name = "Handle"
-	handle.Size = Vector3.new(0.5, 0.9, 0.3)
-	handle.Material = Enum.Material.Metal
-	handle.Color = Color3.fromRGB(220, 90, 30)
-	handle.Parent = tool
-
-	return tool
-end
-
 -- THE LIST. Order = hotbar order. Fields:
 --   Id         tool name (must match the client hotbar + ToolAim names)
 --   Kind       "Weapon" or "Tool"
@@ -159,7 +57,6 @@ end
 --   KeepScripts  true = Ajay's scripts inside the asset clone survive
 --              (the lighter's flame effects); false = stripped (axe)
 --   FuelCost / StartFuel   lighter-style consumable, if the tool has one
---   Fallback   code-built tool used when no asset model exists
 Weapons.List = {
 	{
 		Id = "Axe",
@@ -169,25 +66,22 @@ Weapons.List = {
 		Range = Config.Tree.ChopRange,
 		Asset = "Axe",
 		KeepScripts = false,
-		Fallback = buildAxeFallback,
 	},
 	{
 		Id = "Shovel",
 		Kind = "Tool",
 		Cooldown = Config.Digging.Cooldown,
 		Range = Config.Digging.AimRange,
-		Asset = nil,
+		Asset = "Shovel",
 		KeepScripts = false,
-		Fallback = buildShovelFallback,
 	},
 	{
 		Id = "Blueprint",
 		Kind = "Tool",
 		Cooldown = 0,
 		Range = 0,
-		Asset = nil,
+		Asset = "Blueprint",
 		KeepScripts = false,
-		Fallback = buildBlueprintFallback,
 	},
 	{
 		Id = "Lighter",
@@ -198,7 +92,6 @@ Weapons.List = {
 		KeepScripts = true,
 		FuelCost = Config.Lighter.LightCost,
 		StartFuel = Config.Lighter.StartFuel,
-		Fallback = buildLighterFallback,
 	},
 }
 
@@ -283,19 +176,17 @@ local function cloneAssetTool(def)
 	return tool
 end
 
--- Build every tool in the list into StarterPack: Ajay's asset model
--- wins when it exists, the code-built fallback covers its absence.
+-- Build every tool in the list into StarterPack from its Assets model.
 function Weapons:BuildTools()
 	for _, def in ipairs(Weapons.List) do
 		local tool = nil
 		if def.Asset then
 			tool = cloneAssetTool(def)
 		end
-		if not tool and def.Fallback then
-			tool = def.Fallback()
-		end
 		if tool then
 			tool.Parent = StarterPack
+		else
+			warn(("[Arctic] Weapons: no Assets/Tools model for %s - tool not built"):format(def.Id))
 		end
 	end
 end

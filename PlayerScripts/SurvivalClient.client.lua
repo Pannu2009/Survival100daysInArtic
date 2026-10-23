@@ -67,10 +67,8 @@ local function addStroke(parent, color, thickness, transparency)
 end
 
 
--- Day counter (Ajay's layout): flush with the top center of the
--- screen, plain white text with a thin black stroke. When the day
--- rolls over it pops — grows, flips the number at the peak, and
--- settles back.
+-- Day counter: flush with the top center of the screen, plain
+-- white text with a thin black stroke.
 local dayBanner = Instance.new("TextLabel")
 dayBanner.Name = "DayBanner"
 dayBanner.BackgroundTransparency = 1
@@ -95,24 +93,52 @@ local function dayText(day)
 	return "Day: " .. tostring(day)
 end
 
-local function popDay(day)
+-- Smooth day switch: the animation starts ~2 seconds BEFORE the
+-- switch (timed off the server's PhaseEndsAt stamp), eases the
+-- banner up while the night ends, the number flips at the switch
+-- itself, then it settles back over the next ~1.6 seconds.
+local dayAnimActive = false
+local function animateDaySwitch(secondsLeft)
+	if dayAnimActive then
+		return
+	end
+	dayAnimActive = true
 	task.spawn(function()
 		local up = TweenService:Create(
 			dayScale,
-			TweenInfo.new(0.16, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-			{ Scale = 1.3 }
+			TweenInfo.new(math.max(secondsLeft, 0.2), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+			{ Scale = 1.22 }
 		)
 		up:Play()
 		up.Completed:Wait()
-		dayBanner.Text = dayText(day)
+		-- The flip happens in refreshWorld when the Day attribute
+		-- lands; give it a beat at the peak before settling.
+		task.wait(0.25)
 		local down = TweenService:Create(
 			dayScale,
-			TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+			TweenInfo.new(1.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
 			{ Scale = 1 }
 		)
 		down:Play()
+		down.Completed:Wait()
+		dayAnimActive = false
 	end)
 end
+
+task.spawn(function()
+	while true do
+		task.wait(0.1)
+		if ReplicatedStorage:GetAttribute("Phase") == "Night" then
+			local endsAt = ReplicatedStorage:GetAttribute("PhaseEndsAt")
+			if endsAt then
+				local left = endsAt - workspace:GetServerTimeNow()
+				if left > 0 and left <= 2 then
+					animateDaySwitch(left)
+				end
+			end
+		end
+	end
+end)
 
 local sickLabel = makeLabel(gui, "SICK", UDim2.fromOffset(80, 22), UDim2.new(1, -96, 0, 46), MARIGOLD, 16)
 sickLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -615,11 +641,9 @@ end)
 local dayShown = nil
 local function refreshWorld()
 	local day = ReplicatedStorage:GetAttribute("Day") or 1
-	if dayShown ~= nil and day ~= dayShown then
-		popDay(day)
-	else
-		dayBanner.Text = dayText(day)
-	end
+	-- The number flips exactly at the switch; the smooth scale
+	-- animation around it is timed separately off PhaseEndsAt.
+	dayBanner.Text = dayText(day)
 	dayShown = day
 end
 

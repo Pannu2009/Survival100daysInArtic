@@ -35,6 +35,10 @@ function DayNightClock:GetPhaseProgress()
 	return self.PhaseTime / self:GetPhaseLength()
 end
 
+function DayNightClock:GetSecondsLeft()
+	return self:GetPhaseLength() - self.PhaseTime
+end
+
 function DayNightClock:GetMultiplier()
 	return self.Multiplier
 end

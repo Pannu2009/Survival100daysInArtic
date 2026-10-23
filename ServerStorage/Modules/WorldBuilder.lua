@@ -105,7 +105,7 @@ function WorldBuilder:WarmthRateAt(position)
 					return Config.Campfire.WarmthRate
 				end
 			else
-				local radius = Config.Campfire.RadiusByLevel[fire.Level] or Config.Campfire.RadiusByLevel[1]
+				local radius = Config.Campfire.WarmthRadius
 				local dx = position.X - fire.Core.Position.X
 				local dz = position.Z - fire.Core.Position.Z
 				if dx * dx + dz * dz <= radius * radius then
@@ -138,8 +138,8 @@ function WorldBuilder:IsNearStructure(x, z, radius)
 	return false
 end
 
-function WorldBuilder:FireRadius(fire)
-	return Config.Campfire.RadiusByLevel[fire.Level] or Config.Campfire.RadiusByLevel[1]
+function WorldBuilder:FireRadius(_fire)
+	return Config.Campfire.WarmthRadius
 end
 
 function WorldBuilder:TerrainRaycastDown(x, z)
@@ -149,19 +149,7 @@ end
 -- Credit a fire with burned fuel (physical feeding via AddWoodBox).
 function WorldBuilder:AddFuel(fire, burnUnits)
 	fire.Fuel += burnUnits * Config.Campfire.FuelPerBurnUnit
-	fire.TotalFed += burnUnits
-	self:_recalcLevel(fire)
 	self:_refreshFireVisual(fire)
-end
-
-function WorldBuilder:_recalcLevel(fire)
-	local level = 1
-	for i, needed in ipairs(Config.Campfire.LevelBurnUnits) do
-		if fire.TotalFed >= needed then
-			level = i
-		end
-	end
-	fire.Level = level
 end
 
 function WorldBuilder:_refreshFireVisual(fire)
@@ -331,11 +319,8 @@ function WorldBuilder:_createFire(x, z)
 		-- wood, so the lighter works on it right away; feeding logs
 		-- is how it stays alive after that.
 		Fuel = Config.Campfire.BuildFuelSeconds,
-		TotalFed = 0,
-		Level = 1,
 		Lit = false,
 		Emitters = emitters,
-		RingLevel = 1,
 		GroundY = groundY,
 	}
 
@@ -681,6 +666,9 @@ function WorldBuilder:UpdateState(clock, temperature)
 	end
 	publish("Day", clock:GetDay())
 	publish("Phase", clock:GetPhase())
+	-- Server timestamp of the next phase switch, set every tick so
+	-- clients can time animations to land exactly on the switch.
+	ReplicatedStorage:SetAttribute("PhaseEndsAt", workspace:GetServerTimeNow() + clock:GetSecondsLeft())
 	publish("Multiplier", clock:GetMultiplier())
 	publish("Weather", temperature:GetWeather())
 	publish("AmbientTempC", math.floor(temperature:GetAmbientTempC(clock:GetPhase())))
@@ -690,21 +678,11 @@ function WorldBuilder:UpdateState(clock, temperature)
 		if burning then
 			litCount += 1
 		end
-		if fire.Ring and fire.RingLevel ~= fire.Level then
-			fire.RingLevel = fire.Level
-			local radius = self:FireRadius(fire)
-			fire.Ring.Size = Vector3.new(0.15, radius * 2, radius * 2)
-			if fire.WarmthPart then
-				local s = fire.WarmthPart.Size
-				fire.WarmthPart.Size = Vector3.new(radius * 2, s.Y, radius * 2)
-				fire.WarmthPart.CFrame = CFrame.new(fire.Core.Position.X, fire.GroundY + s.Y / 2, fire.Core.Position.Z)
-			end
-		end
 		if fire.Ring then
 			fire.Ring.Transparency = burning and 0.78 or 0.93
 		end
 		if fire.Title then
-			fire.Title.Text = "CAMPFIRE Lv " .. fire.Level
+			fire.Title.Text = "CAMPFIRE"
 		end
 		if fire.Fill then
 			local fraction = math.clamp(fire.Fuel / Config.Campfire.FuelDisplayMax, 0, 1)

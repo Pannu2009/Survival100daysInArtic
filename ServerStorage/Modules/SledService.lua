@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local DragSystem = require(Modules:WaitForChild("DragSystem"))
+local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 
 local SledService = {}
 SledService.__index = SledService
@@ -60,16 +61,40 @@ function SledService.new(world, gameplay)
 	self._groundOffset = 0.5
 	self._unloadPrompt = nil
 	self._pullPrompt = nil
+	self._runnerL = nil
+	self._runnerR = nil
+	self._snowEmitters = {}
+	self._markL = nil
+	self._markR = nil
 	return self
+end
+
+local function makeSnowEmitter(part)
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Name = "SnowKick"
+	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	emitter.Color = ColorSequence.new(Color3.fromRGB(225, 238, 248))
+	emitter.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.45),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	emitter.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.35),
+		NumberSequenceKeypoint.new(1, 1.1),
+	})
+	emitter.Lifetime = NumberRange.new(0.35, 0.7)
+	emitter.Speed = NumberRange.new(1.5, 3.5)
+	emitter.SpreadAngle = Vector2.new(35, 35)
+	emitter.Acceleration = Vector3.new(0, 3, 0)
+	emitter.Rate = 0
+	emitter.Parent = part
+	return emitter
 end
 
 local function layoutCargo(box, dimsList)
 	local placements = {}
 	local layers = {}
 	for i, d in ipairs(dimsList) do
-		if d.thick > box.across + 0.01 then
-			return nil
-		end
 		local spot = nil
 		for l = 1, #layers + 1 do
 			local layer = layers[l]
@@ -78,9 +103,8 @@ local function layoutCargo(box, dimsList)
 				for j = 1, l - 1 do
 					y += layers[j].height + 0.1
 				end
-				if y + d.thick > box.height + 0.01 then
-					return nil
-				end
+				-- Layers may stack past the box height: the pile
+				-- just grows taller on the sled.
 				layer = { used = 0, height = 0, y = y }
 				layers[l] = layer
 			end
@@ -91,6 +115,18 @@ local function layoutCargo(box, dimsList)
 					up = -box.height / 2 + layer.y + d.thick / 2,
 				}
 				layer.used += gap + d.thick
+				if d.thick > layer.height then
+					layer.height = d.thick
+				end
+				break
+			elseif layer.used == 0 then
+				-- One piece wider than the box: centered on its
+				-- own layer, poking out both sides equally.
+				spot = {
+					across = 0,
+					up = -box.height / 2 + layer.y + d.thick / 2,
+				}
+				layer.used = box.across
 				if d.thick > layer.height then
 					layer.height = d.thick
 				end
@@ -248,6 +284,19 @@ function SledService:Start()
 	self._orientOffset = canon0:Inverse() * (spawnPivot - spawnPivot.Position)
 	self._groundOffset = spawnPivot.Position.Y - self.World:GroundY(spawnPivot.Position.X, spawnPivot.Position.Z)
 
+	-- The sled's feet (Ajay's models): tracks and kicked snow come
+	-- from the LeftSide/RightSide runners when the model has them.
+	self._runnerL = sled:FindFirstChild("LeftSide", true)
+	self._runnerR = sled:FindFirstChild("RightSide", true)
+	for _, runner in ipairs({ self._runnerL, self._runnerR }) do
+		if runner and runner:IsA("BasePart") then
+			table.insert(self._snowEmitters, makeSnowEmitter(runner))
+		end
+	end
+	if #self._snowEmitters == 0 then
+		table.insert(self._snowEmitters, makeSnowEmitter(rootPart))
+	end
+
 	self:_makePrompts()
 
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -339,7 +388,7 @@ end
 function SledService:_refreshPrompts()
 	if self._unloadPrompt then
 		self._unloadPrompt.Enabled = #self._cargo > 0
-		self._unloadPrompt.ObjectText = ("Sled cargo %d/%dkg"):format(self._cargoWeight, Config.Sled.MaxCargoWeight)
+		self._unloadPrompt.ObjectText = ("Sled cargo %d/%d pieces"):format(#self._cargo, Config.Sled.MaxCargoPieces)
 	end
 	if self._pullPrompt then
 		local pulled = self.Sled and self.Sled:GetAttribute("PulledBy") ~= nil
@@ -446,11 +495,10 @@ function SledService:_loadPiece(player, best)
 		return
 	end
 
-	-- Validate everything before changing anything: capacity, then
-	-- whether the piece (shrunk to the box length if needed) actually
-	-- fits the cargo volume alongside what's already loaded.
-	local weight = best:GetAttribute("Weight") or 0
-	if self._cargoWeight + weight > Config.Sled.MaxCargoWeight then
+	-- Validate everything before changing anything. The only hard
+	-- limit now is the piece count — any size, any weight; the
+	-- weight is paid for in pull speed instead.
+	if #self._cargo >= Config.Sled.MaxCargoPieces then
 		return
 	end
 
@@ -726,10 +774,8 @@ function SledService:_stepSled(dt)
 	local world = self.World
 	local pos = sled:GetPivot().Position
 
-	-- Physics mass factor is relative to a 25kg reference sled. Config.Sled.Weight
-	-- is 0 (Ajay removed the sled's own weight from pull/display), so dividing by
-	-- it gave inf/NaN -- NaN is what crashed math.clamp at the yaw clamp below.
-	-- 1 + cargo/25 reproduces the old tuning exactly: empty = 1, 100kg = 5.
+	-- Mass factor relative to a 25kg reference (Weight is 0 now, so
+	-- never divide by it): empty = 1, 100kg of cargo = 5.
 	local massFactor = 1 + self._cargoWeight / 25
 
 	local s = 3
@@ -878,6 +924,41 @@ function SledService:_stepSled(dt)
 		if piece.Parent then
 			self:_placePiece(piece)
 		end
+	end
+
+	-- Snow: runners kick particles while moving and press a track
+	-- line into the snow; heavier cargo presses deeper marks.
+	local speed = self._vel.Magnitude
+	for _, emitter in ipairs(self._snowEmitters) do
+		emitter.Rate = speed > 2 and math.min(10 + speed * 2, 50) or 0
+	end
+	if speed > 0.8 then
+		local depth = math.clamp(self._cargoWeight / 250, 0.15, 1)
+		local yawA = math.atan2(fwdH.X, fwdH.Z)
+		local rightV = Vector3.new(-fwdH.Z, 0, fwdH.X)
+		local function pressTrack(runner, key, sideSign)
+			local p
+			if runner then
+				p = runner.Position
+			else
+				p = newPos + rightV * (sideSign * (self._footprint.X / 2 - 0.3))
+			end
+			local last = self[key]
+			if not last then
+				self[key] = p
+				return
+			end
+			local dist = (p - last).Magnitude
+			if dist >= Config.Tracks.SledStep then
+				TrackMarks.Spawn(p, yawA, dist + 0.4, 0.7, depth, Config.Tracks.SledLife)
+				self[key] = p
+			end
+		end
+		pressTrack(self._runnerL, "_markL", -1)
+		pressTrack(self._runnerR, "_markR", 1)
+	else
+		self._markL = nil
+		self._markR = nil
 	end
 end
 
