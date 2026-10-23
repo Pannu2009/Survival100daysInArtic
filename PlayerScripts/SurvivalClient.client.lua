@@ -221,7 +221,7 @@ local hungerFill = makeBar(hungerFrame, "Hunger")
 
 -- Lighter fuel: a small pill floating just over the hotbar,
 -- visible only while the lighter is in hand.
-local lighterFuelPill = makeStatFrame("LighterFuel", UDim2.fromOffset(120, 26), UDim2.new(0.5, -60, 1, -98), Vector2.new(0, 0))
+local lighterFuelPill = makeStatFrame("LighterFuel", UDim2.fromOffset(120, 26), UDim2.new(0.5, -60, 1, -118), Vector2.new(0, 0))
 lighterFuelPill.Visible = false
 local lighterFuelLabel = makeLabel(lighterFuelPill, "Fuel: 100", UDim2.new(1, 0, 1, 0), UDim2.fromOffset(0, 0), SILVER, 13)
 lighterFuelLabel.TextXAlignment = Enum.TextXAlignment.Center
@@ -570,7 +570,7 @@ local function makePoolSlot(index)
 	local slot = Instance.new("TextButton")
 	slot.Text = ""
 	slot.AutoButtonColor = false
-	slot.Size = UDim2.fromOffset(68, 44)
+	slot.Size = UDim2.fromOffset(68, 58)
 	slot.Position = UDim2.fromOffset(6 + (index - 1) * 74, 6)
 	slot.BackgroundColor3 = SILVER
 	slot.BackgroundTransparency = 0.75
@@ -581,16 +581,14 @@ local function makePoolSlot(index)
 	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = slot
 	addStroke(slot, AUBERGINE, 1, 0.6)
-	local icon = Instance.new("ViewportFrame")
-	icon.Size = UDim2.fromOffset(58, 27)
-	icon.Position = UDim2.fromOffset(5, 2)
+	local icon = Instance.new("Frame")
+	icon.Name = "IconHolder"
+	icon.Size = UDim2.fromOffset(44, 44)
+	icon.Position = UDim2.fromOffset(12, 2)
 	icon.BackgroundTransparency = 1
 	icon.BorderSizePixel = 0
-	icon.Ambient = Color3.fromRGB(165, 165, 178)
-	icon.LightColor = Color3.fromRGB(255, 250, 240)
-	icon.LightDirection = Vector3.new(-1, -1.4, -0.6)
 	icon.Parent = slot
-	local label = makeLabel(slot, "", UDim2.new(1, -8, 0, 13), UDim2.fromOffset(4, 30), SILVER, 11)
+	local label = makeLabel(slot, "", UDim2.new(1, -8, 0, 12), UDim2.fromOffset(4, 46), SILVER, 11)
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	local value = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 24), MARIGOLD, 13)
 	value.Visible = false
@@ -644,13 +642,52 @@ local function ownedTools()
 	return ordered
 end
 
+-- Ajay's hand-framed icons live in ReplicatedStorage/PointFrames,
+-- named "<Tool>Frame" or just "<Tool>" (AxeFrame, Campfire,
+-- FishingRod, LighterFrame...). A slot clones its tool's frame
+-- when the tool arrives and destroys it when the slot changes --
+-- nothing is created ahead of time.
+local function findPointFrame(name)
+	local folder = ReplicatedStorage:FindFirstChild("PointFrames")
+	if not folder then
+		return nil
+	end
+	local template = folder:FindFirstChild(name .. "Frame") or folder:FindFirstChild(name)
+	if template and template:IsA("ViewportFrame") then
+		return template
+	end
+	for _, child in ipairs(folder:GetChildren()) do
+		if child:IsA("ViewportFrame") and child.Name:lower():find(name:lower(), 1, true) then
+			return child
+		end
+	end
+	return nil
+end
+
+local function setSlotIcon(entry, toolName)
+	for _, child in ipairs(entry.Icon:GetChildren()) do
+		child:Destroy()
+	end
+	if not toolName then
+		return
+	end
+	local template = findPointFrame(toolName)
+	if not template then
+		return
+	end
+	local clone = template:Clone()
+	clone.Size = UDim2.fromOffset(44, 44)
+	clone.Position = UDim2.fromOffset(0, 0)
+	clone.Parent = entry.Icon
+end
+
 local function refreshHotbar()
 	local owned = ownedTools()
 	local character = player.Character
 	local count = math.max(math.min(#owned, MAX_SLOTS), 1)
 	local width = 74 * count + 6
-	hotbar.Size = UDim2.fromOffset(width, 56)
-	hotbar.Position = UDim2.new(0.5, -width / 2, 1, -64)
+	hotbar.Size = UDim2.fromOffset(width, 70)
+	hotbar.Position = UDim2.new(0.5, -width / 2, 1, -78)
 	for i = 1, MAX_SLOTS do
 		local entry = slotPool[i]
 		local toolName = owned[i]
@@ -658,15 +695,13 @@ local function refreshHotbar()
 		entry.Frame.Visible = toolName ~= nil
 		if not toolName and entry.IconTool ~= nil then
 			entry.IconTool = nil
-			setViewportIcon(entry.Icon, nil, "")
+			setSlotIcon(entry, nil)
 		end
 		if toolName then
 			entry.Name.Text = toolName
 			if entry.IconTool ~= toolName then
 				entry.IconTool = toolName
-				local source = (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild(toolName))
-					or (character and character:FindFirstChild(toolName))
-				setViewportIcon(entry.Icon, source, toolName)
+				setSlotIcon(entry, toolName)
 			end
 			local equipped = character and character:FindFirstChild(toolName) ~= nil
 			entry.Frame.BackgroundColor3 = equipped and MARIGOLD or SILVER
@@ -893,7 +928,7 @@ refreshPlayer()
 local fishingPanel = Instance.new("Frame")
 fishingPanel.Name = "FishingPanel"
 fishingPanel.Size = UDim2.fromOffset(340, 104)
-fishingPanel.Position = UDim2.new(0.5, -170, 1, -182)
+fishingPanel.Position = UDim2.new(0.5, -170, 1, -196)
 fishingPanel.BackgroundColor3 = AUBERGINE
 fishingPanel.BackgroundTransparency = 0.25
 fishingPanel.BorderSizePixel = 0
@@ -1123,7 +1158,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local characterNow = player.Character
 	local aimEquipped = characterNow
 		and (characterNow:FindFirstChild("Shovel") or characterNow:FindFirstChild("Lighter")
-			or characterNow:FindFirstChild("FishingRod"))
+			or characterNow:FindFirstChild("FishingRod") or characterNow:FindFirstChild("Axe"))
 	dragDot.Visible = myPart ~= nil or aimEquipped ~= nil
 	lighterFuelPill.Visible = characterNow ~= nil and characterNow:FindFirstChild("Lighter") ~= nil
 	if not myPart then

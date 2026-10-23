@@ -418,6 +418,14 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 		if not hit or (hit.Position - hitPosition).Magnitude > 3.5 then
 			return
 		end
+		-- On the lake the shovel cracks ice instead of digging
+		-- (slower work than the axe: 7 hits to break through).
+		if self.Gameplay.Fish:IsIceAt(hitPosition) then
+			if self:_cooldownReady(player, "Shovel", def.Cooldown) then
+				self.Gameplay.Fish:HitIce(player, hitPosition, Config.Fishing.ShovelIceWork)
+			end
+			return
+		end
 		self:_digAt(player, hitPosition.X, hitPosition.Z)
 	elseif toolName == "FishingRod" then
 		if not character:FindFirstChild("FishingRod") then

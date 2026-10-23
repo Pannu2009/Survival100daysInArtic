@@ -220,8 +220,8 @@ function FishSystem:Cook(dt)
 	end
 end
 -- ============ Day 2 ice fishing ============
--- Axe cracks a lake-ice cell (5-8 hits, rolled per cell) into a
--- water hole. The rod (center dot on a hole) casts: wait for the
+-- Tools crack a lake-ice cell by work points (axe 3 hits,
+-- shovel 7) into a water hole. The rod casts at a hole: wait for the
 -- bite, tap inside the window to set the hook, then a Fisch-style
 -- reel game -- a needle sweeps back and forth; tap when it crosses
 -- the drifting zone to gain progress. The needle and zone are pure
@@ -247,7 +247,32 @@ local function reelZone(elapsed, seed)
 	return 0.5 + 0.38 * math.sin(elapsed * 0.9 + seed)
 end
 
-function FishSystem:HitIce(player, position)
+-- Is this point lake ice? The glacier slab sits UNDER the snow
+-- fill at the lake, so the surface material alone lies -- inside
+-- the lake's bounds it's ice whatever the top voxel says.
+function FishSystem:IsIceAt(position)
+	local world = self.Gameplay.World
+	local hit = world:TerrainRaycastDown(position.X, position.Z)
+	if not hit or (hit.Position - position).Magnitude > 3.5 then
+		return false
+	end
+	if hit.Material == Enum.Material.Glacier then
+		return true
+	end
+	local lake = world.Layout and world.Layout.Lake
+	if lake then
+		local dx = position.X - lake.X
+		local dz = position.Z - lake.Z
+		if dx * dx + dz * dz <= (lake.Radius * 0.95) * (lake.Radius * 0.95) then
+			return true
+		end
+	end
+	return false
+end
+
+-- Crack ice by work points: an axe hit does 7, a shovel hit 3,
+-- the cell breaks at 21 -- axe 3 hits, shovel 7, mixes proportion.
+function FishSystem:HitIce(player, position, work)
 	if self.Sessions[player] then
 		return
 	end
@@ -257,11 +282,11 @@ function FishSystem:HitIce(player, position)
 	end
 	local cell = self.IceHits[key]
 	if not cell then
-		cell = { Hits = 0, Needed = math.random(Config.Fishing.IceHitsMin, Config.Fishing.IceHitsMax) }
+		cell = { Work = 0 }
 		self.IceHits[key] = cell
 	end
-	cell.Hits += 1
-	if cell.Hits < cell.Needed then
+	cell.Work += work
+	if cell.Work < Config.Fishing.IceWorkNeeded then
 		return
 	end
 	self.IceHits[key] = nil

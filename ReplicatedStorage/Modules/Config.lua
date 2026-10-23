@@ -181,8 +181,9 @@ Config.ViewportIcons = {
 -- the rod casts at a hole; a Fisch-style tap-in-the-zone reel game
 -- lands the fish.
 Config.Fishing = {
-	IceHitsMin = 5,
-	IceHitsMax = 8,
+	IceWorkNeeded = 21,
+	AxeIceWork = 7,
+	ShovelIceWork = 3,
 	HoleLifeSeconds = 600,
 	CastRange = 16,
 	BiteWaitMin = 3,
