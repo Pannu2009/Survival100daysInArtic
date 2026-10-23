@@ -15,11 +15,14 @@ SledService.__index = SledService
 -- bites hard. friction multiplies forward drag, grip multiplies
 -- lateral (anti-slide) grip.
 local SURFACE_PROFILES = {
-	[Enum.Material.Snow] = { friction = 1.25, grip = 0.8 },
-	[Enum.Material.Glacier] = { friction = 0.4, grip = 0.28 },
-	[Enum.Material.Rock] = { friction = 1.1, grip = 1.15 },
+	[Enum.Material.Snow] = { friction = 1.35, grip = 0.75, sink = -0.12 },
+	[Enum.Material.Glacier] = { friction = 0.4, grip = 0.28, sink = 0 },
+	[Enum.Material.Rock] = { friction = 1.1, grip = 1.15, sink = 0 },
 }
-local DEFAULT_PROFILE = { friction = 1, grip = 1 }
+local DEFAULT_PROFILE = { friction = 1, grip = 1, sink = 0 }
+-- Snow your own traffic has packed down (TrackMarks remembers):
+-- glides faster, corners harder, barely sinks.
+local PACKED_PROFILE = { friction = 0.7, grip = 1.15, sink = -0.02 }
 
 local function getLogPart(log)
 	return log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
@@ -211,7 +214,9 @@ end
 
 function SledService:GetPullWeight(player)
 	if self._pulling[player] then
-		return Config.Sled.Weight + self._cargoWeight
+		-- Pulling uphill strains like extra cargo on your legs.
+		local uphill = math.max(0, self._gradeAlong or 0) * 250
+		return Config.Sled.Weight + self._cargoWeight + uphill
 	end
 	return nil
 end
@@ -687,6 +692,9 @@ function SledService:_togglePull(player)
 		self._pulling[player] = sled
 		if rootP then
 			local fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
+	-- Grade along the sled's nose (positive = uphill ahead); the
+	-- puller's legs feel it through GetPullWeight.
+	self._gradeAlong = gradX * fwdH.X + gradZ * fwdH.Z
 			local toPlayer = rootP.Position - sled:GetPivot().Position
 			if fwdH.X * toPlayer.X + fwdH.Z * toPlayer.Z < 0 then
 				self._yaw += math.pi
@@ -820,11 +828,18 @@ function SledService:_stepSled(dt)
 	-- Surface under the sled, smoothed so borders do not pop.
 	local surfHit = world:TerrainRaycastDown(pos.X, pos.Z)
 	local prof = (surfHit and SURFACE_PROFILES[surfHit.Material]) or DEFAULT_PROFILE
+	if surfHit and surfHit.Material == Enum.Material.Snow
+		and TrackMarks.IsPacked(pos.X, pos.Z)
+	then
+		prof = PACKED_PROFILE
+	end
 	self._surfF = self._surfF or 1
 	self._surfG = self._surfG or 1
+	self._surfSink = self._surfSink or 0
 	local blend = 1 - math.exp(-dt * 3)
 	self._surfF += (prof.friction - self._surfF) * blend
 	self._surfG += (prof.grip - self._surfG) * blend
+	self._surfSink += ((prof.sink or 0) - self._surfSink) * blend
 
 	-- Cargo balance: a pile stacked to one side (mean lateral
 	-- offset of the load) tips the sled and upsets its turns.
@@ -869,6 +884,15 @@ function SledService:_stepSled(dt)
 		local toPlayer = root.Position - hitchPos
 		local dist = toPlayer.Magnitude
 		local stretch = dist - Config.Sled.RopeLength
+		if stretch > 0 and (self._prevStretch or 0) <= 0 then
+			-- The rope just snapped taut: a visible jolt through
+			-- the sled body, stronger the faster you were moving.
+			local relSpeed = root.AssemblyLinearVelocity.Magnitude
+			if relSpeed > 5 then
+				self._jolt = math.min(0.15, relSpeed * 0.012)
+			end
+		end
+		self._prevStretch = stretch
 		if stretch > 0 and dist > 0.01 then
 			local dir = toPlayer / dist
 			local along = self._vel:Dot(dir)
@@ -880,7 +904,9 @@ function SledService:_stepSled(dt)
 		end
 		local desired = horizontalDir(root.Position - pos)
 		local err = yawBetween(fwdH, desired)
-		self._yawVel += err * Config.Sled.YawResponse * gripState * dt
+		-- Steering softens with speed: less twitchy flat-out.
+		local softening = 1 + self._vel.Magnitude * 0.03
+		self._yawVel += err * Config.Sled.YawResponse * gripState / softening * dt
 	elseif self._vel.Magnitude > 1 then
 		local desired = horizontalDir(self._vel)
 		if fwdH:Dot(desired) < 0 then
@@ -925,6 +951,7 @@ function SledService:_stepSled(dt)
 	sideV *= math.exp(-dt * gripRate * invMass)
 	self._vel = fwdH * fwdV + rightNow * sideV
 	self._fwdV = fwdV
+	self._sideV = sideV
 	if self._vel.Magnitude > Config.Sled.MaxSpeed then
 		self._vel = self._vel.Unit * Config.Sled.MaxSpeed
 	end
@@ -1002,7 +1029,7 @@ function SledService:_stepSled(dt)
 		end
 	end
 
-	local targetY = world:GroundY(newPos.X, newPos.Z) + self._groundOffset
+	local targetY = world:GroundY(newPos.X, newPos.Z) + self._groundOffset + (self._surfSink or 0)
 	-- Height rides an underdamped spring: the sled floats over
 	-- crests and settles with a bounce instead of gliding flat.
 	-- Snaps when far off (spawn/teleport) so it never dives.
@@ -1039,7 +1066,8 @@ function SledService:_stepSled(dt)
 	-- tip toward a lopsided cargo pile.
 	local accelF = ((self._fwdV or 0) - (self._prevFwdV or self._fwdV or 0)) / math.max(dt, 0.001)
 	self._prevFwdV = self._fwdV or 0
-	local pitch = math.clamp(accelF * 0.006, -0.1, 0.12)
+	self._jolt = (self._jolt or 0) * math.exp(-dt * 6)
+	local pitch = math.clamp(accelF * 0.006, -0.1, 0.12) - (self._jolt or 0)
 	local lean = math.clamp(-self._yawVel * self._vel.Magnitude * 0.035, -0.3, 0.3)
 	lean += math.clamp((self._comAcross or 0) * 0.02, -0.12, 0.12)
 	sled:PivotTo(CFrame.new(newPos.X, self._yPos, newPos.Z) * canon * CFrame.Angles(pitch, 0, lean) * self._orientOffset)
@@ -1065,8 +1093,9 @@ function SledService:_stepSled(dt)
 	-- Snow: runners kick particles while moving and press a track
 	-- line into the snow; heavier cargo presses deeper marks.
 	local speed = self._vel.Magnitude
+	local spray = 10 + speed * 2 + math.abs(self._sideV or 0) * 4
 	for _, emitter in ipairs(self._snowEmitters) do
-		emitter.Rate = speed > 2 and math.min(10 + speed * 2, 50) or 0
+		emitter.Rate = speed > 2 and math.min(spray, 60) or 0
 	end
 	if speed > 0.8 then
 		local depth = math.clamp(self._cargoWeight / 250, 0.15, 1)

@@ -19,6 +19,14 @@ local marks = {}
 local cells = {}
 local cellCount = 0
 
+-- Packed trails: every pressed cell stays "packed" for a while
+-- after the visible mark fades. The sled reads this back -- your
+-- own routes pack down and handle faster than virgin powder.
+local PACKED_LIFE = 90
+local MAX_PACKED = 4000
+local packedCells = {}
+local packedCount = 0
+
 function TrackMarks.Init(w)
 	world = w
 	folder = workspace:FindFirstChild("TrackMarks")
@@ -133,6 +141,21 @@ local function pressAtPoint(position, depth01, life)
 	local vx = math.floor(position.X / RESOLUTION)
 	local vz = math.floor(position.Z / RESOLUTION)
 	pressColumn(vx, vz, hit.Position.Y, dip, os.clock() + life)
+	local pkey = vx .. "," .. vz
+	if not packedCells[pkey] then
+		packedCount += 1
+	end
+	if packedCount <= MAX_PACKED then
+		packedCells[pkey] = os.clock() + PACKED_LIFE
+	end
+end
+
+-- Is this point on snow that traffic has already packed down?
+function TrackMarks.IsPacked(x, z)
+	local vx = math.floor(x / RESOLUTION)
+	local vz = math.floor(z / RESOLUTION)
+	local expires = packedCells[vx .. "," .. vz]
+	return expires ~= nil and expires > os.clock()
 end
 
 local function restoreCell(cell)
@@ -246,6 +269,12 @@ function TrackMarks.Update(dt)
 	end
 
 	local now = os.clock()
+	for pkey, expires in pairs(packedCells) do
+		if now >= expires then
+			packedCells[pkey] = nil
+			packedCount -= 1
+		end
+	end
 	local expired = {}
 	for key, cell in pairs(cells) do
 		if now >= cell.ExpiresAt then
