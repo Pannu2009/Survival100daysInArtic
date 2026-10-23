@@ -17,33 +17,6 @@ local cellCount = 0
 
 function TrackMarks.Init(w)
 	world = w
-	-- One-time self-test: try the voxel read three ways and report
-	-- which form this place accepts, so a failure is diagnosable
-	-- from the server-start Output lines alone.
-	task.spawn(function()
-		local terrain = workspace.Terrain
-		local okA, errA = pcall(function()
-			local region = Region3int16.new(
-				Vector3int16.new(0, 0, 0),
-				Vector3int16.new(16, 16, 16)
-			)
-			return terrain:ReadVoxels(region, 4)
-		end)
-		print("[Arctic] TrackMarks self-test A (docs form):", okA, okA and "read ok" or errA)
-		local okB, errB = pcall(function()
-			local region = Region3.new(Vector3.new(0, 0, 0), Vector3.new(16, 16, 16)):ExpandToGrid(4)
-			return terrain:ReadVoxels(region, 4)
-		end)
-		print("[Arctic] TrackMarks self-test B (Region3 grid):", okB, okB and "read ok" or errB)
-		local okC, errC = pcall(function()
-			local region = Region3int16.new(
-				Vector3int16.new(8, 8, 8),
-				Vector3int16.new(12, 20, 12)
-			)
-			return terrain:ReadVoxels(region, 4)
-		end)
-		print("[Arctic] TrackMarks self-test C (mark-sized):", okC, okC and "read ok" or errC)
-	end)
 end
 
 local function cellKey(vx, vy, vz)
@@ -51,10 +24,9 @@ local function cellKey(vx, vy, vz)
 end
 
 local function voxelRegion(minVx, minVy, minVz, maxVx, maxVy, maxVz)
-	return Region3int16.new(
-		Vector3int16.new(minVx * RESOLUTION, minVy * RESOLUTION, minVz * RESOLUTION),
-		Vector3int16.new((maxVx + 1) * RESOLUTION, (maxVy + 1) * RESOLUTION, (maxVz + 1) * RESOLUTION)
-	)
+	local min = Vector3.new(minVx * RESOLUTION, minVy * RESOLUTION, minVz * RESOLUTION)
+	local max = Vector3.new((maxVx + 1) * RESOLUTION, (maxVy + 1) * RESOLUTION, (maxVz + 1) * RESOLUTION)
+	return Region3.new(min, max):ExpandToGrid(RESOLUTION)
 end
 
 -- Lower one snow column's surface. Returns the key of the stored
@@ -66,11 +38,6 @@ local function pressColumn(vx, vz, surfaceY, dip, expiresAt)
 		return workspace.Terrain:ReadVoxels(region, RESOLUTION)
 	end)
 	if not ok or not materials then
-		if not TrackMarks._warned then
-			TrackMarks._warned = true
-			warn("[Arctic] TrackMarks ReadVoxels failed:", materials,
-				"region:", region.Min, region.Max)
-		end
 		return
 	end
 
