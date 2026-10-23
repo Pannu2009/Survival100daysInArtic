@@ -24,6 +24,7 @@ Config.Survival = {
 	FreezingHealthDrain = 1.5,
 	StarvingHealthDrain = 1.0,
 	HungerDrainPerSecond = 0.11,
+	Day2HungerMultiplier = 1.4,
 	SprintHungerMultiplier = 2,
 	WalkSpeed = 16,
 	SprintSpeed = 22,
@@ -160,6 +161,25 @@ Config.Log = {
 	DragDistance = 7,
 	DragMaxRise = 6,
 	DragHover = 1.1,
+}
+
+-- Day 2 ice fishing. The rod arrives at Day 2 start (Weapons list,
+-- Deferred). Axe hits crack a lake-ice cell open into a water hole;
+-- the rod casts at a hole; a Fisch-style tap-in-the-zone reel game
+-- lands the fish.
+Config.Fishing = {
+	IceHitsMin = 5,
+	IceHitsMax = 8,
+	HoleLifeSeconds = 600,
+	CastRange = 16,
+	BiteWaitMin = 3,
+	BiteWaitMax = 8,
+	BiteWindow = 1.2,
+	ReelSeconds = 20,
+	ReelZoneHalf = 0.13,
+	ReelGoodGain = 26,
+	ReelBadLoss = 12,
+	ReelDecayPerSecond = 4,
 }
 
 Config.Food = {

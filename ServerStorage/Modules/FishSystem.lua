@@ -21,6 +21,10 @@ function FishSystem.new(gameplay)
 	self.Gameplay = gameplay
 	self.Folder = nil
 	self.Template = nil
+	self.HolesFolder = nil
+	self.Holes = {} -- cellKey -> { Part, Position, ExpiresAt }
+	self.IceHits = {} -- cellKey -> { Hits, Needed }
+	self.Sessions = {} -- player -> fishing session
 	return self
 end
 
@@ -33,15 +37,10 @@ function FishSystem:Start()
 	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
 	self.Template = assets and assets:FindFirstChild("Fish")
 
-	-- Starter fish on the lake ice so the cook/eat loop is testable
-	-- before ice fishing lands (Day 2).
-	local world = self.Gameplay.World
-	if self.Template and world and world.Layout and world.Layout.Lake then
-		local lake = world.Layout.Lake
-		for i = 1, 3 do
-			self:Spawn(lake.X + (i - 2) * 4, lake.Z + lake.Radius * 0.3)
-		end
-	end
+	local holesFolder = Instance.new("Folder")
+	holesFolder.Name = "FishingHoles"
+	holesFolder.Parent = workspace
+	self.HolesFolder = holesFolder
 end
 
 local function getFishPart(fish)
@@ -220,4 +219,270 @@ function FishSystem:Cook(dt)
 		end
 	end
 end
+-- ============ Day 2 ice fishing ============
+-- Axe cracks a lake-ice cell (5-8 hits, rolled per cell) into a
+-- water hole. The rod (center dot on a hole) casts: wait for the
+-- bite, tap inside the window to set the hook, then a Fisch-style
+-- reel game -- a needle sweeps back and forth; tap when it crosses
+-- the drifting zone to gain progress. The needle and zone are pure
+-- functions of elapsed time from shared start values, so the client
+-- renders them locally from attributes and the server judges taps
+-- with the same math. Everything is validated server-side.
+
+local ICE_CELL = 4
+
+local function iceKey(x, z)
+	return math.floor(x / ICE_CELL) .. "," .. math.floor(z / ICE_CELL)
+end
+
+local function reelNeedle(elapsed)
+	local phase = (elapsed % 1.6) / 1.6
+	if phase < 0.5 then
+		return phase * 2
+	end
+	return 2 - phase * 2
+end
+
+local function reelZone(elapsed, seed)
+	return 0.5 + 0.38 * math.sin(elapsed * 0.9 + seed)
+end
+
+function FishSystem:HitIce(player, position)
+	if self.Sessions[player] then
+		return
+	end
+	local key = iceKey(position.X, position.Z)
+	if self.Holes[key] then
+		return
+	end
+	local cell = self.IceHits[key]
+	if not cell then
+		cell = { Hits = 0, Needed = math.random(Config.Fishing.IceHitsMin, Config.Fishing.IceHitsMax) }
+		self.IceHits[key] = cell
+	end
+	cell.Hits += 1
+	if cell.Hits < cell.Needed then
+		return
+	end
+	self.IceHits[key] = nil
+
+	-- Break through: a dark water disc in the ice cell.
+	local world = self.Gameplay.World
+	local cx = (math.floor(position.X / ICE_CELL) + 0.5) * ICE_CELL
+	local cz = (math.floor(position.Z / ICE_CELL) + 0.5) * ICE_CELL
+	local surfaceY = world:GroundY(cx, cz)
+	local part = Instance.new("Part")
+	part.Name = "FishingHole"
+	part.Shape = Enum.PartType.Cylinder
+	part.Size = Vector3.new(0.25, 3.4, 3.4)
+	part.CFrame = CFrame.new(cx, surfaceY + 0.1, cz) * CFrame.Angles(0, 0, math.rad(90))
+	part.Color = Color3.fromRGB(24, 52, 82)
+	part.Material = Enum.Material.SmoothPlastic
+	part.Transparency = 0.1
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = true
+	part.Parent = self.HolesFolder
+	self.Holes[key] = {
+		Part = part,
+		Position = Vector3.new(cx, surfaceY, cz),
+		ExpiresAt = os.clock() + Config.Fishing.HoleLifeSeconds,
+	}
+end
+
+local function sessionRoot(player)
+	local character = player.Character
+	return character and character:FindFirstChild("HumanoidRootPart")
+end
+
+function FishSystem:_publishSession(player)
+	local session = self.Sessions[player]
+	if not session then
+		player:SetAttribute("FishingPhase", "")
+		return
+	end
+	player:SetAttribute("FishingPhase", session.Phase)
+	player:SetAttribute("FishingProgress", math.floor(session.Progress))
+	if session.Phase == "Reel" then
+		player:SetAttribute("FishingStartAt", session.ReelStartAt)
+		player:SetAttribute("FishingSeed", session.Seed)
+	end
+end
+
+function FishSystem:_endSession(player)
+	local session = self.Sessions[player]
+	if not session then
+		return
+	end
+	if session.Bobber then
+		session.Bobber:Destroy()
+	end
+	if session.Line then
+		session.Line:Destroy()
+	end
+	if session.RodAtt then
+		session.RodAtt:Destroy()
+	end
+	self.Sessions[player] = nil
+	player:SetAttribute("FishingPhase", "")
+end
+
+function FishSystem:_startSession(player, hole)
+	local character = player.Character
+	local rod = character and character:FindFirstChild("FishingRod")
+	local handle = rod and (rod:FindFirstChild("Handle") or rod:FindFirstChildWhichIsA("BasePart", true))
+	local session = {
+		Phase = "Waiting",
+		Hole = hole,
+		BiteAt = os.clock() + math.random(Config.Fishing.BiteWaitMin, Config.Fishing.BiteWaitMax),
+		Progress = 0,
+		Seed = math.random() * 100,
+		LastTap = 0,
+	}
+	-- Bobber in the hole + a line from the rod tip. The line is a
+	-- Beam between two attachments; no string on Ajay's rod model
+	-- yet, so the code draws it.
+	local bobber = Instance.new("Part")
+	bobber.Name = "Bobber"
+	bobber.Shape = Enum.PartType.Ball
+	bobber.Size = Vector3.new(0.4, 0.4, 0.4)
+	bobber.Color = Color3.fromRGB(214, 48, 43)
+	bobber.Material = Enum.Material.SmoothPlastic
+	bobber.Anchored = true
+	bobber.CanCollide = false
+	bobber.CanQuery = false
+	bobber.CFrame = CFrame.new(hole.Position + Vector3.new(0, 0.25, 0))
+	bobber.Parent = self.HolesFolder
+	session.Bobber = bobber
+	if handle then
+		local rodAtt = Instance.new("Attachment")
+		rodAtt.Name = "FishingLineRod"
+		rodAtt.Parent = handle
+		local bobAtt = Instance.new("Attachment")
+		bobAtt.Name = "FishingLineBobber"
+		bobAtt.Parent = bobber
+		local beam = Instance.new("Beam")
+		beam.Attachment0 = rodAtt
+		beam.Attachment1 = bobAtt
+		beam.Width0 = 0.03
+		beam.Width1 = 0.03
+		beam.Color = ColorSequence.new(Color3.fromRGB(230, 230, 230))
+		beam.FaceCamera = false
+		beam.Parent = bobber
+		session.RodAtt = rodAtt
+		session.Line = beam
+	end
+	self.Sessions[player] = session
+	self:_publishSession(player)
+end
+
+-- Rod activation rides the center-dot ToolAim remote. With no live
+-- session it is a cast (dot must be on/near a hole); during Bite it
+-- sets the hook; during Reel it is a reel tap.
+function FishSystem:OnAim(player, hitInstance, hitPosition)
+	local root = sessionRoot(player)
+	if not root then
+		return
+	end
+	local session = self.Sessions[player]
+	local now = os.clock()
+	if session then
+		if now - session.LastTap < 0.15 then
+			return
+		end
+		session.LastTap = now
+		if session.Phase == "Bite" then
+			session.Phase = "Reel"
+			session.ReelStartAt = workspace:GetServerTimeNow()
+			session.ReelEndsAt = now + Config.Fishing.ReelSeconds
+			session.Progress = 20
+			self:_publishSession(player)
+		elseif session.Phase == "Reel" then
+			local elapsed = workspace:GetServerTimeNow() - session.ReelStartAt
+			local needle = reelNeedle(elapsed)
+			local zone = reelZone(elapsed, session.Seed)
+			if math.abs(needle - zone) <= Config.Fishing.ReelZoneHalf then
+				session.Progress += Config.Fishing.ReelGoodGain
+			else
+				session.Progress -= Config.Fishing.ReelBadLoss
+			end
+			if session.Progress >= 100 then
+				-- Caught: the fish flops onto the ice beside the hole.
+				local holePos = session.Hole.Position
+				local toward = (root.Position - holePos)
+				toward = Vector3.new(toward.X, 0, toward.Z)
+				if toward.Magnitude > 0.1 then
+					toward = toward.Unit * 1.6
+				end
+				self:_endSession(player)
+				self:Spawn(holePos.X + toward.X, holePos.Z + toward.Z)
+				return
+			elseif session.Progress <= 0 then
+				self:_endSession(player)
+				return
+			end
+			self:_publishSession(player)
+		end
+		return
+	end
+
+	-- Cast: find a hole near the dot, within cast range of the player.
+	if typeof(hitPosition) ~= "Vector3" then
+		return
+	end
+	local best, bestDist = nil, math.huge
+	for _, hole in pairs(self.Holes) do
+		local d = (hole.Position - hitPosition).Magnitude
+		if d < bestDist then
+			best, bestDist = hole, d
+		end
+	end
+	if not best or bestDist > 6 then
+		return
+	end
+	if (best.Position - root.Position).Magnitude > Config.Fishing.CastRange then
+		return
+	end
+	self:_startSession(player, best)
+end
+
+function FishSystem:TickFishing(dt)
+	local now = os.clock()
+	-- Holes refreeze.
+	for key, hole in pairs(self.Holes) do
+		if now >= hole.ExpiresAt then
+			hole.Part:Destroy()
+			self.Holes[key] = nil
+		end
+	end
+	for player, session in pairs(self.Sessions) do
+		local root = sessionRoot(player)
+		if not root or not session.Hole.Part.Parent then
+			self:_endSession(player)
+			continue
+		end
+		if (session.Hole.Position - root.Position).Magnitude > Config.Fishing.CastRange + 4 then
+			self:_endSession(player) -- walked away: line's gone
+			continue
+		end
+		if session.Phase == "Waiting" and now >= session.BiteAt then
+			session.Phase = "Bite"
+			session.BiteEndsAt = now + Config.Fishing.BiteWindow
+			if session.Bobber then
+				session.Bobber.CFrame = CFrame.new(session.Hole.Position + Vector3.new(0, 0.02, 0))
+			end
+			self:_publishSession(player)
+		elseif session.Phase == "Bite" and now > session.BiteEndsAt then
+			self:_endSession(player) -- missed it: fish is gone
+		elseif session.Phase == "Reel" then
+			session.Progress -= Config.Fishing.ReelDecayPerSecond * dt
+			if session.Progress <= 0 or now > session.ReelEndsAt then
+				self:_endSession(player)
+			else
+				self:_publishSession(player)
+			end
+		end
+	end
+end
+
 return FishSystem

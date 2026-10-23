@@ -34,8 +34,8 @@ function Hunger:IsStarving()
 	return self._starving
 end
 
-function Hunger:Update(dt, isSprinting)
-	local drain = Config.Survival.HungerDrainPerSecond
+function Hunger:Update(dt, isSprinting, drainScale)
+	local drain = Config.Survival.HungerDrainPerSecond * (drainScale or 1)
 	if isSprinting then
 		drain *= Config.Survival.SprintHungerMultiplier
 	end

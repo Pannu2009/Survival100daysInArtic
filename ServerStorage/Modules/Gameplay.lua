@@ -41,6 +41,7 @@ function Gameplay.new(world, clock, temperature)
 	self._foot = {}
 	self._published = {}
 	self._reviving = {}
+	self._rodGranted = {}
 	self.LogsFolder = nil
 	self._setSprinting = nil
 	return self
@@ -154,6 +155,8 @@ function Gameplay:Start()
 		self:_setupPlayer(player)
 	end
 	Players.PlayerRemoving:Connect(function(player)
+		self.Fish:_endSession(player)
+		self._rodGranted[player] = nil
 		self:_releaseLogs(player)
 		self._survivals[player] = nil
 		self._sprinting[player] = nil
@@ -195,6 +198,7 @@ end
 function Gameplay:_makeSurvival(player)
 	local survival = SurvivalPlayer.new(self.Clock, self.Temperature)
 	survival.OnDied:Connect(function()
+		self.Fish:_endSession(player)
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
@@ -586,11 +590,19 @@ end
 function Gameplay:Update(dt)
 	local world = self.World
 	self.Fish:Cook(dt)
+	self.Fish:TickFishing(dt)
 	self:_feedFires()
 	self:_tickBurning(dt)
 	self:_spreadFire(dt)
 	TrackMarks.Update(dt)
 	for player, survival in pairs(self._survivals) do
+		-- Day 2 begins: everyone gets the fishing rod. (Day 1 is
+		-- the tutorial -- no rod, gentler hunger.)
+		if not self._rodGranted[player] and self.Clock:GetDay() >= 2 then
+			if self.Weapons:GiveTool(player, "FishingRod") then
+				self._rodGranted[player] = true
+			end
+		end
 		local context = { IsSprinting = self._sprinting[player] == true }
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")

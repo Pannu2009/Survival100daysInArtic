@@ -43,7 +43,13 @@ function SurvivalPlayer:Update(dt, context)
 	end
 	context = context or {}
 
-	self.Hunger:Update(dt, context.IsSprinting == true)
+	-- Day 1 is the tutorial: hunger drains at the gentle rate.
+	-- From Day 2 the journey begins and the drain steps up.
+	local drainScale = 1
+	if self.Clock and self.Clock:GetDay() >= 2 then
+		drainScale = Config.Survival.Day2HungerMultiplier
+	end
+	self.Hunger:Update(dt, context.IsSprinting == true, drainScale)
 
 	local loss = self.Temperature:GetExposureRate(self.Clock:GetPhase())
 	local gain = (context.FireRate or 0) + (context.WarmthBonus or 0)

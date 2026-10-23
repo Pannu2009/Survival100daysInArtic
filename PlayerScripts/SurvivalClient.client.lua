@@ -450,9 +450,7 @@ hotbarCorner.CornerRadius = UDim.new(0, 10)
 hotbarCorner.Parent = hotbar
 addStroke(hotbar, SILVER, 1, 0.55)
 
-local slotFrames = {}
-local slotLabels = {}
-local slotHints = {}
+local inputMode = "Keyboard"
 local function toggleTool(toolName)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -470,56 +468,114 @@ local function toggleTool(toolName)
 	end
 end
 
-local function makeSlot(index, name, isTool)
-	local slot
-	if isTool then
-		slot = Instance.new("TextButton")
-		slot.Text = ""
-		slot.AutoButtonColor = false
-	else
-		slot = Instance.new("Frame")
+local MAX_SLOTS = 10
+local TOOL_ORDER = { "Axe", "Shovel", "Blueprint", "Lighter", "FishingRod" }
+local slotPool = {}
+local slotTools = {}
+
+local function slotHintFor(index)
+	if inputMode == "Keyboard" then
+		return tostring(index % 10)
+	elseif inputMode == "Gamepad" then
+		return ({ "◀", "▶", "▲", "▼", "R3" })[index] or ""
 	end
+	return ""
+end
+
+local function makePoolSlot(index)
+	local slot = Instance.new("TextButton")
+	slot.Text = ""
+	slot.AutoButtonColor = false
 	slot.Size = UDim2.fromOffset(68, 44)
 	slot.Position = UDim2.fromOffset(6 + (index - 1) * 74, 6)
 	slot.BackgroundColor3 = SILVER
 	slot.BackgroundTransparency = 0.75
 	slot.BorderSizePixel = 0
+	slot.Visible = false
 	slot.Parent = hotbar
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = slot
 	addStroke(slot, AUBERGINE, 1, 0.6)
-	local label = makeLabel(slot, name, UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 4), SILVER, 12)
+	local label = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 4), SILVER, 12)
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	local value = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 24), MARIGOLD, 13)
 	value.TextXAlignment = Enum.TextXAlignment.Center
 	local hint = makeLabel(slot, "", UDim2.fromOffset(24, 14), UDim2.fromOffset(3, 2), AUBERGINE, 11)
-	slotFrames[name] = slot
-	slotLabels[name] = value
-	slotHints[name] = hint
-	if isTool then
-		slot.Activated:Connect(function()
-			toggleTool(name)
-		end)
-	end
+	slotPool[index] = { Frame = slot, Name = label, Value = value, Hint = hint }
+	slot.Activated:Connect(function()
+		local toolName = slotTools[index]
+		if toolName then
+			toggleTool(toolName)
+		end
+	end)
 end
-makeSlot(1, "Axe", true)
-makeSlot(2, "Shovel", true)
-makeSlot(3, "Blueprint", true)
-makeSlot(4, "Lighter", true)
+for i = 1, MAX_SLOTS do
+	makePoolSlot(i)
+end
+
+-- The tools the player owns, canonical order first (the game's
+-- tool list), then anything else they picked up, alphabetical.
+local function ownedTools()
+	local owned = {}
+	local seen = {}
+	local function scan(container)
+		if not container then
+			return
+		end
+		for _, child in ipairs(container:GetChildren()) do
+			if child:IsA("Tool") and not seen[child.Name] then
+				seen[child.Name] = true
+				table.insert(owned, child.Name)
+			end
+		end
+	end
+	scan(player:FindFirstChild("Backpack"))
+	scan(player.Character)
+	local ordered = {}
+	for _, name in ipairs(TOOL_ORDER) do
+		if seen[name] then
+			table.insert(ordered, name)
+			seen[name] = nil
+		end
+	end
+	local extra = {}
+	for name in pairs(seen) do
+		table.insert(extra, name)
+	end
+	table.sort(extra)
+	for _, name in ipairs(extra) do
+		table.insert(ordered, name)
+	end
+	return ordered
+end
 
 local function refreshHotbar()
+	local owned = ownedTools()
 	local character = player.Character
-	for _, toolName in ipairs({ "Axe", "Shovel", "Blueprint", "Lighter" }) do
-		local equipped = character and character:FindFirstChild(toolName) ~= nil
-		local slot = slotFrames[toolName]
-		if slot then
-			slot.BackgroundColor3 = equipped and MARIGOLD or SILVER
-			slot.BackgroundTransparency = equipped and 0 or 0.75
+	local count = math.max(math.min(#owned, MAX_SLOTS), 1)
+	local width = 74 * count + 6
+	hotbar.Size = UDim2.fromOffset(width, 56)
+	hotbar.Position = UDim2.new(0.5, -width / 2, 1, -64)
+	for i = 1, MAX_SLOTS do
+		local entry = slotPool[i]
+		local toolName = owned[i]
+		slotTools[i] = toolName
+		entry.Frame.Visible = toolName ~= nil
+		if toolName then
+			entry.Name.Text = toolName
+			local equipped = character and character:FindFirstChild(toolName) ~= nil
+			entry.Frame.BackgroundColor3 = equipped and MARIGOLD or SILVER
+			entry.Frame.BackgroundTransparency = equipped and 0 or 0.75
+			entry.Value.Text = equipped and "in hand" or ""
+			entry.Hint.Text = slotHintFor(i)
 		end
-		slotLabels[toolName].Text = equipped and "in hand" or ""
 	end
 end
+
+local hotbarBackpack = player:WaitForChild("Backpack")
+hotbarBackpack.ChildAdded:Connect(refreshHotbar)
+hotbarBackpack.ChildRemoved:Connect(refreshHotbar)
 
 local function hookCharacter(character)
 	character.ChildAdded:Connect(refreshHotbar)
@@ -534,7 +590,6 @@ player.CharacterAdded:Connect(hookCharacter)
 -- Platform control modes: the HUD and bindings follow the input the
 -- player is actually using and switch live when it changes (touch
 -- buttons on mobile, keys on PC, gamepad buttons on console).
-local inputMode = "Keyboard"
 local function detectMode()
 	local last = UserInputService:GetLastInputType()
 	if last == Enum.UserInputType.Touch then
@@ -557,18 +612,7 @@ end
 local function applyMode()
 	inputMode = detectMode()
 	sprintButton.Visible = inputMode == "Touch"
-	if slotHints["Axe"] then
-		slotHints["Axe"].Text = inputMode == "Keyboard" and "1" or inputMode == "Gamepad" and "◀" or ""
-	end
-	if slotHints["Shovel"] then
-		slotHints["Shovel"].Text = inputMode == "Keyboard" and "2" or inputMode == "Gamepad" and "▶" or ""
-	end
-	if slotHints["Blueprint"] then
-		slotHints["Blueprint"].Text = inputMode == "Keyboard" and "3" or inputMode == "Gamepad" and "▲" or ""
-	end
-	if slotHints["Lighter"] then
-		slotHints["Lighter"].Text = inputMode == "Keyboard" and "4" or inputMode == "Gamepad" and "▼" or ""
-	end
+	refreshHotbar()
 	storeHint.Text = inputMode == "Keyboard" and "press E" or inputMode == "Gamepad" and "press X" or "tap"
 	eatHint.Text = inputMode == "Keyboard" and "press F" or inputMode == "Gamepad" and "press Y" or "tap"
 end
@@ -601,34 +645,39 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if inputMode == "Keyboard" then
 		if input.KeyCode == Enum.KeyCode.LeftShift then
 			setSprint(true)
-		elseif input.KeyCode == Enum.KeyCode.One then
-			toggleTool("Axe")
-		elseif input.KeyCode == Enum.KeyCode.Two then
-			toggleTool("Shovel")
-		elseif input.KeyCode == Enum.KeyCode.Three then
-			toggleTool("Blueprint")
-		elseif input.KeyCode == Enum.KeyCode.Four then
-			toggleTool("Lighter")
 		elseif input.KeyCode == Enum.KeyCode.E then
 			tryStore()
 		elseif input.KeyCode == Enum.KeyCode.F then
 			tryEat()
+		else
+			local slotKeys = {
+				[Enum.KeyCode.One] = 1, [Enum.KeyCode.Two] = 2, [Enum.KeyCode.Three] = 3,
+				[Enum.KeyCode.Four] = 4, [Enum.KeyCode.Five] = 5, [Enum.KeyCode.Six] = 6,
+				[Enum.KeyCode.Seven] = 7, [Enum.KeyCode.Eight] = 8, [Enum.KeyCode.Nine] = 9,
+				[Enum.KeyCode.Zero] = 10,
+			}
+			local index = slotKeys[input.KeyCode]
+			if index and slotTools[index] then
+				toggleTool(slotTools[index])
+			end
 		end
 	elseif inputMode == "Gamepad" then
 		if input.KeyCode == Enum.KeyCode.ButtonL3 then
 			setSprint(true)
-		elseif input.KeyCode == Enum.KeyCode.DPadLeft then
-			toggleTool("Axe")
-		elseif input.KeyCode == Enum.KeyCode.DPadRight then
-			toggleTool("Shovel")
-		elseif input.KeyCode == Enum.KeyCode.DPadUp then
-			toggleTool("Blueprint")
-		elseif input.KeyCode == Enum.KeyCode.DPadDown then
-			toggleTool("Lighter")
 		elseif input.KeyCode == Enum.KeyCode.ButtonX then
 			tryStore()
 		elseif input.KeyCode == Enum.KeyCode.ButtonY then
 			tryEat()
+		else
+			local padSlots = {
+				[Enum.KeyCode.DPadLeft] = 1, [Enum.KeyCode.DPadRight] = 2,
+				[Enum.KeyCode.DPadUp] = 3, [Enum.KeyCode.DPadDown] = 4,
+				[Enum.KeyCode.ButtonR3] = 5,
+			}
+			local index = padSlots[input.KeyCode]
+			if index and slotTools[index] then
+				toggleTool(slotTools[index])
+			end
 		end
 	end
 end)
@@ -678,6 +727,101 @@ ReplicatedStorage.AttributeChanged:Connect(refreshWorld)
 player.AttributeChanged:Connect(refreshPlayer)
 refreshWorld()
 refreshPlayer()
+
+-- Fishing panel: driven by server-published attributes
+-- (FishingPhase / FishingProgress / FishingStartAt / FishingSeed).
+-- The reel needle and zone are pure functions of elapsed time from
+-- the shared start values -- the same math the server judges taps
+-- with -- so they render locally at full frame rate.
+local fishingPanel = Instance.new("Frame")
+fishingPanel.Name = "FishingPanel"
+fishingPanel.Size = UDim2.fromOffset(340, 104)
+fishingPanel.Position = UDim2.new(0.5, -170, 1, -182)
+fishingPanel.BackgroundColor3 = AUBERGINE
+fishingPanel.BackgroundTransparency = 0.25
+fishingPanel.BorderSizePixel = 0
+fishingPanel.Visible = false
+fishingPanel.Parent = gui
+local fishingCorner = Instance.new("UICorner")
+fishingCorner.CornerRadius = UDim.new(0, 10)
+fishingCorner.Parent = fishingPanel
+addStroke(fishingPanel, SILVER, 1, 0.55)
+local fishingTitle = makeLabel(fishingPanel, "", UDim2.new(1, -16, 0, 26), UDim2.fromOffset(8, 6), SILVER, 16)
+fishingTitle.TextXAlignment = Enum.TextXAlignment.Center
+local reelTrack = Instance.new("Frame")
+reelTrack.Size = UDim2.fromOffset(308, 18)
+reelTrack.Position = UDim2.fromOffset(16, 40)
+reelTrack.BackgroundColor3 = SILVER
+reelTrack.BackgroundTransparency = 0.7
+reelTrack.BorderSizePixel = 0
+reelTrack.Parent = fishingPanel
+local reelZoneFrame = Instance.new("Frame")
+reelZoneFrame.BackgroundColor3 = MARIGOLD
+reelZoneFrame.BackgroundTransparency = 0.25
+reelZoneFrame.BorderSizePixel = 0
+reelZoneFrame.Size = UDim2.fromOffset(80, 18)
+reelZoneFrame.Parent = reelTrack
+local reelNeedle = Instance.new("Frame")
+reelNeedle.Size = UDim2.fromOffset(3, 18)
+reelNeedle.BackgroundColor3 = Color3.new(1, 1, 1)
+reelNeedle.BorderSizePixel = 0
+reelNeedle.Parent = reelTrack
+local progressTrack = Instance.new("Frame")
+progressTrack.Size = UDim2.fromOffset(308, 10)
+progressTrack.Position = UDim2.fromOffset(16, 68)
+progressTrack.BackgroundColor3 = SILVER
+progressTrack.BackgroundTransparency = 0.7
+progressTrack.BorderSizePixel = 0
+progressTrack.Parent = fishingPanel
+local progressFill = Instance.new("Frame")
+progressFill.BackgroundColor3 = MARIGOLD
+progressFill.BorderSizePixel = 0
+progressFill.Size = UDim2.fromScale(0, 1)
+progressFill.Parent = progressTrack
+
+local function clientReelNeedle(elapsed)
+	local phase = (elapsed % 1.6) / 1.6
+	if phase < 0.5 then
+		return phase * 2
+	end
+	return 2 - phase * 2
+end
+local function clientReelZone(elapsed, seed)
+	return 0.5 + 0.38 * math.sin(elapsed * 0.9 + seed)
+end
+
+game:GetService("RunService").Heartbeat:Connect(function()
+	local phase = player:GetAttribute("FishingPhase")
+	fishingPanel.Visible = phase ~= nil and phase ~= ""
+	if not fishingPanel.Visible then
+		return
+	end
+	local inReel = phase == "Reel"
+	reelTrack.Visible = inReel
+	progressTrack.Visible = inReel
+	if phase == "Waiting" then
+		fishingTitle.Text = "Waiting for a bite..."
+		fishingTitle.TextSize = 16
+	elseif phase == "Bite" then
+		fishingTitle.Text = "! TAP !"
+		fishingTitle.TextSize = 26
+	elseif inReel then
+		fishingTitle.Text = "Reel it in -- tap in the gold zone!"
+		fishingTitle.TextSize = 16
+		local startAt = player:GetAttribute("FishingStartAt") or 0
+		local seed = player:GetAttribute("FishingSeed") or 0
+		local elapsed = math.max(0, workspace:GetServerTimeNow() - startAt)
+		local zone = clientReelZone(elapsed, seed)
+		local needle = clientReelNeedle(elapsed)
+		local trackWidth = reelTrack.AbsoluteSize.X
+		local zoneHalf = 0.13
+		reelZoneFrame.Size = UDim2.fromOffset(trackWidth * zoneHalf * 2, 18)
+		reelZoneFrame.Position = UDim2.fromOffset((zone - zoneHalf) * trackWidth, 0)
+		reelNeedle.Position = UDim2.fromOffset(needle * trackWidth - 1, 0)
+		local progress = (player:GetAttribute("FishingProgress") or 0) / 100
+		progressFill.Size = UDim2.fromScale(math.clamp(progress, 0, 1), 1)
+	end
+end)
 
 -- Drag mover: as network owner, float my dragged piece at a point in
 -- front of the camera (aim with the center dot). The server validates.
@@ -758,7 +902,7 @@ local function watchAimTool(tool)
 	if wiredAimTools[tool] then
 		return
 	end
-	if tool.Name ~= "Shovel" and tool.Name ~= "Lighter" then
+	if tool.Name ~= "Shovel" and tool.Name ~= "Lighter" and tool.Name ~= "FishingRod" then
 		return
 	end
 	wiredAimTools[tool] = true
@@ -820,7 +964,8 @@ RunService.RenderStepped:Connect(function(dt)
 	local myPart = myDragPart
 	local characterNow = player.Character
 	local aimEquipped = characterNow
-		and (characterNow:FindFirstChild("Shovel") or characterNow:FindFirstChild("Lighter"))
+		and (characterNow:FindFirstChild("Shovel") or characterNow:FindFirstChild("Lighter")
+			or characterNow:FindFirstChild("FishingRod"))
 	dragDot.Visible = myPart ~= nil or aimEquipped ~= nil
 	lighterFuelPill.Visible = characterNow ~= nil and characterNow:FindFirstChild("Lighter") ~= nil
 	if not myPart then

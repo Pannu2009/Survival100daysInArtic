@@ -93,6 +93,17 @@ Weapons.List = {
 		FuelCost = Config.Lighter.LightCost,
 		StartFuel = Config.Lighter.StartFuel,
 	},
+	{
+		-- Day 2's tool: NOT in StarterPack (Deferred). Gameplay
+		-- grants it with Weapons:GiveTool when Day 2 begins.
+		Id = "FishingRod",
+		Kind = "Tool",
+		Cooldown = 0.3,
+		Range = Config.Fishing.CastRange,
+		Asset = "FishingRod",
+		KeepScripts = false,
+		Deferred = true,
+	},
 }
 
 Weapons.Definitions = {}
@@ -117,11 +128,37 @@ end
 -- Handle (a Tool with no Handle can never be held, so clicks
 -- silently do nothing), weld loose parts to the Handle. Scripts are
 -- stripped unless the definition says KeepScripts.
-local function cloneAssetTool(def)
+local function findToolTemplate(def)
 	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
-	local toolsFolder = assets and assets:FindFirstChild("Tools")
+	if not assets then
+		return nil
+	end
+	local toolsFolder = assets:FindFirstChild("Tools")
 	local template = toolsFolder and toolsFolder:FindFirstChild(def.Asset)
-	if not template or not template:IsA("Tool") then
+	if not template then
+		template = assets:FindFirstChild(def.Asset)
+	end
+	if template and template:IsA("Tool") then
+		return template
+	end
+	-- Last resort: a Tool whose name smells like this definition
+	-- (e.g. a rod model named "Fishing Rod" instead of "FishingRod").
+	local needle = def.Id:lower()
+	for _, folder in ipairs({ toolsFolder, assets }) do
+		if folder then
+			for _, child in ipairs(folder:GetChildren()) do
+				if child:IsA("Tool") and child.Name:lower():find(needle:sub(1, 4), 1, true) then
+					return child
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function cloneAssetTool(def)
+	local template = findToolTemplate(def)
+	if not template then
 		return nil
 	end
 	local tool = template:Clone()
@@ -179,6 +216,10 @@ end
 -- Build every tool in the list into StarterPack from its Assets model.
 function Weapons:BuildTools()
 	for _, def in ipairs(Weapons.List) do
+		if def.Deferred then
+			-- Granted later, on purpose (the rod at Day 2).
+			continue
+		end
 		local tool = nil
 		if def.Asset then
 			tool = cloneAssetTool(def)
@@ -189,6 +230,28 @@ function Weapons:BuildTools()
 			warn(("[Arctic] Weapons: no Assets/Tools model for %s - tool not built"):format(def.Id))
 		end
 	end
+end
+
+-- Hand a Deferred tool to one player (into their Backpack, where
+-- the auto-slot hotbar picks it up). No-op if they already have it
+-- or the asset model is missing.
+function Weapons:GiveTool(player, id)
+	local def = Weapons.Definitions[id]
+	if not def then
+		return false
+	end
+	local backpack = player:FindFirstChild("Backpack")
+	local character = player.Character
+	if (backpack and backpack:FindFirstChild(id)) or (character and character:FindFirstChild(id)) then
+		return true
+	end
+	local tool = def.Asset and cloneAssetTool(def)
+	if not tool then
+		warn(("[Arctic] Weapons: no Assets model for %s - cannot give"):format(id))
+		return false
+	end
+	tool.Parent = backpack
+	return true
 end
 
 function Weapons:SetupPlayer(player)
@@ -319,6 +382,11 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 			return
 		end
 		self:_digAt(player, hitPosition.X, hitPosition.Z)
+	elseif toolName == "FishingRod" then
+		if not character:FindFirstChild("FishingRod") then
+			return
+		end
+		self.Gameplay.Fish:OnAim(player, hitInstance, hitPosition)
 	elseif toolName == "Lighter" then
 		if not character:FindFirstChild("Lighter") then
 			return
@@ -539,6 +607,15 @@ function Weapons:SwingAxe(player)
 		end
 	end
 	if not target then
+		-- No tree in reach: the swing may be cracking lake ice.
+		local rayParams = RaycastParams.new()
+		rayParams.FilterType = Enum.RaycastFilterType.Include
+		rayParams.FilterDescendantsInstances = { workspace.Terrain }
+		local origin2 = root.Position + Vector3.new(0, 1, 0)
+		local hit = workspace:Raycast(origin2, root.CFrame.LookVector * (def.Range + 3), rayParams)
+		if hit and hit.Material == Enum.Material.Glacier then
+			self.Gameplay.Fish:HitIce(player, hit.Position)
+		end
 		return
 	end
 
