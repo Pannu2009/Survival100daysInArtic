@@ -107,6 +107,7 @@ Config.Sled = {
 	StaticHold = 5,
 	MaxSpeed = 30,
 	YawResponse = 6,
+	TowTorque = 0.03,
 	YawDamp = 5,
 }
 

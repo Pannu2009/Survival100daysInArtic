@@ -712,11 +712,15 @@ function SledService:_makeRopes(player)
 	end
 	local rootPart = self._rootPart
 
-	local hitch = Instance.new("Attachment")
-	hitch.Name = "Hitch"
-	hitch.Parent = rootPart
+	local hitches = {}
+	for _, suffix in ipairs({ "L", "R" }) do
+		local hitch = Instance.new("Attachment")
+		hitch.Name = "Hitch" .. suffix
+		hitch.Parent = rootPart
+		table.insert(hitches, hitch)
+	end
 
-	local ropes = { hitch = hitch, beams = {}, atts = {} }
+	local ropes = { hitches = hitches, beams = {}, atts = {} }
 	local handNames = { "LeftHand", "RightHand" }
 	local armNames = { "Left Arm", "Right Arm" }
 	for i = 1, 2 do
@@ -727,7 +731,7 @@ function SledService:_makeRopes(player)
 			att.Parent = hand
 			local beam = Instance.new("Beam")
 			beam.Attachment0 = att
-			beam.Attachment1 = hitch
+			beam.Attachment1 = hitches[i]
 			beam.Width0 = 0.09
 			beam.Width1 = 0.09
 			beam.Color = ColorSequence.new(Color3.fromRGB(122, 92, 58))
@@ -756,8 +760,12 @@ function SledService:_releasePull(player)
 				att:Destroy()
 			end
 		end
-		if ropes.hitch and ropes.hitch.Parent then
-			ropes.hitch:Destroy()
+		if ropes.hitches then
+			for _, hitch in ipairs(ropes.hitches) do
+				if hitch.Parent then
+					hitch:Destroy()
+				end
+			end
 		end
 		self._ropes[player] = nil
 	end
@@ -879,34 +887,59 @@ function SledService:_stepSled(dt)
 
 	local accel = Vector3.zero
 	local tension01 = 0
-	local hitchPos = pos + fwdH * (self._halfLength * 0.9) + Vector3.new(0, 0.8, 0)
 	if root then
-		local toPlayer = root.Position - hitchPos
-		local dist = toPlayer.Magnitude
-		local stretch = dist - Config.Sled.RopeLength
-		if stretch > 0 and (self._prevStretch or 0) <= 0 then
-			-- The rope just snapped taut: a visible jolt through
-			-- the sled body, stronger the faster you were moving.
+		-- Two ropes, two front corners. Each corner pulls on its own
+		-- rope length, and the pull acts AT the corner -- so in a
+		-- turn the outer rope hauls the nose around and the body
+		-- trails behind it like a real trailer, instead of the whole
+		-- sled pivoting tight toward the player.
+		local rightH0 = Vector3.new(-fwdH.Z, 0, fwdH.X)
+		local cornerFwd = self._halfLength * 0.85
+		local cornerSide = self._footprint.X / 2 - 0.4
+		local totalStretch = 0
+		local torque = 0
+		for _, side in ipairs({ -1, 1 }) do
+			local offset = fwdH * cornerFwd + rightH0 * (side * cornerSide)
+			local corner = pos + offset + Vector3.new(0, 0.8, 0)
+			local toPlayer = root.Position - corner
+			local dist = toPlayer.Magnitude
+			local stretch = dist - Config.Sled.RopeLength
+			if stretch > 0 then
+				totalStretch += stretch
+				if dist > 0.01 then
+					local dir = toPlayer / dist
+					local along = self._vel:Dot(dir)
+					local force = stretch * Config.Sled.RopeSpring - along * Config.Sled.RopeDamp
+					if force > 0 then
+						local pull = dir * force
+						-- Two ropes share the load.
+						accel += pull / (massFactor * 2)
+						torque += (offset.Z * pull.X - offset.X * pull.Z) / massFactor
+					end
+				end
+			end
+		end
+		if totalStretch > 0 and (self._prevStretch or 0) <= 0 then
+			-- A rope just snapped taut: a visible jolt through the
+			-- sled body, stronger the faster you were moving.
 			local relSpeed = root.AssemblyLinearVelocity.Magnitude
 			if relSpeed > 5 then
 				self._jolt = math.min(0.15, relSpeed * 0.012)
 			end
 		end
-		self._prevStretch = stretch
-		if stretch > 0 and dist > 0.01 then
-			local dir = toPlayer / dist
-			local along = self._vel:Dot(dir)
-			local force = stretch * Config.Sled.RopeSpring - along * Config.Sled.RopeDamp
-			if force > 0 then
-				accel += dir * (force / massFactor)
-			end
-			tension01 = math.clamp(stretch / 2.5, 0, 1)
-		end
-		local desired = horizontalDir(root.Position - pos)
+		self._prevStretch = totalStretch
+		tension01 = math.clamp(totalStretch / 2.5, 0, 1)
+		self._yawVel += torque * Config.Sled.TowTorque * dt
+		-- Weak facing assist only -- the trailer mostly aligns
+		-- itself through the corner pulls now; this settles it.
+		-- The target aims from the sled's REAR to the player, which
+		-- is what makes the nose swing wide instead of cutting in.
+		local rearPos = pos - fwdH * (self._halfLength * 0.5)
+		local desired = horizontalDir(root.Position - rearPos)
 		local err = yawBetween(fwdH, desired)
 		-- Steering softens with speed: less twitchy flat-out.
 		local softening = 1 + self._vel.Magnitude * 0.03
-		self._yawVel += err * Config.Sled.YawResponse * gripState / softening * dt
+		self._yawVel += err * Config.Sled.YawResponse * 0.3 * gripState / softening * dt
 	elseif self._vel.Magnitude > 1 then
 		local desired = horizontalDir(self._vel)
 		if fwdH:Dot(desired) < 0 then
@@ -1073,14 +1106,24 @@ function SledService:_stepSled(dt)
 	sled:PivotTo(CFrame.new(newPos.X, self._yPos, newPos.Z) * canon * CFrame.Angles(pitch, 0, lean) * self._orientOffset)
 
 	local ropes = puller and self._ropes[puller]
-	if ropes and ropes.hitch then
+	if ropes and ropes.hitches then
 		local center = sled:GetPivot().Position
-		local hitchWorld = center + fwdH * (self._halfLength * 0.85) + Vector3.new(0, 1, 0)
-		ropes.hitch.CFrame = self._rootPart.CFrame:ToObjectSpace(CFrame.new(hitchWorld))
-		local sag = (1 - tension01) * -0.85
-		for _, beam in ipairs(ropes.beams) do
-			beam.CurveSize0 = sag
-			beam.CurveSize1 = sag
+		local cornerFwd = self._halfLength * 0.85
+		local cornerSide = self._footprint.X / 2 - 0.4
+		for i, hitch in ipairs(ropes.hitches) do
+			local side = i == 1 and -1 or 1
+			local cornerWorld = center + fwdH * cornerFwd + rightH * (side * cornerSide) + Vector3.new(0, 1, 0)
+			hitch.CFrame = self._rootPart.CFrame:ToObjectSpace(CFrame.new(cornerWorld))
+			-- Each rope sags by its OWN slack: in a turn the inner
+			-- rope hangs loose while the outer one stays bar-taut.
+			local beam = ropes.beams[i]
+			if beam and root then
+				local dist = (root.Position - cornerWorld).Magnitude
+				local slack = math.clamp((Config.Sled.RopeLength - dist) / 2.5, 0, 1)
+				local sag = slack * -0.85
+				beam.CurveSize0 = sag
+				beam.CurveSize1 = sag
+			end
 		end
 	end
 
