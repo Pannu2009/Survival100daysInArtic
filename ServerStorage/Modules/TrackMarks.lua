@@ -100,10 +100,11 @@ local function pressColumn(vx, vz, surfaceY, dip, expiresAt)
 	end
 end
 
--- position: world XZ source (Y ignored, the snow surface is found
--- by raycast). yaw: facing of the mark. depth01: 0 = light press,
--- 1 = deepest. life: seconds before the snow pops back.
-function TrackMarks.Spawn(position, yaw, length, width, depth01, life)
+-- Press exactly ONE snow column: the one containing this point.
+-- Marks are single cells wide by design -- a left runner cell, a
+-- right runner cell, a foot cell -- never a patch. depth01: 0 =
+-- light press, 1 = deepest. life: seconds before the snow pops back.
+function TrackMarks.SpawnPoint(position, depth01, life)
 	if not world then
 		return
 	end
@@ -116,31 +117,9 @@ function TrackMarks.Spawn(position, yaw, length, width, depth01, life)
 	end
 
 	local dip = 0.12 + 0.33 * math.clamp(depth01, 0, 1)
-	local expiresAt = os.clock() + life
-
-	-- Columns whose centers fall inside the rotated mark rectangle.
-	local halfL = length / 2 + 1
-	local halfW = width / 2 + 1
-	local radius = math.max(halfL, halfW)
-	local sinYaw = math.sin(yaw)
-	local cosYaw = math.cos(yaw)
-	local minVx = math.floor((position.X - radius) / RESOLUTION)
-	local maxVx = math.floor((position.X + radius) / RESOLUTION)
-	local minVz = math.floor((position.Z - radius) / RESOLUTION)
-	local maxVz = math.floor((position.Z + radius) / RESOLUTION)
-	for vx = minVx, maxVx do
-		for vz = minVz, maxVz do
-			local cx = (vx + 0.5) * RESOLUTION
-			local cz = (vz + 0.5) * RESOLUTION
-			local dx = cx - position.X
-			local dz = cz - position.Z
-			local localX = dx * cosYaw - dz * sinYaw
-			local localZ = dx * sinYaw + dz * cosYaw
-			if math.abs(localX) <= halfW and math.abs(localZ) <= halfL then
-				pressColumn(vx, vz, hit.Position.Y, dip, expiresAt)
-			end
-		end
-	end
+	local vx = math.floor(position.X / RESOLUTION)
+	local vz = math.floor(position.Z / RESOLUTION)
+	pressColumn(vx, vz, hit.Position.Y, dip, os.clock() + life)
 end
 
 local function restoreCell(cell)

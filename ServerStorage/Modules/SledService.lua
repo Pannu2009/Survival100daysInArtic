@@ -940,7 +940,6 @@ function SledService:_stepSled(dt)
 	end
 	if speed > 0.8 then
 		local depth = math.clamp(self._cargoWeight / 250, 0.15, 1)
-		local yawA = math.atan2(fwdH.X, fwdH.Z)
 		local rightV = Vector3.new(-fwdH.Z, 0, fwdH.X)
 		local function pressTrack(runner, key, sideSign)
 			local p
@@ -956,7 +955,7 @@ function SledService:_stepSled(dt)
 			end
 			local dist = (p - last).Magnitude
 			if dist >= Config.Tracks.SledStep then
-				TrackMarks.Spawn(p, yawA, dist + 0.4, 0.7, depth, Config.Tracks.SledLife)
+				TrackMarks.SpawnPoint(p, depth, Config.Tracks.SledLife)
 				self[key] = p
 			end
 		end

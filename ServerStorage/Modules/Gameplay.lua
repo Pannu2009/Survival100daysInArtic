@@ -631,7 +631,7 @@ function Gameplay:Update(dt)
 					foot.Side = -foot.Side
 					local dir = moved.Unit
 					local pos = root.Position + root.CFrame.RightVector * (0.4 * foot.Side)
-					TrackMarks.Spawn(pos, math.atan2(dir.X, dir.Z), 0.95, 0.55, 0.85, Config.Tracks.FootLife)
+					TrackMarks.SpawnPoint(pos, 0.6, Config.Tracks.FootLife)
 				end
 			end
 		end
