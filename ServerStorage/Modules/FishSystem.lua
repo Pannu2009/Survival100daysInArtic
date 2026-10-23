@@ -144,10 +144,16 @@ function FishSystem:Eat(player, fish)
 	-- One fish is 5 pieces; each eat takes one piece off the model.
 	local cooked = fish:GetAttribute("Cooked") == true
 	survival.Hunger:Eat(cooked and Config.Food.CookedPieceHunger or Config.Food.RawPieceHunger)
-	survival.Health = math.min(
-		Config.Survival.MaxHealth,
-		survival.Health + (cooked and Config.Food.CookedPieceHeal or Config.Food.RawPieceHeal)
-	)
+	-- Health goes through the survival system's own methods, never
+	-- a direct assignment: Heal/Damage route through _setHealth, so
+	-- OnHealthChanged fires and hitting zero sets Dead + OnDied.
+	-- (Raw fish heals negative -- at low health it can kill you.)
+	local heal = cooked and Config.Food.CookedPieceHeal or Config.Food.RawPieceHeal
+	if heal >= 0 then
+		survival:Heal(heal)
+	else
+		survival:Damage(-heal)
+	end
 	local pieces = (fish:GetAttribute("Pieces") or Config.Food.PiecesPerFish) - 1
 	if pieces <= 0 then
 		if part:GetAttribute("DraggedBy") then

@@ -40,12 +40,18 @@ function Gameplay.new(world, clock, temperature)
 	self.Weapons = Weapons.new(self)
 	self._foot = {}
 	self._published = {}
+	self._reviving = {}
 	self.LogsFolder = nil
 	self._setSprinting = nil
 	return self
 end
 
 function Gameplay:Start()
+	-- Death is final for a run: no automatic respawning. Characters
+	-- are loaded manually, once per player, in _setupPlayer; a
+	-- deliberate revive system can opt back in via _reviving.
+	Players.CharacterAutoLoads = false
+
 	local logsFolder = Instance.new("Folder")
 	logsFolder.Name = "Logs"
 	logsFolder.Parent = workspace
@@ -235,10 +241,19 @@ function Gameplay:_setupPlayer(player)
 	end)
 	if player.Character then
 		self:_onCharacter(player, player.Character)
+	elseif not (self._survivals[player] and self._survivals[player].Dead) then
+		player:LoadCharacter()
 	end
 end
 
 function Gameplay:_onCharacter(player, character)
+	local existing = self._survivals[player]
+	if existing and existing.Dead and not self._reviving[player] then
+		-- Dead is dead: no fresh character and no survival reset.
+		-- (A revive must set _reviving[player] before loading one.)
+		character:Destroy()
+		return
+	end
 	self:_releaseLogs(player)
 	self._survivals[player] = self:_makeSurvival(player)
 	self._sprinting[player] = false
