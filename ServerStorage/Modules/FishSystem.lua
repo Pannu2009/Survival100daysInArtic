@@ -22,7 +22,8 @@ function FishSystem.new(gameplay)
 	self.Folder = nil
 	self.Template = nil
 	self.HolesFolder = nil
-	self.Holes = {} -- cellKey -> { Part, Position, ExpiresAt }
+	self.Holes = {} -- cellKey -> { Position, CarveCenter, ExpiresAt }
+	self.Cracks = {} -- cellKey -> crack visual Model
 	self.IceHits = {} -- cellKey -> { Hits, Needed }
 	self.Sessions = {} -- player -> fishing session
 	return self
@@ -106,24 +107,13 @@ function FishSystem:Spawn(x, z)
 end
 
 function FishSystem:_attachDragPrompt(fish, part)
+	-- Same deal as logs: the GRAB/DROP button grabs fish now.
 	fish:SetAttribute("Draggable", true)
 	part:SetAttribute("Draggable", true)
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Drag"
-	prompt.ObjectText = "Fish"
-	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = 7
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = part
-	prompt.Triggered:Connect(function(player)
-		if part:GetAttribute("DraggedBy") == player.UserId then
-			DragSystem.Stop(player, part)
-		elseif part:GetAttribute("DraggedBy") == nil then
-			if DragSystem.Start(player, part) then
-				prompt.ActionText = "Drop"
-			end
-		end
-	end)
+	local existing = part:FindFirstChildOfClass("ProximityPrompt")
+	if existing then
+		existing:Destroy()
+	end
 end
 
 function FishSystem:Eat(player, fish)
@@ -270,6 +260,40 @@ function FishSystem:IsIceAt(position)
 	return false
 end
 
+-- Crack visual: thin dark slivers radiating on the ice surface,
+-- more of them as the cell's work builds (3 stages). Deterministic
+-- per cell from its seed.
+function FishSystem:_showCrack(key, position, seed, stage)
+	if self.Cracks[key] then
+		self.Cracks[key]:Destroy()
+	end
+	local world = self.Gameplay.World
+	local cx = (math.floor(position.X / ICE_CELL) + 0.5) * ICE_CELL
+	local cz = (math.floor(position.Z / ICE_CELL) + 0.5) * ICE_CELL
+	local surfaceY = world:GroundY(cx, cz)
+	local model = Instance.new("Model")
+	model.Name = "IceCrack"
+	for i = 1, stage * 2 do
+		local angle = seed + i * 2.4
+		local dist = 0.4 + (i % 3) * 0.35
+		local sliver = Instance.new("Part")
+		sliver.Size = Vector3.new(1.6 + (i % 3) * 0.6, 0.05, 0.16)
+		sliver.Color = Color3.fromRGB(46, 60, 78)
+		sliver.Material = Enum.Material.SmoothPlastic
+		sliver.Anchored = true
+		sliver.CanCollide = false
+		sliver.CanQuery = false
+		sliver.CFrame = CFrame.new(
+			cx + math.sin(seed + i * 1.7) * dist,
+			surfaceY + 0.04,
+			cz + math.cos(seed + i * 1.3) * dist
+		) * CFrame.Angles(0, angle, 0)
+		sliver.Parent = model
+	end
+	model.Parent = self.HolesFolder
+	self.Cracks[key] = model
+end
+
 -- Crack ice by work points: an axe hit does 7, a shovel hit 3,
 -- the cell breaks at 21 -- axe 3 hits, shovel 7, mixes proportion.
 function FishSystem:HitIce(player, position, work)
@@ -282,14 +306,24 @@ function FishSystem:HitIce(player, position, work)
 	end
 	local cell = self.IceHits[key]
 	if not cell then
-		cell = { Work = 0 }
+		cell = { Work = 0, Seed = math.random() * 100, Stage = 0 }
 		self.IceHits[key] = cell
 	end
 	cell.Work += work
 	if cell.Work < Config.Fishing.IceWorkNeeded then
+		-- Show the ice cracking as the work builds: 3 stages.
+		local stage = math.ceil(cell.Work / Config.Fishing.IceWorkNeeded * 3)
+		if stage > cell.Stage then
+			cell.Stage = stage
+			self:_showCrack(key, position, cell.Seed, stage)
+		end
 		return
 	end
 	self.IceHits[key] = nil
+	if self.Cracks[key] then
+		self.Cracks[key]:Destroy()
+		self.Cracks[key] = nil
+	end
 
 	-- Break through: carve the ice sheet itself (same terrain
 	-- carving as digging snow) -- the water layer underneath
@@ -450,12 +484,14 @@ function FishSystem:OnAim(player, hitInstance, hitPosition)
 	end
 	local best, bestDist = nil, math.huge
 	for _, hole in pairs(self.Holes) do
-		local d = (hole.Position - hitPosition).Magnitude
+		local dx = hole.Position.X - hitPosition.X
+		local dz = hole.Position.Z - hitPosition.Z
+		local d = math.sqrt(dx * dx + dz * dz)
 		if d < bestDist then
 			best, bestDist = hole, d
 		end
 	end
-	if not best or bestDist > 6 then
+	if not best or bestDist > 5 then
 		return
 	end
 	if (best.Position - root.Position).Magnitude > Config.Fishing.CastRange then

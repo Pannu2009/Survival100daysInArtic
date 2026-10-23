@@ -108,21 +108,32 @@ end
 local function layoutCargo(box, dimsList)
 	local placements = {}
 	local layers = {}
-	for i, d in ipairs(dimsList) do
+	-- Thickest pieces first so they land on the bottom layer and
+	-- the pile reads stable; placements stay keyed to the
+	-- caller's indices.
+	local order = {}
+	for i in ipairs(dimsList) do
+		order[i] = i
+	end
+	table.sort(order, function(a, b)
+		return dimsList[a].thick > dimsList[b].thick
+	end)
+	for _, i in ipairs(order) do
+		local d = dimsList[i]
 		local spot = nil
 		for l = 1, #layers + 1 do
 			local layer = layers[l]
 			if not layer then
 				local y = 0
 				for j = 1, l - 1 do
-					y += layers[j].height + 0.1
+					y += layers[j].height + 0.04
 				end
 				-- Layers may stack past the box height: the pile
 				-- just grows taller on the sled.
 				layer = { used = 0, height = 0, y = y }
 				layers[l] = layer
 			end
-			local gap = layer.used > 0 and 0.12 or 0
+			local gap = layer.used > 0 and 0.05 or 0
 			if layer.used + gap + d.thick <= box.across + 0.01 then
 				spot = {
 					across = -box.across / 2 + layer.used + gap + d.thick / 2,
@@ -391,7 +402,7 @@ function SledService:_makePrompts()
 	end)
 	self._pullPrompt = pullPrompt
 
-	local backOffset = alongIsX and Vector3.new(-halfAlong, 0.5, 0) or Vector3.new(0, 0.5, -halfAlong)
+	local backOffset = alongIsX and Vector3.new(-halfAlong, 1.7, 0) or Vector3.new(0, 1.7, -halfAlong)
 	local unloadAnchor = makeAnchor("UnloadAnchor", backOffset)
 	local unloadPrompt = Instance.new("ProximityPrompt")
 	unloadPrompt.ActionText = "Unload piece"
@@ -459,14 +470,18 @@ function SledService:_placePiece(piece)
 	local center = cargo.CFrame:PointToWorldSpace(localPos)
 
 	local alongWorld = horizontalDir(cargo.CFrame:VectorToWorldSpace(alongIsX and Vector3.xAxis or Vector3.zAxis))
-	local currentDir = horizontalDir(logPart.CFrame:VectorToWorldSpace(axisVec))
-	if currentDir:Dot(alongWorld) < 0 then
+	local axisWorld = logPart.CFrame:VectorToWorldSpace(axisVec)
+	if axisWorld:Dot(alongWorld) < 0 then
 		alongWorld = -alongWorld
 	end
-	local yawDelta = yawBetween(currentDir, alongWorld)
+	local cross = axisWorld:Cross(alongWorld)
+	local rot = CFrame.new()
+	if cross.Magnitude > 0.001 then
+		rot = CFrame.fromAxisAngle(cross.Unit, math.acos(math.clamp(axisWorld:Dot(alongWorld), -1, 1)))
+	end
 
 	local partCF = logPart.CFrame
-	local desired = CFrame.new(center) * CFrame.Angles(0, yawDelta, 0) * (partCF - partCF.Position)
+	local desired = CFrame.new(center) * rot * (partCF - partCF.Position)
 	local delta = desired * partCF:Inverse()
 	piece:PivotTo(delta * piece:GetPivot())
 end
@@ -582,6 +597,7 @@ function SledService:_unloadLast(player)
 		return
 	end
 	if not withinRange(root, sled:GetPivot().Position, Config.Sled.InteractRange) then
+		print(("[Arctic] Unload blocked: player too far from the sled (range %d)"):format(Config.Sled.InteractRange))
 		return
 	end
 
@@ -602,12 +618,14 @@ function SledService:_unloadLast(player)
 		end
 	end
 
+	-- The piece lands beside the player who unloaded it --
+	-- always reachable, never under the sled or the pile.
 	local pivot = sled:GetPivot()
-	local forward = horizontalDir(pivot.LookVector)
-	local behind = pivot.Position - forward * (self._halfLength + 2.5)
+	local away = horizontalDir(root.Position - pivot.Position)
+	local dropAt = root.Position + away * 2.2
 	local logPart = getLogPart(piece)
 	if logPart then
-		self.World:SnapPartToGround(piece, logPart, behind.X, behind.Z)
+		self.World:SnapPartToGround(piece, logPart, dropAt.X, dropAt.Z)
 	end
 
 	self.Gameplay:AttachDragPrompt(piece)

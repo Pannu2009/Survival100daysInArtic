@@ -21,8 +21,8 @@ function TerrainBuilder.Build(layout)
 	-- thick). Breaking the ice carves the sheet and the water
 	-- shows in the hole. (Before, under the water was the carved
 	-- air bowl -- straight through to the void.)
-	terrain:FillBlock(CFrame.new(lake.X, -9, lake.Z), Vector3.new(lake.Radius * 2, 2, lake.Radius * 2), Enum.Material.Rock)
-	terrain:FillBlock(CFrame.new(lake.X, -5.5, lake.Z), Vector3.new(lake.Radius * 2, 5, lake.Radius * 2), Enum.Material.Water)
+	terrain:FillBlock(CFrame.new(lake.X, -13, lake.Z), Vector3.new(lake.Radius * 2, 2, lake.Radius * 2), Enum.Material.Rock)
+	terrain:FillBlock(CFrame.new(lake.X, -7.5, lake.Z), Vector3.new(lake.Radius * 2, 9, lake.Radius * 2), Enum.Material.Water)
 	terrain:FillBlock(CFrame.new(lake.X, -2.5, lake.Z), Vector3.new(lake.Radius * 2, 1, lake.Radius * 2), Enum.Material.Glacier)
 end
 

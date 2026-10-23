@@ -132,6 +132,28 @@ function Gameplay:Start()
 		self.Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 	end)
 
+	local dragAction = Instance.new("RemoteEvent")
+	dragAction.Name = "DragAction"
+	dragAction.Parent = remotes
+	dragAction.OnServerEvent:Connect(function(player, action, target)
+		if action == "Drop" then
+			local item = DragSystem.GetPlayerItem(player)
+			if item then
+				DragSystem.Stop(player, item)
+			end
+		elseif action == "Grab" then
+			if typeof(target) == "Instance" and target:IsA("BasePart")
+				and target:GetAttribute("Draggable") == true
+			then
+				local model = target.Parent
+				if model and model:GetAttribute("Burning") == true then
+					return -- burning wood is hands-off
+				end
+				DragSystem.Start(player, target)
+			end
+		end
+	end)
+
 	setSprinting.OnServerEvent:Connect(function(player, value)
 		self._sprinting[player] = value == true
 	end)
@@ -557,6 +579,9 @@ function Gameplay:_refreshLog(log)
 end
 
 function Gameplay:_attachDragPrompt(log)
+	-- Grabbing is the client's GRAB/DROP button now (center-dot
+	-- targeted, DragAction remote). No ProximityPrompt: this just
+	-- marks the piece draggable.
 	local logPart = getLogPart(log)
 	if not logPart then
 		return
@@ -567,30 +592,6 @@ function Gameplay:_attachDragPrompt(log)
 	if existing then
 		existing:Destroy()
 	end
-
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Drag"
-	prompt.ObjectText = "WoodLog"
-	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = 7
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = logPart
-	prompt.Triggered:Connect(function(player)
-		if log:GetAttribute("OnSled") then
-			return
-		end
-		if log:GetAttribute("Burning") == true then
-			-- Burning wood is hands-off: no grabbing it back.
-			return
-		end
-		if logPart:GetAttribute("DraggedBy") == player.UserId then
-			DragSystem.Stop(player, logPart)
-		elseif logPart:GetAttribute("DraggedBy") == nil then
-			if DragSystem.Start(player, logPart) then
-				prompt.ActionText = "Drop"
-			end
-		end
-	end)
 end
 
 function Gameplay:Update(dt)

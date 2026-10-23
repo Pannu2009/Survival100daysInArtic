@@ -297,6 +297,36 @@ local eatHint = makeLabel(gui, "tap", UDim2.fromOffset(132, 16), UDim2.new(1, -1
 eatHint.TextXAlignment = Enum.TextXAlignment.Center
 eatHint.Visible = false
 
+-- Grab / Drop button: ONE context button for dragging. It shows
+-- GRAB while the center dot is on a draggable item and the hands
+-- are empty; while carrying it shows DROP (and only DROP -- you
+-- can't grab a second thing). Replaces the per-item prompts.
+local dragActionRemote = remotes:WaitForChild("DragAction")
+local grabButton = Instance.new("TextButton")
+grabButton.Name = "GrabButton"
+grabButton.Size = UDim2.fromOffset(132, 54)
+grabButton.Position = UDim2.new(1, -144, 1, -322)
+grabButton.BackgroundColor3 = MARIGOLD
+grabButton.Text = "GRAB"
+grabButton.TextColor3 = AUBERGINE
+grabButton.TextSize = 16
+grabButton.Font = Enum.Font.GothamBold
+grabButton.BorderSizePixel = 0
+grabButton.Visible = false
+grabButton.Parent = gui
+local grabCorner = Instance.new("UICorner")
+grabCorner.CornerRadius = UDim.new(0, 12)
+grabCorner.Parent = grabButton
+addStroke(grabButton, AUBERGINE, 1.5, 0.25)
+local grabTarget = nil
+grabButton.Activated:Connect(function()
+	if myDragPartRef and myDragPartRef() then
+		dragActionRemote:FireServer("Drop")
+	elseif grabTarget then
+		dragActionRemote:FireServer("Grab", grabTarget)
+	end
+end)
+
 local eatTarget = nil
 local function tryEat()
 	if eatTarget then
@@ -1069,6 +1099,48 @@ for _, log in ipairs(logsFolder:GetChildren()) do
 	trackLog(log)
 end
 logsFolder.ChildAdded:Connect(trackLog)
+
+-- GRAB/DROP button state: DROP while carrying; otherwise GRAB
+-- when the center dot rests on a free draggable item.
+function myDragPartRef()
+	return myDragPart
+end
+local grabParams = RaycastParams.new()
+grabParams.FilterType = Enum.RaycastFilterType.Exclude
+grabParams.IgnoreWater = true
+local lastGrabCheck = 0
+RunService.RenderStepped:Connect(function()
+	local now = os.clock()
+	if now - lastGrabCheck < 0.08 then
+		return
+	end
+	lastGrabCheck = now
+	if myDragPart then
+		grabTarget = nil
+		grabButton.Text = "DROP"
+		grabButton.Visible = true
+		return
+	end
+	local camera = workspace.CurrentCamera
+	local character = player.Character
+	if not camera or not character then
+		grabButton.Visible = false
+		return
+	end
+	grabParams.FilterDescendantsInstances = { character }
+	local hit = workspace:Raycast(camera.CFrame.Position, camera.CFrame.LookVector * 14, grabParams)
+	local part = hit and hit.Instance
+	if part and part:IsA("BasePart") and part:GetAttribute("Draggable") == true
+		and part:GetAttribute("DraggedBy") == nil
+	then
+		grabTarget = part
+		grabButton.Text = "GRAB"
+		grabButton.Visible = true
+	else
+		grabTarget = nil
+		grabButton.Visible = false
+	end
+end)
 -- Fish live in their own folder but drag exactly like logs; the
 -- tracker must watch them too or a caught fish never moves.
 local fishFolder = workspace:WaitForChild("Fish")
