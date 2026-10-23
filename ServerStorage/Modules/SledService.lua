@@ -726,8 +726,11 @@ function SledService:_stepSled(dt)
 	local world = self.World
 	local pos = sled:GetPivot().Position
 
-	local mass = Config.Sled.Weight + self._cargoWeight
-	local massFactor = mass / Config.Sled.Weight
+	-- Physics mass factor is relative to a 25kg reference sled. Config.Sled.Weight
+	-- is 0 (Ajay removed the sled's own weight from pull/display), so dividing by
+	-- it gave inf/NaN -- NaN is what crashed math.clamp at the yaw clamp below.
+	-- 1 + cargo/25 reproduces the old tuning exactly: empty = 1, 100kg = 5.
+	local massFactor = 1 + self._cargoWeight / 25
 
 	local s = 3
 	local hx1 = world:GroundY(pos.X + s, pos.Z)
