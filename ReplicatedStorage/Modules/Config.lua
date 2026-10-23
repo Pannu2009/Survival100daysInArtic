@@ -201,6 +201,7 @@ Config.Wolves = {
 	HarnessSpeed = 18,
 	TameHealth = 50,
 	TeamLimit = 6,
+	MaxAlive = 24,
 	PacksToSpawn = 4,
 	PackMin = 2,
 	PackMax = 5,

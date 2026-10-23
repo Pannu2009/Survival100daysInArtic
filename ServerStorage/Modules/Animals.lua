@@ -232,10 +232,16 @@ function Animals:_spawnPack()
 	if not self.Template then
 		return
 	end
+	-- World population cap (Ajay): never more than MaxAlive
+	-- wolves in the world at once, wild or tamed.
+	local room = W.MaxAlive - #self.Wolves
+	if room <= 0 then
+		return
+	end
 	self._nextPackId += 1
 	local packId = self._nextPackId
 	local home = self:_packSpawnPosition()
-	local count = math.random(W.PackMin, W.PackMax)
+	local count = math.min(math.random(W.PackMin, W.PackMax), room)
 	local pack = { Id = packId, Home = home, RespawnAt = nil }
 	self._packs[packId] = pack
 	for i = 1, count do
