@@ -100,6 +100,8 @@ local function findRootPart(model)
 end
 
 function Animals:_buildWolf()
+	local walkTrack = nil
+	local biteSoundFound = nil
 	local wolf = self.Template:Clone()
 	for _, d in ipairs(wolf:GetDescendants()) do
 		if d:IsA("Script") or d:IsA("LocalScript") then
@@ -111,6 +113,20 @@ function Animals:_buildWolf()
 		wolf:Destroy()
 		return nil
 	end
+	-- Which parts does a joint already hold? (His rig animates via
+	-- Motor6Ds -- welding one of those parts would freeze it.
+	-- Only truly loose parts get a WeldConstraint to the root.)
+	local jointed = {}
+	for _, d in ipairs(wolf:GetDescendants()) do
+		if d:IsA("Motor6D") or d:IsA("Weld") or d:IsA("WeldConstraint") then
+			if d.Part0 then
+				jointed[d.Part0] = true
+			end
+			if d.Part1 then
+				jointed[d.Part1] = true
+			end
+		end
+	end
 	for _, d in ipairs(wolf:GetDescendants()) do
 		if d:IsA("BasePart") then
 			if d == root then
@@ -120,14 +136,7 @@ function Animals:_buildWolf()
 				d.Anchored = false
 				d.CanCollide = false
 				d.Massless = true
-				local welded = false
-				for _, cc in ipairs(d:GetDescendants()) do
-					if cc:IsA("WeldConstraint") or cc:IsA("Weld") then
-						welded = true
-						break
-					end
-				end
-				if not welded and d.Parent ~= root then
+				if not jointed[d] and d.Parent ~= root then
 					local weld = Instance.new("WeldConstraint")
 					weld.Part0 = root
 					weld.Part1 = d
@@ -135,6 +144,34 @@ function Animals:_buildWolf()
 				end
 			end
 		end
+	end
+	-- His WalkAnim + bite sound live in the model: wire both up.
+	local walkAnim = wolf:FindFirstChild("WalkAnim", true)
+	if walkAnim and walkAnim:IsA("Animation") then
+		local host = wolf:FindFirstChildOfClass("AnimationController")
+			or wolf:FindFirstChildOfClass("Humanoid")
+		if not host then
+			host = Instance.new("AnimationController")
+			host.Parent = wolf
+		end
+		local animator = host:FindFirstChildOfClass("Animator")
+		if not animator then
+			animator = Instance.new("Animator")
+			animator.Parent = host
+		end
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(walkAnim)
+		end)
+		if ok and track then
+			track.Looped = true
+			wolf:SetAttribute("WalkTrackReady", true)
+			walkTrack = track
+		end
+	end
+	local biteSound = wolf:FindFirstChild("damage", true)
+	if biteSound and biteSound:IsA("Sound") then
+		wolf:SetAttribute("BiteSoundReady", true)
+		biteSoundFound = biteSound
 	end
 	wolf:SetAttribute("IsWolf", true)
 
@@ -165,6 +202,8 @@ function Animals:_buildWolf()
 	local record = {
 		Model = wolf,
 		Root = root,
+		WalkTrack = walkTrack,
+		BiteSound = biteSoundFound,
 		Tag = tag,
 		TagLabel = label,
 		Yaw = math.random() * math.pi * 2,
@@ -610,6 +649,13 @@ function Animals:_moveToward(wolf, targetPos, speed, dt)
 		moving = true
 		wolf.WalkCycle += dt * speed * 0.9
 	end
+	if wolf.WalkTrack then
+		if moving and not wolf.WalkTrack.IsPlaying then
+			wolf.WalkTrack:Play(0.15)
+		elseif not moving and wolf.WalkTrack.IsPlaying then
+			wolf.WalkTrack:Stop(0.2)
+		end
+	end
 	local groundY = self.Gameplay.World:GroundY(pos.X, pos.Z)
 	local bob = moving and math.sin(wolf.WalkCycle * 2) * 0.07 or 0
 	local y = groundY + wolf.GroundOffset + bob
@@ -621,6 +667,9 @@ function Animals:_bitePlayer(wolf, player)
 	local survival = self.Gameplay._survivals[player]
 	if not survival then
 		return
+	end
+	if wolf.BiteSound then
+		wolf.BiteSound:Play()
 	end
 	local damage = W.BiteDamage * (wolf.Leader and W.LeaderDamageMult or 1)
 	survival:Damage(damage)
@@ -825,6 +874,9 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 			local d = self:_moveToward(wolf, prey.Root.Position, W.ChaseSpeed + 1, dt)
 			if d <= W.BiteRange and wolf.BiteCd <= 0 then
 				wolf.BiteCd = 0.9
+				if wolf.BiteSound then
+					wolf.BiteSound:Play()
+				end
 				self:DamageWolf(prey, W.AttackDamage, owner)
 			end
 			return
