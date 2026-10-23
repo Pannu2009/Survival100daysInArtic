@@ -308,8 +308,8 @@ eatButton.Activated:Connect(tryEat)
 -- Build menu (blueprint stick) + campfire placement mode.
 local buildMenu = Instance.new("Frame")
 buildMenu.Name = "BuildMenu"
-buildMenu.Size = UDim2.fromOffset(250, 148)
-buildMenu.Position = UDim2.new(0.5, -125, 0.5, -74)
+buildMenu.Size = UDim2.fromOffset(300, 200)
+buildMenu.Position = UDim2.new(0.5, -150, 0.5, -100)
 buildMenu.BackgroundColor3 = AUBERGINE
 buildMenu.BackgroundTransparency = 0.1
 buildMenu.BorderSizePixel = 0
@@ -323,7 +323,7 @@ local buildTitle = makeLabel(buildMenu, "BUILD", UDim2.new(1, -16, 0, 24), UDim2
 buildTitle.TextXAlignment = Enum.TextXAlignment.Center
 
 local campfireBuildButton = Instance.new("TextButton")
-campfireBuildButton.Size = UDim2.new(1, -88, 0, 46)
+campfireBuildButton.Size = UDim2.fromOffset(164, 46)
 campfireBuildButton.Position = UDim2.fromOffset(12, 42)
 campfireBuildButton.BackgroundColor3 = MARIGOLD
 campfireBuildButton.Text = "Campfire - 40kg of logs"
@@ -337,24 +337,17 @@ campfireBuildCorner.CornerRadius = UDim.new(0, 10)
 campfireBuildCorner.Parent = campfireBuildButton
 addStroke(campfireBuildButton, AUBERGINE, 1.5, 0.25)
 
-local buildPreview = Instance.new("ViewportFrame")
-buildPreview.Name = "CampfirePreview"
-buildPreview.Size = UDim2.fromOffset(56, 46)
-buildPreview.Position = UDim2.fromOffset(182, 42)
-buildPreview.BackgroundColor3 = Color3.fromRGB(24, 8, 22)
-buildPreview.BackgroundTransparency = 0.2
-buildPreview.BorderSizePixel = 0
-buildPreview.Ambient = Color3.fromRGB(165, 165, 178)
-buildPreview.LightColor = Color3.fromRGB(255, 250, 240)
-buildPreview.LightDirection = Vector3.new(-1, -1.4, -0.6)
-buildPreview.Parent = buildMenu
-local buildPreviewCorner = Instance.new("UICorner")
-buildPreviewCorner.CornerRadius = UDim.new(0, 8)
-buildPreviewCorner.Parent = buildPreview
+local buildIconHolder = Instance.new("Frame")
+buildIconHolder.Name = "BuildIconHolder"
+buildIconHolder.Size = UDim2.fromOffset(100, 100)
+buildIconHolder.Position = UDim2.fromOffset(188, 42)
+buildIconHolder.BackgroundTransparency = 1
+buildIconHolder.BorderSizePixel = 0
+buildIconHolder.Parent = buildMenu
 
 local buildCloseButton = Instance.new("TextButton")
 buildCloseButton.Size = UDim2.new(1, -24, 0, 34)
-buildCloseButton.Position = UDim2.fromOffset(12, 98)
+buildCloseButton.Position = UDim2.fromOffset(12, 156)
 buildCloseButton.BackgroundColor3 = SILVER
 buildCloseButton.BackgroundTransparency = 0.4
 buildCloseButton.Text = "Close"
@@ -698,14 +691,58 @@ if player.Character then
 end
 player.CharacterAdded:Connect(hookCharacter)
 
--- Blueprint menu preview: the built campfire's own model.
-do
+-- Blueprint menu icon, created ONLY while the menu is open and
+-- destroyed when it closes (Ajay's optimization rule). Preferred
+-- source: his hand-framed ViewportFrames in
+-- ReplicatedStorage/PointFrames, named after the structure
+-- ("Campfire"). Fallback: an auto-framed viewport of the Assets
+-- model.
+local buildIconLive = nil
+local function clearBuildIcon()
+	if buildIconLive then
+		buildIconLive:Destroy()
+		buildIconLive = nil
+	end
+end
+local function showBuildIcon()
+	clearBuildIcon()
+	local pointFrames = ReplicatedStorage:FindFirstChild("PointFrames")
+	local template = pointFrames and pointFrames:FindFirstChild("Campfire")
+	if template and template:IsA("ViewportFrame") then
+		local clone = template:Clone()
+		clone.Size = UDim2.fromOffset(100, 100)
+		clone.Position = UDim2.fromOffset(0, 0)
+		clone.Parent = buildIconHolder
+		buildIconLive = clone
+		return
+	end
+	local vpf = Instance.new("ViewportFrame")
+	vpf.Size = UDim2.fromOffset(100, 100)
+	vpf.Position = UDim2.fromOffset(0, 0)
+	vpf.BackgroundColor3 = Color3.fromRGB(24, 8, 22)
+	vpf.BackgroundTransparency = 0.2
+	vpf.BorderSizePixel = 0
+	vpf.Ambient = Color3.fromRGB(165, 165, 178)
+	vpf.LightColor = Color3.fromRGB(255, 250, 240)
+	vpf.LightDirection = Vector3.new(-1, -1.4, -0.6)
+	vpf.Parent = buildIconHolder
+	local vpfCorner = Instance.new("UICorner")
+	vpfCorner.CornerRadius = UDim.new(0, 8)
+	vpfCorner.Parent = vpf
+	buildIconLive = vpf
 	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
 	local fireModel = assets and (assets:FindFirstChild("BonFire") or assets:FindFirstChild("FireBox"))
 	if fireModel then
-		setViewportIcon(buildPreview, fireModel, "Campfire")
+		setViewportIcon(vpf, fireModel, "Campfire")
 	end
 end
+buildMenu:GetPropertyChangedSignal("Visible"):Connect(function()
+	if buildMenu.Visible then
+		showBuildIcon()
+	else
+		clearBuildIcon()
+	end
+end)
 
 -- Platform control modes: the HUD and bindings follow the input the
 -- player is actually using and switch live when it changes (touch
