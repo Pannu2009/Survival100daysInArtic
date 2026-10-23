@@ -216,8 +216,38 @@ function WorldBuilder:Build()
 	end
 
 	self:_plantTrees()
+	self:_plantTufts()
 	-- No fixed campfire anymore: players build their own from
 	-- blueprints (open-world direction, 2026-10-22).
+end
+
+-- Arctic grass tufts: two crossed frost-straw wedges poking
+-- through the snow. Pure dressing -- the client sways them in
+-- the wind (they are anchored and weightless to the server).
+function WorldBuilder:_plantTufts()
+	local folder = Instance.new("Folder")
+	folder.Name = "Tufts"
+	folder.Parent = workspace
+	self.TuftsFolder = folder
+
+	for _, spot in ipairs(self.Layout.Tufts or {}) do
+		local model = Instance.new("Model")
+		model.Name = "Tuft"
+		for i = 1, 2 do
+			local blade = Instance.new("WedgePart")
+			blade.Size = Vector3.new(0.16, 1.15, 0.6)
+			blade.Color = Color3.fromRGB(178, 166, 118)
+			blade.Material = Enum.Material.Grass
+			blade.Anchored = true
+			blade.CanCollide = false
+			blade.CanQuery = false
+			blade.CFrame = CFrame.new(0, 0.42, 0)
+				* CFrame.Angles(0, (spot.R or 0) + i * math.pi / 2, 0.13 * (i == 1 and 1 or -1))
+			blade.Parent = model
+		end
+		model.Parent = folder
+		self:SnapToGround(model, spot.X, spot.Z)
+	end
 end
 
 function WorldBuilder:_plantTrees()
@@ -636,6 +666,24 @@ function WorldBuilder:CompleteBlueprint(bp)
 end
 
 function WorldBuilder:UpdateState(clock, temperature)
+	-- Wind: strength follows the weather with a two-sine gust
+	-- envelope; direction veers slowly. Published (rounded) for
+	-- the client's blowing snow and sway.
+	do
+		local weather = temperature:GetWeather()
+		local base = weather == "Blizzard" and 0.95 or weather == "Storm" and 0.55 or 0.22
+		local t = os.clock()
+		local gust = 0.78 + 0.35 * math.sin(t * 0.33) * math.sin(t * 0.117 + 1.7)
+		local strength = math.floor(math.clamp(base * gust, 0.03, 1) * 50) / 50
+		local dir = math.floor((0.8 + math.sin(t * 0.011) * 0.9) * 20) / 20
+		if ReplicatedStorage:GetAttribute("WindStrength") ~= strength then
+			ReplicatedStorage:SetAttribute("WindStrength", strength)
+		end
+		if ReplicatedStorage:GetAttribute("WindDir") ~= dir then
+			ReplicatedStorage:SetAttribute("WindDir", dir)
+		end
+	end
+
 	local progress = clock:GetPhaseProgress()
 	local timeOfDay
 	if clock:GetPhase() == "Day" then

@@ -1694,3 +1694,95 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 end)
+
+-- Wind life (client-only dressing): blowing snow around the
+-- camera plus trees and grass tufts rocking in the gusts. The
+-- server publishes WindDir / WindStrength on ReplicatedStorage.
+do
+	local windPart = Instance.new("Part")
+	windPart.Name = "WindSnowVolume"
+	windPart.Size = Vector3.new(48, 16, 48)
+	windPart.Transparency = 1
+	windPart.CanCollide = false
+	windPart.CanQuery = false
+	windPart.Anchored = true
+	windPart.Parent = workspace
+	local snow = Instance.new("ParticleEmitter")
+	snow.Name = "BlowingSnow"
+	snow.Shape = Enum.ParticleEmitterShape.Box
+	snow.Color = ColorSequence.new(Color3.fromRGB(236, 242, 250))
+	snow.LightEmission = 0.25
+	snow.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(1, 0.05),
+	})
+	snow.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.5),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	snow.Lifetime = NumberRange.new(1.2, 2.2)
+	snow.Speed = NumberRange.new(1, 4)
+	snow.Drag = 0.4
+	snow.Rate = 0
+	snow.Parent = windPart
+
+	local swayTargets = {}
+	local function collectSway()
+		for _, folderName in ipairs({ "Trees", "Tufts" }) do
+			local folder = workspace:FindFirstChild(folderName)
+			if folder then
+				for _, model in ipairs(folder:GetChildren()) do
+					if model:IsA("Model") and not model:GetAttribute("SwayTracked") then
+						model:SetAttribute("SwayTracked", true)
+						local cf, size = model:GetBoundingBox()
+						table.insert(swayTargets, {
+							Model = model,
+							Base = model:GetPivot(),
+							Ground = Vector3.new(cf.Position.X, cf.Position.Y - size.Y / 2, cf.Position.Z),
+							Amp = folderName == "Tufts" and 2.3 or 1,
+						})
+					end
+				end
+			end
+		end
+	end
+
+	RunService.RenderStepped:Connect(function()
+		local camera = workspace.CurrentCamera
+		if camera then
+			windPart.CFrame = CFrame.new(camera.CFrame.Position)
+		end
+	end)
+
+	task.spawn(function()
+		while true do
+			task.wait(0.12)
+			local dir = ReplicatedStorage:GetAttribute("WindDir") or 0.8
+			local strength = ReplicatedStorage:GetAttribute("WindStrength") or 0.2
+			local windVec = Vector3.new(math.sin(dir), 0, math.cos(dir))
+			snow.Rate = 30 + 300 * strength
+			snow.Acceleration = windVec * (10 + 34 * strength) + Vector3.new(0, -3, 0)
+			collectSway()
+			local camera = workspace.CurrentCamera
+			if camera then
+				local camPos = camera.CFrame.Position
+				local axis = Vector3.new(windVec.Z, 0, -windVec.X)
+				local now = os.clock()
+				local swaySpeed = 1.2 + strength * 2.4
+				for i = #swayTargets, 1, -1 do
+					local target = swayTargets[i]
+					if not target.Model.Parent then
+						table.remove(swayTargets, i)
+					elseif (target.Ground - camPos).Magnitude < 230 then
+						local phase = (target.Ground.X * 0.37 + target.Ground.Z * 0.53) % (math.pi * 2)
+						local theta = math.sin(now * swaySpeed + phase) * (0.012 + 0.03 * strength) * target.Amp
+						local rotated = CFrame.new(target.Ground)
+							* CFrame.fromAxisAngle(axis, theta)
+							* CFrame.new(-target.Ground)
+						target.Model:PivotTo(rotated * target.Base)
+					end
+				end
+			end
+		end
+	end)
+end

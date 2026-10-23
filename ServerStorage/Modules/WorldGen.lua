@@ -48,6 +48,79 @@ function WorldGen.Generate(seedString)
 		Radius = rng:NextNumber(world.LakeMinRadius, world.LakeMaxRadius),
 	}
 
+	rng = master:Fork("hills")
+	layout.Hills = {}
+	layout.BroadHills = {}
+	local function clearOfLandmarks(x, z, margin)
+		if distanceTo(x, z, layout.Lake.X, layout.Lake.Z) < layout.Lake.Radius + margin then
+			return false
+		end
+		if distanceTo(x, z, layout.Mountain.X, layout.Mountain.Z) < layout.Mountain.Radius * 0.85 + margin then
+			return false
+		end
+		if distanceTo(x, z, 0, 0) < 85 then
+			return false
+		end
+		return true
+	end
+	for _ = 1, world.Hills do
+		for _try = 1, 10 do
+			local x, z = place(rng, 100, world.Radius - 60)
+			if clearOfLandmarks(x, z, 55) then
+				table.insert(layout.Hills, {
+					X = x, Z = z,
+					Radius = rng:NextNumber(world.HillMinRadius, world.HillMaxRadius),
+					Height = rng:NextNumber(world.HillMinHeight, world.HillMaxHeight),
+				})
+				break
+			end
+		end
+	end
+	for _ = 1, world.BroadHills do
+		local x, z = place(rng, 150, world.Radius - 150)
+		table.insert(layout.BroadHills, {
+			X = x, Z = z,
+			Radius = rng:NextNumber(260, 340),
+			Height = rng:NextNumber(3, 4.5),
+		})
+	end
+
+	rng = master:Fork("peaks")
+	layout.Peaks = {}
+	for _ = 1, world.Peaks do
+		for _try = 1, 12 do
+			local x, z = place(rng, 220, world.Radius - 70)
+			local ok = clearOfLandmarks(x, z, 60) and distanceTo(x, z, 0, 0) > 170
+			if ok then
+				for _, peak in ipairs(layout.Peaks) do
+					if distanceTo(x, z, peak.X, peak.Z) < 190 then
+						ok = false
+						break
+					end
+				end
+			end
+			if ok then
+				table.insert(layout.Peaks, {
+					X = x, Z = z,
+					Radius = rng:NextNumber(world.PeakMinRadius, world.PeakMaxRadius),
+					Height = rng:NextNumber(world.PeakMinHeight, world.PeakMaxHeight),
+				})
+				break
+			end
+		end
+	end
+
+	rng = master:Fork("tufts")
+	layout.Tufts = {}
+	for _ = 1, world.Tufts do
+		local x, z = place(rng, 30, 720)
+		local inLake = distanceTo(x, z, layout.Lake.X, layout.Lake.Z) < layout.Lake.Radius + 6
+		local inMountain = distanceTo(x, z, layout.Mountain.X, layout.Mountain.Z) < layout.Mountain.Radius * 0.7
+		if not inLake and not inMountain then
+			table.insert(layout.Tufts, { X = x, Z = z, R = rng:Next() * math.pi })
+		end
+	end
+
 	rng = master:Fork("forest")
 	layout.Trees = {}
 	for _ = 1, world.ForestClusters do

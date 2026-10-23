@@ -8,6 +8,22 @@ function TerrainBuilder.Build(layout)
 	local diameter = radius * 2
 	terrain:FillBlock(CFrame.new(0, -12, 0), Vector3.new(diameter, 24, diameter), Enum.Material.Snow)
 
+	-- Rolling ground first: broad swells, then hill domes (a
+	-- wide flat ball reads as a smooth hill in voxel terrain).
+	for _, hill in ipairs(layout.BroadHills or {}) do
+		terrain:FillBall(Vector3.new(hill.X, -(hill.Radius - hill.Height), hill.Z), hill.Radius, Enum.Material.Snow)
+	end
+	for _, hill in ipairs(layout.Hills or {}) do
+		terrain:FillBall(Vector3.new(hill.X, -(hill.Radius - hill.Height), hill.Z), hill.Radius, Enum.Material.Snow)
+	end
+
+	-- Small mountains: the big one's recipe, scaled down.
+	for _, peak in ipairs(layout.Peaks or {}) do
+		terrain:FillBall(Vector3.new(peak.X, 0, peak.Z), peak.Radius, Enum.Material.Rock)
+		terrain:FillBall(Vector3.new(peak.X, peak.Height * 0.45, peak.Z), peak.Radius * 0.62, Enum.Material.Rock)
+		terrain:FillBall(Vector3.new(peak.X, peak.Height * 0.8, peak.Z), peak.Radius * 0.34, Enum.Material.Snow)
+	end
+
 	local mountain = layout.Mountain
 	terrain:FillBall(Vector3.new(mountain.X, 0, mountain.Z), mountain.Radius, Enum.Material.Rock)
 	terrain:FillBall(Vector3.new(mountain.X, mountain.Height * 0.45, mountain.Z), mountain.Radius * 0.62, Enum.Material.Rock)
