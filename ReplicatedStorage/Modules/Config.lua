@@ -102,6 +102,7 @@ Config.Sled = {
 	RopeSpring = 15,
 	RopeDamp = 1.4,
 	Friction = 2.2,
+	LateralGrip = 5.5,
 	SlopeGravity = 30,
 	StaticHold = 5,
 	MaxSpeed = 30,

@@ -835,8 +835,16 @@ function SledService:_stepSled(dt)
 	end
 
 	self._vel += accel * dt
-	local friction = Config.Sled.Friction / math.sqrt(massFactor)
-	self._vel *= math.exp(-dt * friction)
+	-- Grip is directional: the sled rolls freely along its runners
+	-- but resists sliding sideways -- with give, so hard turns and
+	-- side slopes swing the back end out before the grip catches.
+	local invMass = 1 / math.sqrt(massFactor)
+	local rightNow = Vector3.new(-fwdH.Z, 0, fwdH.X)
+	local fwdV = self._vel:Dot(fwdH)
+	local sideV = self._vel:Dot(rightNow)
+	fwdV *= math.exp(-dt * Config.Sled.Friction * invMass)
+	sideV *= math.exp(-dt * Config.Sled.LateralGrip * invMass)
+	self._vel = fwdH * fwdV + rightNow * sideV
 	if self._vel.Magnitude > Config.Sled.MaxSpeed then
 		self._vel = self._vel.Unit * Config.Sled.MaxSpeed
 	end
@@ -911,8 +919,19 @@ function SledService:_stepSled(dt)
 	end
 
 	local targetY = world:GroundY(newPos.X, newPos.Z) + self._groundOffset
-	local smoothY = pos.Y + (targetY - pos.Y) * (1 - math.exp(-dt * 10))
-	sled:PivotTo(CFrame.new(newPos.X, smoothY, newPos.Z) * canon * self._orientOffset)
+	-- Height rides an underdamped spring: the sled floats over
+	-- crests and settles with a bounce instead of gliding flat.
+	-- Snaps when far off (spawn/teleport) so it never dives.
+	if self._yPos == nil or math.abs(targetY - self._yPos) > 3 then
+		self._yPos = targetY
+		self._yVel = 0
+	end
+	local yAccel = (targetY - self._yPos) * 110 - (self._yVel or 0) * 12
+	self._yVel = (self._yVel or 0) + yAccel * dt
+	self._yPos += self._yVel * dt
+	-- Lean into turns: body roll grows with turn rate and speed.
+	local lean = math.clamp(self._yawVel * self._vel.Magnitude * 0.035, -0.3, 0.3)
+	sled:PivotTo(CFrame.new(newPos.X, self._yPos, newPos.Z) * canon * CFrame.Angles(0, 0, lean) * self._orientOffset)
 
 	local ropes = puller and self._ropes[puller]
 	if ropes and ropes.hitch then
