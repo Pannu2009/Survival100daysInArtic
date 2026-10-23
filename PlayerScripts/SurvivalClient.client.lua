@@ -67,16 +67,17 @@ local function addStroke(parent, color, thickness, transparency)
 end
 
 
--- Day counter (Ajay's layout): top center, plain white text with
--- a thin black stroke, dashes either side. When the day rolls
--- over it pops — grows, flips the number at the peak, settles back.
+-- Day counter (Ajay's layout): flush with the top center of the
+-- screen, plain white text with a thin black stroke. When the day
+-- rolls over it pops — grows, flips the number at the peak, and
+-- settles back.
 local dayBanner = Instance.new("TextLabel")
 dayBanner.Name = "DayBanner"
 dayBanner.BackgroundTransparency = 1
 dayBanner.AnchorPoint = Vector2.new(0.5, 0)
-dayBanner.Position = UDim2.new(0.5, 0, 0, 8)
+dayBanner.Position = UDim2.new(0.5, 0, 0, 0)
 dayBanner.Size = UDim2.fromOffset(520, 34)
-dayBanner.Text = "------------ Day: 1 ------------"
+dayBanner.Text = "Day: 1"
 dayBanner.TextColor3 = Color3.new(1, 1, 1)
 dayBanner.TextSize = 24
 dayBanner.Font = Enum.Font.GothamBold
@@ -91,7 +92,7 @@ local dayScale = Instance.new("UIScale")
 dayScale.Parent = dayBanner
 
 local function dayText(day)
-	return "------------ Day: " .. tostring(day) .. " ------------"
+	return "Day: " .. tostring(day)
 end
 
 local function popDay(day)
@@ -141,8 +142,8 @@ local OBJECTIVES = {
 }
 
 -- Stat bars (Ajay's layout): each stat gets its OWN frame.
--- Health sits top-right where Roblox's health bar usually lives;
--- Warmth and Hunger stack on the left above the hotbar corner.
+-- Health sits flush top-right where Roblox's health bar usually
+-- lives; Warmth and Hunger are small frames stacked mid-left.
 local function makeStatFrame(name, size, position, anchorPoint)
 	local frame = Instance.new("Frame")
 	frame.Name = name
@@ -161,10 +162,11 @@ local function makeStatFrame(name, size, position, anchorPoint)
 end
 
 local function makeBar(parent, name)
-	makeLabel(parent, name, UDim2.fromOffset(58, 16), UDim2.fromOffset(8, 10), SILVER, 12)
+	local frameH = parent.Size.Y.Offset
+	makeLabel(parent, name, UDim2.fromOffset(58, 16), UDim2.fromOffset(8, (frameH - 16) / 2), SILVER, 12)
 	local track = Instance.new("Frame")
-	track.Size = UDim2.fromOffset(140, 12)
-	track.Position = UDim2.fromOffset(66, 12)
+	track.Size = UDim2.new(1, -76, 0, 12)
+	track.Position = UDim2.fromOffset(68, (frameH - 12) / 2)
 	track.BackgroundColor3 = SILVER
 	track.BackgroundTransparency = 0.6
 	track.BorderSizePixel = 0
@@ -183,11 +185,11 @@ local function makeBar(parent, name)
 	return fill
 end
 
-local healthFrame = makeStatFrame("HealthFrame", UDim2.fromOffset(216, 36), UDim2.new(1, -12, 0, 12), Vector2.new(1, 0))
+local healthFrame = makeStatFrame("HealthFrame", UDim2.fromOffset(216, 36), UDim2.new(1, -6, 0, 3), Vector2.new(1, 0))
 local healthFill = makeBar(healthFrame, "Health")
-local warmthFrame = makeStatFrame("WarmthFrame", UDim2.fromOffset(216, 36), UDim2.new(0, 12, 1, -158), Vector2.new(0, 0))
+local warmthFrame = makeStatFrame("WarmthFrame", UDim2.fromOffset(172, 28), UDim2.new(0, 8, 0.42, 0), Vector2.new(0, 0))
 local warmthFill = makeBar(warmthFrame, "Warmth")
-local hungerFrame = makeStatFrame("HungerFrame", UDim2.fromOffset(216, 36), UDim2.new(0, 12, 1, -116), Vector2.new(0, 0))
+local hungerFrame = makeStatFrame("HungerFrame", UDim2.fromOffset(172, 28), UDim2.new(0, 8, 0.42, 34), Vector2.new(0, 0))
 local hungerFill = makeBar(hungerFrame, "Hunger")
 
 -- Lighter fuel: a small pill floating just over the hotbar,
