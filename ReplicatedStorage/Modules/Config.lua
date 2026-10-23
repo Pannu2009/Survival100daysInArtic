@@ -36,6 +36,7 @@ Config.Temperature = {
 	StormDropC = -8,
 	BlizzardDropC = -16,
 	WeatherChance = { Storm = 0.18, Blizzard = 0.07 },
+	FirstWeatherDay = 5,
 	Exposure = {
 		Day = { Clear = 0.55, Storm = 1.05, Blizzard = 1.9 },
 		Night = { Clear = 1.1, Storm = 1.75, Blizzard = 3.0 },
@@ -161,6 +162,18 @@ Config.Log = {
 	DragDistance = 7,
 	DragMaxRise = 6,
 	DragHover = 1.1,
+}
+
+-- Hotbar / build-menu ViewportFrame icons. The camera auto-frames
+-- each model from its bounding box; these are the knobs if a model
+-- sits wrong. Per-tool overrides: ViewportIcons.PerTool = {
+--   Axe = { Yaw = -0.9, Pitch = 0.2, Zoom = 1.3 } } (angles radians;
+--   Zoom > 1 = farther away).
+Config.ViewportIcons = {
+	Yaw = -0.65,
+	Pitch = 0.38,
+	Zoom = 1,
+	PerTool = {},
 }
 
 -- Day 2 ice fishing. The rod arrives at Day 2 start (Weapons list,

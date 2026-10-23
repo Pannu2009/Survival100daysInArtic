@@ -692,9 +692,16 @@ function SledService:_togglePull(player)
 		self._pulling[player] = sled
 		if rootP then
 			local fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
-	-- Grade along the sled's nose (positive = uphill ahead); the
-	-- puller's legs feel it through GetPullWeight.
-	self._gradeAlong = gradX * fwdH.X + gradZ * fwdH.Z
+			-- Grade along the sled's nose (positive = uphill ahead);
+			-- the puller's legs feel it through GetPullWeight. Sampled
+			-- here at grab time (the _stepSled copies are local to
+			-- that function -- using them here crashed with nil).
+			local world = self.Gameplay.World
+			local sledPos = sled:GetPivot().Position
+			local gs = 3
+			local gradX = (world:GroundY(sledPos.X + gs, sledPos.Z) - world:GroundY(sledPos.X - gs, sledPos.Z)) / (2 * gs)
+			local gradZ = (world:GroundY(sledPos.X, sledPos.Z + gs) - world:GroundY(sledPos.X, sledPos.Z - gs)) / (2 * gs)
+			self._gradeAlong = gradX * fwdH.X + gradZ * fwdH.Z
 			local toPlayer = rootP.Position - sled:GetPivot().Position
 			if fwdH.X * toPlayer.X + fwdH.Z * toPlayer.Z < 0 then
 				self._yaw += math.pi

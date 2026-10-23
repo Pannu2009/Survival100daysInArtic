@@ -9,6 +9,7 @@ task.spawn(function()
 	for _ = 1, 20 do
 		pcall(function()
 			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
 		end)
 		task.wait(0.25)
 	end
@@ -322,7 +323,7 @@ local buildTitle = makeLabel(buildMenu, "BUILD", UDim2.new(1, -16, 0, 24), UDim2
 buildTitle.TextXAlignment = Enum.TextXAlignment.Center
 
 local campfireBuildButton = Instance.new("TextButton")
-campfireBuildButton.Size = UDim2.new(1, -24, 0, 46)
+campfireBuildButton.Size = UDim2.new(1, -88, 0, 46)
 campfireBuildButton.Position = UDim2.fromOffset(12, 42)
 campfireBuildButton.BackgroundColor3 = MARIGOLD
 campfireBuildButton.Text = "Campfire - 40kg of logs"
@@ -335,6 +336,21 @@ local campfireBuildCorner = Instance.new("UICorner")
 campfireBuildCorner.CornerRadius = UDim.new(0, 10)
 campfireBuildCorner.Parent = campfireBuildButton
 addStroke(campfireBuildButton, AUBERGINE, 1.5, 0.25)
+
+local buildPreview = Instance.new("ViewportFrame")
+buildPreview.Name = "CampfirePreview"
+buildPreview.Size = UDim2.fromOffset(56, 46)
+buildPreview.Position = UDim2.fromOffset(182, 42)
+buildPreview.BackgroundColor3 = Color3.fromRGB(24, 8, 22)
+buildPreview.BackgroundTransparency = 0.2
+buildPreview.BorderSizePixel = 0
+buildPreview.Ambient = Color3.fromRGB(165, 165, 178)
+buildPreview.LightColor = Color3.fromRGB(255, 250, 240)
+buildPreview.LightDirection = Vector3.new(-1, -1.4, -0.6)
+buildPreview.Parent = buildMenu
+local buildPreviewCorner = Instance.new("UICorner")
+buildPreviewCorner.CornerRadius = UDim.new(0, 8)
+buildPreviewCorner.Parent = buildPreview
 
 local buildCloseButton = Instance.new("TextButton")
 buildCloseButton.Size = UDim2.new(1, -24, 0, 34)
@@ -482,6 +498,81 @@ local function slotHintFor(index)
 	return ""
 end
 
+-- ViewportFrame icons: clone a tool's parts into a WorldModel,
+-- center them on the origin from the bounding box, and frame them
+-- with an auto-fit camera. Ajay tunes angles in Config.ViewportIcons
+-- (per-tool overrides there) -- background stays transparent so the
+-- slot's own color shows through.
+local function buildIconModel(source)
+	local model = Instance.new("Model")
+	local any = false
+	for _, d in ipairs(source:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local part = d:Clone()
+			for _, child in ipairs(part:GetChildren()) do
+				if not child:IsA("Mesh") and not child:IsA("SpecialMesh")
+					and not child:IsA("Decal") and not child:IsA("Texture")
+					and not child:IsA("SurfaceAppearance") then
+					child:Destroy()
+				end
+			end
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanQuery = false
+			part.Parent = model
+			any = true
+		end
+	end
+	if not any then
+		model:Destroy()
+		return nil
+	end
+	local cf = model:GetBoundingBox()
+	local pivot = model:GetPivot()
+	model:PivotTo(CFrame.new(pivot.Position - cf.Position) * (pivot - pivot.Position))
+	return model
+end
+
+local function setViewportIcon(vpf, source, iconName)
+	local oldWorld = vpf:FindFirstChildOfClass("WorldModel")
+	if oldWorld then
+		oldWorld:Destroy()
+	end
+	local oldCam = vpf:FindFirstChildOfClass("Camera")
+	if oldCam then
+		oldCam:Destroy()
+	end
+	vpf.CurrentCamera = nil
+	if not source then
+		return
+	end
+	local model = buildIconModel(source)
+	if not model then
+		return
+	end
+	local world = Instance.new("WorldModel")
+	world.Parent = vpf
+	model.Parent = world
+	local tuning = Config.ViewportIcons
+	local over = tuning.PerTool[iconName] or {}
+	local yaw = over.Yaw or tuning.Yaw
+	local pitch = over.Pitch or tuning.Pitch
+	local zoom = over.Zoom or tuning.Zoom
+	local _, size = model:GetBoundingBox()
+	local maxDim = math.max(size.X, size.Y, size.Z, 0.1)
+	local dist = maxDim * 1.35 * zoom / math.tan(math.rad(17.5))
+	local dir = Vector3.new(
+		math.sin(yaw) * math.cos(pitch),
+		math.sin(pitch),
+		math.cos(yaw) * math.cos(pitch)
+	)
+	local camera = Instance.new("Camera")
+	camera.FieldOfView = 35
+	camera.CFrame = CFrame.lookAt(dir * dist, Vector3.new(0, 0, 0))
+	camera.Parent = vpf
+	vpf.CurrentCamera = camera
+end
+
 local function makePoolSlot(index)
 	local slot = Instance.new("TextButton")
 	slot.Text = ""
@@ -497,12 +588,22 @@ local function makePoolSlot(index)
 	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = slot
 	addStroke(slot, AUBERGINE, 1, 0.6)
-	local label = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 4), SILVER, 12)
+	local icon = Instance.new("ViewportFrame")
+	icon.Size = UDim2.fromOffset(58, 27)
+	icon.Position = UDim2.fromOffset(5, 2)
+	icon.BackgroundTransparency = 1
+	icon.BorderSizePixel = 0
+	icon.Ambient = Color3.fromRGB(165, 165, 178)
+	icon.LightColor = Color3.fromRGB(255, 250, 240)
+	icon.LightDirection = Vector3.new(-1, -1.4, -0.6)
+	icon.Parent = slot
+	local label = makeLabel(slot, "", UDim2.new(1, -8, 0, 13), UDim2.fromOffset(4, 30), SILVER, 11)
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	local value = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 24), MARIGOLD, 13)
+	value.Visible = false
 	value.TextXAlignment = Enum.TextXAlignment.Center
 	local hint = makeLabel(slot, "", UDim2.fromOffset(24, 14), UDim2.fromOffset(3, 2), AUBERGINE, 11)
-	slotPool[index] = { Frame = slot, Name = label, Value = value, Hint = hint }
+	slotPool[index] = { Frame = slot, Name = label, Value = value, Hint = hint, Icon = icon, IconTool = nil }
 	slot.Activated:Connect(function()
 		local toolName = slotTools[index]
 		if toolName then
@@ -562,8 +663,18 @@ local function refreshHotbar()
 		local toolName = owned[i]
 		slotTools[i] = toolName
 		entry.Frame.Visible = toolName ~= nil
+		if not toolName and entry.IconTool ~= nil then
+			entry.IconTool = nil
+			setViewportIcon(entry.Icon, nil, "")
+		end
 		if toolName then
 			entry.Name.Text = toolName
+			if entry.IconTool ~= toolName then
+				entry.IconTool = toolName
+				local source = (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild(toolName))
+					or (character and character:FindFirstChild(toolName))
+				setViewportIcon(entry.Icon, source, toolName)
+			end
 			local equipped = character and character:FindFirstChild(toolName) ~= nil
 			entry.Frame.BackgroundColor3 = equipped and MARIGOLD or SILVER
 			entry.Frame.BackgroundTransparency = equipped and 0 or 0.75
@@ -586,6 +697,15 @@ if player.Character then
 	hookCharacter(player.Character)
 end
 player.CharacterAdded:Connect(hookCharacter)
+
+-- Blueprint menu preview: the built campfire's own model.
+do
+	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
+	local fireModel = assets and (assets:FindFirstChild("BonFire") or assets:FindFirstChild("FireBox"))
+	if fireModel then
+		setViewportIcon(buildPreview, fireModel, "Campfire")
+	end
+end
 
 -- Platform control modes: the HUD and bindings follow the input the
 -- player is actually using and switch live when it changes (touch
@@ -902,7 +1022,8 @@ local function watchAimTool(tool)
 	if wiredAimTools[tool] then
 		return
 	end
-	if tool.Name ~= "Shovel" and tool.Name ~= "Lighter" and tool.Name ~= "FishingRod" then
+	if tool.Name ~= "Shovel" and tool.Name ~= "Lighter" and tool.Name ~= "FishingRod"
+		and tool.Name ~= "Axe" then
 		return
 	end
 	wiredAimTools[tool] = true

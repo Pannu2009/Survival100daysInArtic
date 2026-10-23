@@ -137,6 +137,12 @@ function Gameplay:Start()
 	end)
 
 	self.Clock.OnPhaseChanged:Connect(function(phase, day)
+		-- Calm start: no storm or blizzard before Day 5.
+		if day < Config.Temperature.FirstWeatherDay then
+			self.Temperature:SetWeather("Clear")
+			print(("[Arctic] %s of day %d - weather: %s"):format(phase, day, self.Temperature:GetWeather()))
+			return
+		end
 		local roll = math.random()
 		if roll < Config.Temperature.WeatherChance.Blizzard then
 			self.Temperature:SetWeather("Blizzard")

@@ -372,7 +372,44 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 	if not root then
 		return
 	end
-	if toolName == "Shovel" then
+	if toolName == "Axe" then
+		if not character:FindFirstChild("Axe") then
+			return
+		end
+		local world = self.Gameplay.World
+		-- Ice: the dot is ON the lake (glacier), crack it there.
+		local groundHit = world:TerrainRaycastDown(hitPosition.X, hitPosition.Z)
+		if groundHit and groundHit.Material == Enum.Material.Glacier
+			and (groundHit.Position - hitPosition).Magnitude <= 3.5
+			and (hitPosition - root.Position).Magnitude <= def.Range + 4
+		then
+			if self:_cooldownReady(player, "Axe", def.Cooldown) then
+				self.Gameplay.Fish:HitIce(player, hitPosition)
+			end
+			return
+		end
+		-- Tree: the tree whose trunk the dot is touching.
+		local treesFolder = world.TreesFolder
+		if treesFolder then
+			for _, tree in ipairs(treesFolder:GetChildren()) do
+				if not tree:GetAttribute("Falling") then
+					local cf, size = tree:GetBoundingBox()
+					local localPos = cf:PointToObjectSpace(hitPosition)
+					local closest = cf:PointToWorldSpace(Vector3.new(
+						math.clamp(localPos.X, -size.X / 2, size.X / 2),
+						math.clamp(localPos.Y, -size.Y / 2, size.Y / 2),
+						math.clamp(localPos.Z, -size.Z / 2, size.Z / 2)
+					))
+					if (closest - hitPosition).Magnitude <= 2.5
+						and (closest - root.Position).Magnitude <= def.Range + 2
+					then
+						self:_hitTree(player, tree, def)
+						return
+					end
+				end
+			end
+		end
+	elseif toolName == "Shovel" then
 		if not character:FindFirstChild("Shovel") then
 			return
 		end
@@ -557,7 +594,8 @@ function Weapons:SwingAxe(player)
 	if not root then
 		return
 	end
-	if not self:_cooldownReady(player, "Axe", def.Cooldown) then
+	local readyAt = self._cooldowns[player] and self._cooldowns[player]["Axe"] or 0
+	if os.clock() < readyAt then
 		return
 	end
 
@@ -607,25 +645,23 @@ function Weapons:SwingAxe(player)
 		end
 	end
 	if not target then
-		-- No tree in reach: the swing may be cracking lake ice.
-		local rayParams = RaycastParams.new()
-		rayParams.FilterType = Enum.RaycastFilterType.Include
-		rayParams.FilterDescendantsInstances = { workspace.Terrain }
-		local origin2 = root.Position + Vector3.new(0, 1, 0)
-		local hit = workspace:Raycast(origin2, root.CFrame.LookVector * (def.Range + 3), rayParams)
-		if hit and hit.Material == Enum.Material.Glacier then
-			self.Gameplay.Fish:HitIce(player, hit.Position)
-		end
 		return
 	end
+	self:_hitTree(player, target, def)
+end
 
+-- One validated axe hit on a tree: cooldown, health, shake or fell.
+-- Shared by the proximity swing and the center-dot path.
+function Weapons:_hitTree(player, target, def)
+	if not self:_cooldownReady(player, "Axe", def.Cooldown) then
+		return
+	end
 	local remaining = (target:GetAttribute("Health") or Config.Tree.Health) - def.Damage
 	if remaining > 0 then
 		target:SetAttribute("Health", remaining)
 		self:_shakeTree(target)
 		return
 	end
-
 	self:_fellTree(target)
 	self.Gameplay:_markTutorial(player, "Felled")
 end
