@@ -15,10 +15,14 @@ function TerrainBuilder.Build(layout)
 
 	local lake = layout.Lake
 	terrain:FillBall(Vector3.new(lake.X, -8, lake.Z), lake.Radius, Enum.Material.Air)
-	-- Two layers: water below (surface at -3), a thin sheet of
-	-- glacier ice on top (surface at -2, 1 thick). Breaking the
-	-- ice carves the sheet and the water shows in the hole.
-	terrain:FillBlock(CFrame.new(lake.X, -4.5, lake.Z), Vector3.new(lake.Radius * 2, 3, lake.Radius * 2), Enum.Material.Water)
+	-- Three layers: a rock lakebed at the bottom (-10 to -8), a
+	-- proper body of water over it (5 thick, surface at -3), and
+	-- a thin sheet of glacier ice on top (surface at -2, 1
+	-- thick). Breaking the ice carves the sheet and the water
+	-- shows in the hole. (Before, under the water was the carved
+	-- air bowl -- straight through to the void.)
+	terrain:FillBlock(CFrame.new(lake.X, -9, lake.Z), Vector3.new(lake.Radius * 2, 2, lake.Radius * 2), Enum.Material.Rock)
+	terrain:FillBlock(CFrame.new(lake.X, -5.5, lake.Z), Vector3.new(lake.Radius * 2, 5, lake.Radius * 2), Enum.Material.Water)
 	terrain:FillBlock(CFrame.new(lake.X, -2.5, lake.Z), Vector3.new(lake.Radius * 2, 1, lake.Radius * 2), Enum.Material.Glacier)
 end
 
