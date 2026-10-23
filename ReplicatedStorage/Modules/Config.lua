@@ -111,7 +111,7 @@ Config.Sled = {
 
 Config.Tracks = {
 	SledLife = 7,
-	FootLife = 5,
+	FootLife = 8,
 	SledStep = 2.2,
 	FootStep = 1.9,
 }

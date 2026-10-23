@@ -43,13 +43,6 @@ local function pressColumn(vx, vz, surfaceY, dip, expiresAt)
 		return
 	end
 
-	-- Debug: dump every scanned voxel in this column.
-	for yi = 3, 1, -1 do
-		print("[TrackMarks] voxel yi=" .. yi,
-			"material:", materials[1][yi][1],
-			"occupancy:", occupancies[1][yi][1])
-	end
-
 	-- Find the topmost solid voxel in this column.
 	local topY = nil
 	for yi = 3, 1, -1 do
@@ -59,14 +52,9 @@ local function pressColumn(vx, vz, surfaceY, dip, expiresAt)
 		end
 	end
 	if not topY then
-		print("[TrackMarks] no solid voxel found in column", vx, vz)
 		return
 	end
-	print("[TrackMarks] surface cell yi=" .. topY,
-		"material:", materials[1][topY][1],
-		"occupancy:", occupancies[1][topY][1])
 	if materials[1][topY][1] ~= Enum.Material.Snow then
-		print("[TrackMarks] surface voxel is not Snow, skipping")
 		return
 	end
 
@@ -94,7 +82,6 @@ local function pressColumn(vx, vz, surfaceY, dip, expiresAt)
 		warn("[TrackMarks] WriteVoxels failed for cell", key)
 		return
 	end
-	print("[TrackMarks] pressed cell", key, "occupancy", baselineOcc, "->", targetOcc)
 
 	if not cell then
 		cellCount += 1
@@ -117,14 +104,10 @@ end
 -- by raycast). yaw: facing of the mark. depth01: 0 = light press,
 -- 1 = deepest. life: seconds before the snow pops back.
 function TrackMarks.Spawn(position, yaw, length, width, depth01, life)
-	print("[TrackMarks] Spawn: world nil?", world == nil)
 	if not world then
 		return
 	end
 	local hit = world:TerrainRaycastDown(position.X, position.Z)
-	print("[TrackMarks] Spawn: hit?", hit ~= nil,
-		"material:", hit and hit.Material,
-		"isSnow:", hit and (hit.Material == Enum.Material.Snow))
 	if not hit or hit.Material ~= Enum.Material.Snow then
 		return
 	end
@@ -132,7 +115,7 @@ function TrackMarks.Spawn(position, yaw, length, width, depth01, life)
 		return
 	end
 
-	local dip = 0.1 + 0.3 * math.clamp(depth01, 0, 1)
+	local dip = 0.12 + 0.33 * math.clamp(depth01, 0, 1)
 	local expiresAt = os.clock() + life
 
 	-- Columns whose centers fall inside the rotated mark rectangle.
