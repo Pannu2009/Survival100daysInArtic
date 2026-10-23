@@ -51,6 +51,8 @@ function Animals.new(gameplay)
 	self._commands = {}
 	self._packs = {}
 	self._nextPackId = 0
+	self._dangerSet = {}
+	self._dangerTick = 0
 	return self
 end
 
@@ -313,6 +315,9 @@ function Animals:DamageWolf(wolf, amount, attacker)
 	end
 	if not wolf.Owner then
 		if wolf.Health <= W.TameHealth then
+			if wolf.State ~= "Weakened" and attacker then
+				self.Gameplay:Notify(attacker, "It's weak -- drop a fish to tame it!")
+			end
 			wolf.State = "Weakened"
 			wolf.WeakSince = os.clock()
 			wolf.TargetPlayer = nil
@@ -451,6 +456,7 @@ function Animals:_finishTame(wolf, fish)
 	end
 	table.insert(list, wolf)
 	wolf.SlotIndex = #list
+	self.Gameplay:Notify(owner, ("Wolf tamed! (%d/%d)"):format(#list, W.TeamLimit))
 	wolf.Model:SetAttribute("Owner", owner.UserId)
 	self:_publishOwner(owner)
 	self:_refreshTag(wolf)
@@ -541,6 +547,29 @@ end
 
 -- ---------- the step ----------
 
+-- Wolves fear fire. A player sheltered by a lit campfire (or a
+-- burning log) is not a target: the pack will circle the light
+-- and stare, but it will not come in.
+function Animals:_shelteredByFire(position)
+	local gameplay = self.Gameplay
+	for _, fire in ipairs(gameplay.World.Fires or {}) do
+		if fire.Lit and fire.Fuel > 0 then
+			local anchor = fire.CookingPart or fire.Core
+			if anchor and (anchor.Position - position).Magnitude <= W.FireScareRadius then
+				return true
+			end
+		end
+	end
+	for log in pairs(gameplay._burning) do
+		if log and log.Parent then
+			if (log:GetPivot().Position - position).Magnitude <= W.FireLogScareRadius then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 function Animals:_nearestPlayer(position, maxDist)
 	local best, bestDist = nil, maxDist
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -591,6 +620,29 @@ end
 
 function Animals:_step(dt)
 	local now = os.clock()
+	-- Danger flag for the HUD: who is a wolf hunting right now?
+	self._dangerTick -= dt
+	if self._dangerTick <= 0 then
+		self._dangerTick = 0.25
+		local marked = {}
+		for _, wolf in ipairs(self.Wolves) do
+			if wolf.State == "Aggro" and wolf.TargetPlayer then
+				marked[wolf.TargetPlayer] = true
+			end
+		end
+		for player in pairs(self._dangerSet) do
+			if not marked[player] then
+				player:SetAttribute("InDanger", false)
+				self._dangerSet[player] = nil
+			end
+		end
+		for player in pairs(marked) do
+			if not self._dangerSet[player] then
+				player:SetAttribute("InDanger", true)
+				self._dangerSet[player] = true
+			end
+		end
+	end
 	local clock = self.Gameplay.Clock
 	local isNight = clock and clock:GetPhase() == "Night"
 
@@ -626,7 +678,9 @@ function Animals:_step(dt)
 				local near, dist = self:_nearestPlayer(pos, W.WaryRange)
 				if near then
 					local aggroRange = isNight and W.AggroRangeNight or W.AggroRangeDay
-					if dist <= aggroRange then
+					local nearRoot = near.Character and near.Character:FindFirstChild("HumanoidRootPart")
+					local sheltered = nearRoot and self:_shelteredByFire(nearRoot.Position)
+					if dist <= aggroRange and not sheltered then
 						wolf.State = "Aggro"
 						wolf.TargetPlayer = near
 					else
@@ -652,7 +706,7 @@ function Animals:_step(dt)
 				local d = (root.Position - pos).Magnitude
 				wolf.Yaw = yawLerp(wolf.Yaw, yawOf(horizontalDir(root.Position - pos)), dt * 7)
 				local aggroRange = isNight and W.AggroRangeNight or W.AggroRangeDay
-				if d <= aggroRange then
+				if d <= aggroRange and not self:_shelteredByFire(root.Position) then
 					wolf.State = "Aggro"
 				elseif d > W.WaryRange + 10 then
 					wolf.State = "Roam"
@@ -666,6 +720,10 @@ function Animals:_step(dt)
 			if not root then
 				wolf.State = "Roam"
 				wolf.TargetPlayer = nil
+			elseif think and self:_shelteredByFire(root.Position) then
+				-- The prey reached the firelight: break off and
+				-- circle instead. The pack waits you out.
+				wolf.State = "Wary"
 			else
 				local d = self:_moveToward(wolf, root.Position, W.ChaseSpeed, dt)
 				if d <= W.BiteRange and wolf.BiteCd <= 0 then

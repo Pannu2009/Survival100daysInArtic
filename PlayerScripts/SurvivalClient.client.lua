@@ -215,6 +215,9 @@ end
 local healthFrame = makeStatFrame("HealthFrame", UDim2.fromOffset(216, 36), UDim2.new(1, -6, 0, 3), Vector2.new(1, 0))
 local healthFill = makeBar(healthFrame, "Health")
 local warmthFrame = makeStatFrame("WarmthFrame", UDim2.fromOffset(172, 28), UDim2.new(0, 8, 0.42, 0), Vector2.new(0, 0))
+-- Why warmth is moving, in words, right under the bar.
+local warmthWhy = makeLabel(gui, "", UDim2.fromOffset(180, 14), UDim2.new(0, 14, 0.42, 31), SILVER, 11)
+warmthWhy.TextXAlignment = Enum.TextXAlignment.Left
 local warmthFill = makeBar(warmthFrame, "Warmth")
 local hungerFrame = makeStatFrame("HungerFrame", UDim2.fromOffset(172, 28), UDim2.new(0, 8, 0.42, 34), Vector2.new(0, 0))
 local hungerFill = makeBar(hungerFrame, "Hunger")
@@ -927,6 +930,86 @@ local function setBar(fill, value, maxValue)
 	fill.Size = UDim2.fromScale(fraction, 1)
 end
 
+-- Toasts: small event lines under the day banner (fish caught,
+-- fish cooked, wolf tamed, warnings). They stack, sit ~3s, fade.
+local TweenService = game:GetService("TweenService")
+local toastHolder = Instance.new("Frame")
+toastHolder.Name = "Toasts"
+toastHolder.Size = UDim2.fromOffset(360, 120)
+toastHolder.Position = UDim2.new(0.5, -180, 0, 88)
+toastHolder.BackgroundTransparency = 1
+toastHolder.BorderSizePixel = 0
+toastHolder.Parent = gui
+local toastLayout = Instance.new("UIListLayout")
+toastLayout.FillDirection = Enum.FillDirection.Vertical
+toastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+toastLayout.Padding = UDim.new(0, 5)
+toastLayout.Parent = toastHolder
+
+local function toast(text)
+	local labels = {}
+	for _, child in ipairs(toastHolder:GetChildren()) do
+		if child:IsA("TextLabel") then
+			table.insert(labels, child)
+		end
+	end
+	while #labels >= 3 do
+		table.remove(labels, 1):Destroy()
+	end
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromOffset(340, 28)
+	label.BackgroundColor3 = AUBERGINE
+	label.BackgroundTransparency = 0.25
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 14
+	label.Text = text
+	label.BorderSizePixel = 0
+	label.Parent = toastHolder
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = label
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.new(0, 0, 0)
+	stroke.Thickness = 1
+	stroke.Transparency = 0.5
+	stroke.Parent = label
+	task.delay(3.2, function()
+		if not label.Parent then
+			return
+		end
+		local fade = TweenService:Create(label, TweenInfo.new(0.5), { BackgroundTransparency = 1, TextTransparency = 1 })
+		fade:Play()
+		fade.Completed:Wait()
+		label:Destroy()
+	end)
+end
+remotes:WaitForChild("Notify").OnClientEvent:Connect(toast)
+
+-- Danger: a red edge pulse + label while a wolf is hunting you.
+local dangerFrame = Instance.new("Frame")
+dangerFrame.Name = "DangerFrame"
+dangerFrame.Size = UDim2.fromScale(1, 1)
+dangerFrame.BackgroundTransparency = 1
+dangerFrame.BorderSizePixel = 0
+dangerFrame.Visible = false
+dangerFrame.Parent = gui
+local dangerStroke = Instance.new("UIStroke")
+dangerStroke.Color = Color3.fromRGB(214, 48, 43)
+dangerStroke.Thickness = 5
+dangerStroke.Transparency = 0.5
+dangerStroke.Parent = dangerFrame
+local dangerLabel = makeLabel(gui, "WOLVES ARE HUNTING YOU", UDim2.fromOffset(340, 24), UDim2.new(0.5, -170, 0, 128), Color3.fromRGB(255, 90, 80), 17)
+dangerLabel.TextXAlignment = Enum.TextXAlignment.Center
+dangerLabel.Visible = false
+local dangerStroke2 = Instance.new("UIStroke")
+dangerStroke2.Color = Color3.new(0, 0, 0)
+dangerStroke2.Thickness = 1.2
+dangerStroke2.Parent = dangerLabel
+
+local lastColdWarn = 0
+local lastFoodWarn = 0
+
 local function refreshPlayer()
 	setBar(healthFill, player:GetAttribute("Health"), Config.Survival.MaxHealth)
 	setBar(warmthFill, player:GetAttribute("Warmth"), Config.Survival.MaxWarmth)
@@ -937,6 +1020,29 @@ local function refreshPlayer()
 		frost.BackgroundTransparency = 1
 	end
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
+	local hungerNow = player:GetAttribute("Hunger") or Config.Survival.MaxHunger
+	hungerFill.BackgroundColor3 = hungerNow <= 10 and Color3.fromRGB(214, 48, 43) or MARIGOLD
+	-- Warmth reason + danger + the two loud warnings (cooldowned).
+	local warmState = player:GetAttribute("WarmState") or ""
+	warmthWhy.Text = warmState
+	warmthWhy.TextColor3 = warmState == "Freezing" and Color3.fromRGB(255, 90, 80)
+		or warmState == "By the fire" and Color3.fromRGB(255, 190, 90)
+		or SILVER
+	local inDanger = player:GetAttribute("InDanger") == true
+	dangerFrame.Visible = inDanger
+	dangerLabel.Visible = inDanger
+	if inDanger then
+		dangerStroke.Transparency = 0.35 + 0.3 * math.sin(os.clock() * 6)
+	end
+	local nowClock = os.clock()
+	if warmthNow <= 25 and nowClock - lastColdWarn > 45 then
+		lastColdWarn = nowClock
+		toast("You're freezing -- get to a fire!")
+	end
+	if hungerNow <= 8 and nowClock - lastFoodWarn > 45 then
+		lastFoodWarn = nowClock
+		toast("You're starving -- eat something!")
+	end
 	lighterFuelLabel.Text = "Fuel: " .. tostring(player:GetAttribute("LighterFuel") or 0)
 	-- The tutorial ends the moment the campfire is lit (step 5):
 	-- the banner goes away for good.

@@ -135,6 +135,11 @@ function Gameplay:Start()
 		self.Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 	end)
 
+	local notify = Instance.new("RemoteEvent")
+	notify.Name = "Notify"
+	notify.Parent = remotes
+	self._notifyRemote = notify
+
 	local fishingSync = Instance.new("RemoteEvent")
 	fishingSync.Name = "FishingSync"
 	fishingSync.Parent = remotes
@@ -631,6 +636,14 @@ function Gameplay:_attachDragPrompt(log)
 	end
 end
 
+-- A small toast on one player's screen (caught / cooked /
+-- tamed / warnings). Presentation lives on the client.
+function Gameplay:Notify(player, text)
+	if self._notifyRemote then
+		self._notifyRemote:FireClient(player, text)
+	end
+end
+
 function Gameplay:Update(dt)
 	local world = self.World
 	self.Fish:Cook(dt)
@@ -684,6 +697,21 @@ function Gameplay:Update(dt)
 					break
 				end
 			end
+		end
+
+		-- Why is your warmth moving? Published for the HUD label
+		-- under the warmth bar.
+		local warmState
+		if survival.Warmth <= Config.Sickness.ColdWarmthThreshold then
+			warmState = "Freezing"
+		elseif context.FireRate then
+			warmState = "By the fire"
+		else
+			warmState = "Losing warmth"
+		end
+		if survival._warmState ~= warmState then
+			survival._warmState = warmState
+			player:SetAttribute("WarmState", warmState)
 		end
 
 		-- Footprints: a pressed-snow mark every step while walking.

@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
@@ -194,6 +195,15 @@ function FishSystem:Cook(dt)
 					local t = (fish:GetAttribute("CookTime") or 0) + dt
 					if t >= Config.Food.CookSeconds then
 						fish:SetAttribute("Cooked", true)
+						-- Whoever is standing by the fire hears it:
+						-- dinner's ready.
+						for _, pl in ipairs(Players:GetPlayers()) do
+							local ch = pl.Character
+							local rt = ch and ch:FindFirstChild("HumanoidRootPart")
+							if rt and part and (rt.Position - part.Position).Magnitude <= 12 then
+								self.Gameplay:Notify(pl, "Fish cooked!")
+							end
+						end
 						for _, p in ipairs(fish:GetDescendants()) do
 							if p:IsA("BasePart") then
 								p.Color = Color3.fromRGB(198, 124, 56)
@@ -543,6 +553,7 @@ function FishSystem:TickFishing(dt)
 					toward = toward.Unit * 1.6
 				end
 				self:_endSession(player)
+				self.Gameplay:Notify(player, "Fish caught!")
 				self:Spawn(holePos.X + toward.X, holePos.Z + toward.Z)
 			elseif session.Progress <= 0 or now > session.ReelEndsAt then
 				self:_endSession(player) -- it slipped away

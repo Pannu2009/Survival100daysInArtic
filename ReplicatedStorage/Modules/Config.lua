@@ -38,8 +38,8 @@ Config.Temperature = {
 	WeatherChance = { Storm = 0.18, Blizzard = 0.07 },
 	FirstWeatherDay = 5,
 	Exposure = {
-		Day = { Clear = 0.55, Storm = 1.05, Blizzard = 1.9 },
-		Night = { Clear = 1.1, Storm = 1.75, Blizzard = 3.0 },
+		Day = { Clear = 0.8, Storm = 1.55, Blizzard = 2.75 },
+		Night = { Clear = 1.6, Storm = 2.55, Blizzard = 4.4 },
 	},
 }
 
@@ -189,6 +189,8 @@ Config.Wolves = {
 	BiteRange = 3.4,
 	BiteCooldown = 1.2,
 	AxeDamage = 12,
+	FireScareRadius = 13,
+	FireLogScareRadius = 7,
 	AggroRangeDay = 16,
 	AggroRangeNight = 38,
 	WaryRange = 26,

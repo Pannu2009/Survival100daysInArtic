@@ -356,6 +356,13 @@ function SledService:Start()
 			if self._pulling[player] then
 				self:_releasePull(player)
 			end
+			-- A rider whose character goes (death is final here)
+			-- must not leave the sled believing it's still being
+			-- ridden: stop riding AND unhitch, so the team state
+			-- never outlives the character it was steering.
+			if self._team and self._team.Owner == player then
+				self:_unhitch()
+			end
 		end)
 	end
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -776,9 +783,14 @@ end
 
 function SledService:_hitch(player)
 	local sled = self.Sled
+	-- Same courtesy as the manual pull: hands empty before the
+	-- team takes over, so a dragged item never stays live while
+	-- riding or steering.
+	self.Gameplay:ReleaseDraggedLogs(player)
 	sled:SetAttribute("PulledBy", player.UserId)
 	self._team = { Owner = player, Riding = false, HasInput = false }
 	self.Gameplay.Animals:SetHarnessed(player, true, self)
+	self.Gameplay:Notify(player, "Team hitched -- the Ride prompt is at the back of the sled")
 	self:_refreshPrompts()
 	print(("[Arctic] %s hitched a wolf team (%d)"):format(player.Name, self.Gameplay.Animals:Count(player)))
 end

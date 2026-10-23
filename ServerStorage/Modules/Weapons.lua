@@ -426,6 +426,15 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 		if not hit or (hit.Position - hitPosition).Magnitude > 3.5 then
 			return
 		end
+		-- Range is validated HERE, before either effect runs: the
+		-- dig path re-checks inside _digAt, but the ice path must
+		-- never be reachable from beyond shovel range either (the
+		-- client aim ray reaches 40 studs; the shovel does not).
+		local dx = hitPosition.X - root.Position.X
+		local dz = hitPosition.Z - root.Position.Z
+		if dx * dx + dz * dz > def.Range * def.Range then
+			return
+		end
 		-- On the lake the shovel cracks ice instead of digging
 		-- (slower work than the axe: 7 hits to break through).
 		if self.Gameplay.Fish:IsIceAt(hitPosition) then
