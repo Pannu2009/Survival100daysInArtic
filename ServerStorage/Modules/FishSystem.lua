@@ -304,6 +304,17 @@ function FishSystem:HitIce(player, position, work)
 	if self.Sessions[player] then
 		return
 	end
+	-- Only the lake cracks for fishing. The frozen ponds are
+	-- solid decoration ice -- no water, no fish under them.
+	local lake = self.Gameplay.World.Layout and self.Gameplay.World.Layout.Lake
+	if lake then
+		local dx = position.X - lake.X
+		local dz = position.Z - lake.Z
+		local rr = lake.Radius * 1.02
+		if dx * dx + dz * dz > rr * rr then
+			return
+		end
+	end
 	local key = iceKey(position.X, position.Z)
 	if self.Holes[key] then
 		return

@@ -196,6 +196,7 @@ function WorldBuilder:Build()
 
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
 	self.TreeTemplate = assets and assets:FindFirstChild("Tree")
+	self.GrassTemplate = assets and assets:FindFirstChild("Grass")
 	self.WoodLogTemplate = assets and assets:FindFirstChild("WoodLog")
 	if self.TreeTemplate then
 		print("[Arctic] Planting with Assets.Tree")
@@ -217,6 +218,7 @@ function WorldBuilder:Build()
 
 	self:_plantTrees()
 	self:_plantTufts()
+	self:_placeHorizon()
 	-- No fixed campfire anymore: players build their own from
 	-- blueprints (open-world direction, 2026-10-22).
 end
@@ -230,23 +232,44 @@ function WorldBuilder:_plantTufts()
 	folder.Parent = workspace
 	self.TuftsFolder = folder
 
+	local seedText = self.Layout.SeedString or "arctic"
+	local seedNum = 7
+	for i = 1, #seedText do
+		seedNum = (seedNum * 31 + string.byte(seedText, i)) % 100000
+	end
+	local rng = Random.new(seedNum + 41)
 	for _, spot in ipairs(self.Layout.Tufts or {}) do
-		local model = Instance.new("Model")
-		model.Name = "Tuft"
-		for i = 1, 2 do
-			local blade = Instance.new("WedgePart")
-			blade.Size = Vector3.new(0.16, 1.15, 0.6)
-			blade.Color = Color3.fromRGB(178, 166, 118)
-			blade.Material = Enum.Material.Grass
-			blade.Anchored = true
-			blade.CanCollide = false
-			blade.CanQuery = false
-			blade.CFrame = CFrame.new(0, 0.42, 0)
-				* CFrame.Angles(0, (spot.R or 0) + i * math.pi / 2, 0.13 * (i == 1 and 1 or -1))
-			blade.Parent = model
+		if self.GrassTemplate and self.GrassTemplate:IsA("BasePart") then
+			-- Ajay's grass: one white MeshPart, cloned at varied
+			-- sizes. It sways in the wind from the client.
+			local grass = self.GrassTemplate:Clone()
+			grass.Name = "Grass"
+			grass.Anchored = true
+			grass.CanCollide = false
+			grass.CanQuery = false
+			local s = rng:NextNumber(0.7, 1.9)
+			grass.Size = grass.Size * Vector3.new(s, s * rng:NextNumber(0.85, 1.3), s)
+			grass.Parent = folder
+			grass:PivotTo(CFrame.new(grass.Position) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0))
+			self:SnapPartToGround(grass, grass, spot.X, spot.Z)
+		else
+			local model = Instance.new("Model")
+			model.Name = "Tuft"
+			for i = 1, 2 do
+				local blade = Instance.new("WedgePart")
+				blade.Size = Vector3.new(0.16, 1.15, 0.6)
+				blade.Color = Color3.fromRGB(178, 166, 118)
+				blade.Material = Enum.Material.Grass
+				blade.Anchored = true
+				blade.CanCollide = false
+				blade.CanQuery = false
+				blade.CFrame = CFrame.new(0, 0.42, 0)
+					* CFrame.Angles(0, (spot.R or 0) + i * math.pi / 2, 0.13 * (i == 1 and 1 or -1))
+				blade.Parent = model
+			end
+			model.Parent = folder
+			self:SnapToGround(model, spot.X, spot.Z)
 		end
-		model.Parent = folder
-		self:SnapToGround(model, spot.X, spot.Z)
 	end
 end
 
@@ -273,6 +296,39 @@ function WorldBuilder:_plantTrees()
 		model:SetAttribute("Health", Config.Tree.Health)
 		model:PivotTo(model:GetPivot() * CFrame.Angles(0, math.random() * math.pi * 2, 0))
 		self:SnapToGround(model, spot.X, spot.Z)
+	end
+end
+
+-- Horizon silhouettes: a ring of rock pyramids with snow caps
+-- beyond the playable edge, so the world ends in mountains
+-- instead of void. Pure dressing, non-collidable.
+function WorldBuilder:_placeHorizon()
+	local folder = Instance.new("Folder")
+	folder.Name = "Horizon"
+	folder.Parent = workspace
+
+	local function pyramid(width, height, color, material)
+		local part = Instance.new("Part")
+		part.Size = Vector3.new(width, height, width)
+		part.Color = color
+		part.Material = material
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		local mesh = Instance.new("SpecialMesh")
+		mesh.MeshType = Enum.MeshType.Pyramid
+		mesh.Parent = part
+		return part
+	end
+
+	for _, spot in ipairs(self.Layout.Horizon or {}) do
+		local rock = pyramid(spot.Width, spot.Height, Color3.fromRGB(104, 116, 134), Enum.Material.Slate)
+		rock.CFrame = CFrame.new(spot.X, spot.Height / 2 - 8, spot.Z) * CFrame.Angles(0, spot.Rot, 0)
+		rock.Parent = folder
+		local capH = spot.Height * 0.42
+		local cap = pyramid(spot.Width * 0.44, capH, Color3.fromRGB(226, 233, 240), Enum.Material.Snow)
+		cap.CFrame = CFrame.new(spot.X, spot.Height - 8 - capH / 2 + capH * 0.28, spot.Z) * CFrame.Angles(0, spot.Rot, 0)
+		cap.Parent = folder
 	end
 end
 

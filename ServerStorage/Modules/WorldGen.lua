@@ -110,6 +110,43 @@ function WorldGen.Generate(seedString)
 		end
 	end
 
+	rng = master:Fork("ponds")
+	layout.Ponds = {}
+	for _ = 1, 10 do
+		for _try = 1, 12 do
+			local x, z = place(rng, 90, world.Radius - 80)
+			local ok = distanceTo(x, z, 0, 0) > 55
+				and distanceTo(x, z, layout.Lake.X, layout.Lake.Z) > layout.Lake.Radius + 40
+				and distanceTo(x, z, layout.Mountain.X, layout.Mountain.Z) > layout.Mountain.Radius * 0.8
+			if ok then
+				for _, pond in ipairs(layout.Ponds) do
+					if distanceTo(x, z, pond.X, pond.Z) < 48 then
+						ok = false
+						break
+					end
+				end
+			end
+			if ok then
+				table.insert(layout.Ponds, { X = x, Z = z, Radius = rng:NextNumber(7, 13) })
+				break
+			end
+		end
+	end
+
+	rng = master:Fork("horizon")
+	layout.Horizon = {}
+	for i = 1, 14 do
+		local angle = (i / 14) * math.pi * 2 + rng:NextNumber(-0.14, 0.14)
+		local dist = rng:NextNumber(1030, 1200)
+		table.insert(layout.Horizon, {
+			X = math.cos(angle) * dist,
+			Z = math.sin(angle) * dist,
+			Width = rng:NextNumber(150, 280),
+			Height = rng:NextNumber(90, 200),
+			Rot = rng:Next() * math.pi,
+		})
+	end
+
 	rng = master:Fork("tufts")
 	layout.Tufts = {}
 	for _ = 1, world.Tufts do

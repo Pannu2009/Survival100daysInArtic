@@ -1732,7 +1732,7 @@ do
 			local folder = workspace:FindFirstChild(folderName)
 			if folder then
 				for _, model in ipairs(folder:GetChildren()) do
-					if model:IsA("Model") and not model:GetAttribute("SwayTracked") then
+					if (model:IsA("Model") or model:IsA("BasePart")) and not model:GetAttribute("SwayTracked") then
 						model:SetAttribute("SwayTracked", true)
 						local cf, size = model:GetBoundingBox()
 						table.insert(swayTargets, {
@@ -1783,6 +1783,52 @@ do
 					end
 				end
 			end
+		end
+	end)
+end
+
+-- Aurora (client dressing): three neon ribbons high overhead
+-- that fade in at night and drift with slow sine undulation.
+do
+	local ribbons = {}
+	local ribbonColors = {
+		Color3.fromRGB(92, 255, 172),
+		Color3.fromRGB(84, 214, 255),
+		Color3.fromRGB(176, 128, 255),
+	}
+	for i = 1, 3 do
+		local ribbon = Instance.new("Part")
+		ribbon.Name = "AuroraRibbon" .. i
+		ribbon.Size = Vector3.new(300 + i * 60, 22 + i * 6, 1)
+		ribbon.Color = ribbonColors[i]
+		ribbon.Material = Enum.Material.Neon
+		ribbon.Transparency = 1
+		ribbon.CanCollide = false
+		ribbon.CanQuery = false
+		ribbon.Anchored = true
+		ribbon.Parent = workspace
+		ribbons[i] = ribbon
+	end
+
+	local fade = 0
+	RunService.RenderStepped:Connect(function(dt)
+		local isNight = ReplicatedStorage:GetAttribute("Phase") == "Night"
+		fade = math.clamp(fade + (isNight and dt * 0.25 or -dt * 0.25), 0, 1)
+		local camera = workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		local camPos = camera.CFrame.Position
+		local now = os.clock()
+		for i, ribbon in ipairs(ribbons) do
+			local sway = math.sin(now * 0.22 + i * 1.7) * 14
+			local tilt = math.sin(now * 0.16 + i * 2.3) * 0.07
+			ribbon.CFrame = CFrame.new(
+				camPos.X + sway * i,
+				135 + i * 16,
+				camPos.Z - 70 - i * 38
+			) * CFrame.Angles(0, math.sin(now * 0.05 + i) * 0.25, tilt)
+			ribbon.Transparency = 1 - fade * (0.42 + 0.13 * math.sin(now * 0.4 + i * 2.1))
 		end
 	end)
 end
