@@ -372,6 +372,10 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 	if not root then
 		return
 	end
+	local survival = self.Gameplay._survivals[player]
+	if survival and survival.Dead then
+		return
+	end
 	if toolName == "Axe" then
 		if not character:FindFirstChild("Axe") then
 			return
@@ -379,7 +383,10 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 		-- A wolf under the dot eats the swing first.
 		if typeof(hitInstance) == "Instance" then
 			local wolf = self.Gameplay.Animals:WolfFromInstance(hitInstance)
-			if wolf and not wolf.Owner and (hitPosition - root.Position).Magnitude <= def.Range + 4 then
+			if wolf and not wolf.Owner
+				and (hitPosition - root.Position).Magnitude <= def.Range + 4
+				and (wolf.Root.Position - root.Position).Magnitude <= def.Range + 4
+			then
 				if self:_cooldownReady(player, "Axe", def.Cooldown) then
 					self.Gameplay.Animals:DamageWolf(wolf, Config.Wolves.AxeDamage, player)
 				end
@@ -396,7 +403,13 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 			end
 			return
 		end
-		-- Tree: the tree whose trunk the dot is touching.
+		-- Tree: the tree whose trunk the dot is touching. The
+		-- scan below walks the whole forest, so a whiffed swing
+		-- still costs a short cooldown -- otherwise this remote
+		-- is a free server-CPU burn on loop.
+		if not self:_cooldownReady(player, "AxeScan", 0.15) then
+			return
+		end
 		local treesFolder = world.TreesFolder
 		if treesFolder then
 			for _, tree in ipairs(treesFolder:GetChildren()) do
@@ -465,7 +478,9 @@ function Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 				and not model:GetAttribute("OnSled")
 			then
 				local lp = getLogPart(model)
-				if lp and lp:GetAttribute("DraggedBy") == nil then
+				if lp and lp:GetAttribute("DraggedBy") == nil
+					and (lp.Position - root.Position).Magnitude <= def.Range + 2
+				then
 					self.Gameplay:_igniteLog(player, model)
 					return
 				end

@@ -41,11 +41,24 @@ function WorldGen.Generate(seedString)
 	}
 
 	rng = master:Fork("lake")
+	-- The lake and the mountain are the two biggest landmarks
+	-- and never checked each other: a seed could roll the lake
+	-- inside the mountain's footprint and carve a bowl through
+	-- solid rock. Retry placement until they clear each other.
+	local lakeRadius = rng:NextNumber(world.LakeMinRadius, world.LakeMaxRadius)
 	local lakeX, lakeZ = place(rng, world.LakeMinDistance, world.LakeMaxDistance)
+	for _try = 1, 12 do
+		if distanceTo(lakeX, lakeZ, layout.Mountain.X, layout.Mountain.Z)
+			> layout.Mountain.Radius * 0.75 + lakeRadius + 30
+		then
+			break
+		end
+		lakeX, lakeZ = place(rng, world.LakeMinDistance, world.LakeMaxDistance)
+	end
 	layout.Lake = {
 		X = lakeX,
 		Z = lakeZ,
-		Radius = rng:NextNumber(world.LakeMinRadius, world.LakeMaxRadius),
+		Radius = lakeRadius,
 	}
 
 	rng = master:Fork("hills")

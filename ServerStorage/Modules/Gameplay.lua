@@ -118,7 +118,24 @@ function Gameplay:Start()
 		if (position - root.Position).Magnitude > Config.Blueprint.PlaceRange then
 			return
 		end
-		self.World:PlaceBlueprint(position.X, position.Z)
+		-- One player may only have 3 live ghosts: an unbuilt
+		-- blueprint is a full model + prompt + billboard, and the
+		-- fires/blueprints lists are iterated every tick, so
+		-- uncapped placement is a map-flooding grief.
+		local mine = 0
+		for _, bp in ipairs(self.World.Blueprints) do
+			if bp.PlacedBy == player then
+				mine += 1
+			end
+		end
+		if mine >= 3 then
+			self:Notify(player, "Finish a campfire first (3 blueprints max)")
+			return
+		end
+		local bp = self.World:PlaceBlueprint(position.X, position.Z)
+		if bp then
+			bp.PlacedBy = player
+		end
 	end)
 
 	self.Weapons:BuildTools()
@@ -250,6 +267,7 @@ function Gameplay:Start()
 		self._tutorial[player] = nil
 		self._published[player] = nil
 		self._foot[player] = nil
+		self._burn[player] = nil
 		self.Weapons:CleanupPlayer(player)
 	end)
 end
@@ -404,6 +422,7 @@ function Gameplay:_takeLogNear(player, position)
 		if model
 			and model.Parent == self.LogsFolder
 			and not model:GetAttribute("OnSled")
+			and model:GetAttribute("Burning") ~= true
 			and (model:GetPivot().Position - position).Magnitude <= Config.Campfire.FeedRange
 		then
 			chosen = model
@@ -416,6 +435,7 @@ function Gameplay:_takeLogNear(player, position)
 			local logPart = getLogPart(log)
 			if logPart
 				and not log:GetAttribute("OnSled")
+				and log:GetAttribute("Burning") ~= true
 				and logPart:GetAttribute("DraggedBy") == nil
 			then
 				local distance = (log:GetPivot().Position - position).Magnitude
@@ -448,6 +468,13 @@ function Gameplay:_takeLogNear(player, position)
 end
 
 function Gameplay:_addLogToBlueprint(player, bp)
+	-- Prompt callbacks are client-triggered: re-check range here
+	-- (MaxActivationDistance is a client-side property).
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or (root.Position - bp.Position).Magnitude > 14 then
+		return nil
+	end
 	local taken = self:_takeLogNear(player, bp.Position)
 	if not taken then
 		return nil
@@ -460,6 +487,11 @@ end
 -- needs fuel inside it first — an empty fire cannot catch.
 function Gameplay:_lightFire(player, fire)
 	if fire.Lit or fire.Fuel <= 0 then
+		return false
+	end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or (root.Position - fire.Core.Position).Magnitude > 14 then
 		return false
 	end
 	if not self.Weapons:SpendFuel(player) then

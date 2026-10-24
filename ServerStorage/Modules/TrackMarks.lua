@@ -142,10 +142,14 @@ local function pressAtPoint(position, depth01, life)
 	local vz = math.floor(position.Z / RESOLUTION)
 	pressColumn(vx, vz, hit.Position.Y, dip, os.clock() + life)
 	local pkey = vx .. "," .. vz
-	if not packedCells[pkey] then
+	if packedCells[pkey] then
+		packedCells[pkey] = os.clock() + PACKED_LIFE
+	elseif packedCount < MAX_PACKED then
+		-- Only stored cells may count: a cell rejected at the cap
+		-- used to inflate the counter anyway, and nothing ever
+		-- decremented for it -- packed trails silently died for
+		-- the rest of the session.
 		packedCount += 1
-	end
-	if packedCount <= MAX_PACKED then
 		packedCells[pkey] = os.clock() + PACKED_LIFE
 	end
 end

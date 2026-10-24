@@ -57,6 +57,15 @@ local function validItem(item)
 		and item:GetAttribute(CONFIG.Attribute) == true
 end
 
+-- Burning wood is hands-off, enforced HERE as well as in the
+-- Gameplay grab flow: this module's own remote accepts "Start"
+-- directly, and a rule that only lives in one caller is a side
+-- door around it.
+local function isBurning(item)
+	local model = item and item.Parent
+	return model ~= nil and model:GetAttribute("Burning") == true
+end
+
 -- CLIENT VISUALS
 local function showVisual(item)
 	if visuals[item] or not item:IsA("BasePart") then
@@ -141,7 +150,7 @@ end
 function DragSystem.Start(player, item)
 	assert(RunService:IsServer(), "Start is server-only")
 
-	if not validItem(item) or serverDrags[item] or playerDrags[player] then
+	if not validItem(item) or isBurning(item) or serverDrags[item] or playerDrags[player] then
 		return false
 	end
 
@@ -375,6 +384,22 @@ function DragSystem.InitServer()
 				DragSystem.Stop(state.Player, item)
 				continue
 			end
+
+			-- The REAL part gets a speed limit too, not just the
+			-- intent ledger: CFrame movement reads zero velocity,
+			-- so a client that warps its item (through walls, up
+			-- cliffs) is caught by displacement rate instead.
+			local now = os.clock()
+			if state.LastItemPos then
+				local moved = (item.Position - state.LastItemPos).Magnitude
+				local rate = moved / math.max(now - (state.LastItemAt or now), 0.001)
+				if rate > CONFIG.MaxTargetSpeed + 25 then
+					DragSystem.Stop(state.Player, item)
+					continue
+				end
+			end
+			state.LastItemPos = item.Position
+			state.LastItemAt = now
 
 			if (item.Position - state.Position).Magnitude > CONFIG.DeviationTolerance then
 				-- The item snagged on something (tree, sled, terrain

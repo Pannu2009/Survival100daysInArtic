@@ -40,6 +40,12 @@ local function lengthAxis(size)
 end
 
 local function horizontalDir(v)
+	-- A NaN component makes Magnitude NaN, the < 0.01 guard
+	-- reads false, and .Unit hands back a NaN direction that
+	-- would poison the sled's yaw for everyone. Reject first.
+	if v.X ~= v.X or v.Z ~= v.Z then
+		return Vector3.xAxis
+	end
 	local h = Vector3.new(v.X, 0, v.Z)
 	if h.Magnitude < 0.01 then
 		return Vector3.xAxis
@@ -62,6 +68,7 @@ function SledService.new(world, gameplay)
 	self._cargoPart = nil
 	self._halfLength = 4
 	self._cargo = {}
+	self._cargoOwners = {}
 	self._cargoDims = {}
 	self._slots = {}
 	self._origSize = {}
@@ -608,6 +615,7 @@ function SledService:_loadPiece(player, best)
 
 	best:SetAttribute("OnSled", true)
 	table.insert(self._cargo, best)
+	self._cargoOwners[best] = player
 	self._cargoDims[best] = { len = effLen, thick = dims.thick }
 
 	local prompt = logPart:FindFirstChildOfClass("ProximityPrompt")
@@ -624,6 +632,11 @@ function SledService:_loadPiece(player, best)
 end
 
 function SledService:_unloadLast(player)
+	-- Cargo has an owner: the player who stored the top piece
+	-- unloads it -- or the sled's puller / team owner can, or
+	-- anyone once the storer has left the run. (Field added in
+	-- new(): self._cargoOwners.)
+
 	local sled = self.Sled
 	if not sled then
 		return
@@ -637,10 +650,21 @@ function SledService:_unloadLast(player)
 		return
 	end
 
-	local piece = table.remove(self._cargo)
-	if not piece then
+	local topPiece = self._cargo[#self._cargo]
+	if not topPiece then
 		return
 	end
+	local storer = self._cargoOwners[topPiece]
+	local sledUserId = sled:GetAttribute("PulledBy")
+	if storer and storer ~= player and storer.Parent ~= nil
+		and sledUserId ~= player.UserId
+	then
+		print("[Arctic] Unload blocked: not your cargo")
+		return
+	end
+
+	local piece = table.remove(self._cargo)
+	self._cargoOwners[piece] = nil
 	self._cargoDims[piece] = nil
 	self._slots[piece] = nil
 	piece:SetAttribute("OnSled", nil)
@@ -816,6 +840,12 @@ end
 function SledService:_toggleRide(player)
 	local team = self._team
 	if not team or team.Owner ~= player then
+		return
+	end
+	-- Every other sled prompt re-checks range server-side; this
+	-- one only had the prompt's client-side distance.
+	local root = playerRoot(player)
+	if not root or not self.Sled or not withinRange(root, self.Sled:GetPivot().Position, Config.Sled.InteractRange + 2) then
 		return
 	end
 	if team.Riding then
@@ -1128,6 +1158,11 @@ function SledService:_stepSled(dt)
 			local softening = 1 + self._vel.Magnitude * 0.02
 			self._yawVel += err * Config.Sled.YawResponse * 1.6 * gripState / softening * dt
 			local count = self.Gameplay.Animals:Count(team.Owner)
+			if count <= 0 then
+				-- The whole team died hitched: nobody is pulling.
+				self:_unhitch()
+				return
+			end
 			local topSpeed = Config.Sled.TeamSpeedBase + Config.Sled.TeamSpeedPerWolf * count
 			if self._vel:Dot(fwdH) < topSpeed then
 				local power = (Config.Sled.TeamAccelBase + Config.Sled.TeamAccelPerWolf * count) / math.sqrt(massFactor)

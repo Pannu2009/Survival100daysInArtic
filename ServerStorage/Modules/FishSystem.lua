@@ -125,7 +125,7 @@ function FishSystem:Eat(player, fish)
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	local part = getFishPart(fish)
-	if not survival or not root or not part then
+	if not survival or survival.Dead or not root or not part then
 		return
 	end
 	-- Not out of someone else's hands.
@@ -511,7 +511,10 @@ function FishSystem:SyncBar(player, barPos)
 		return
 	end
 	local now = os.clock()
-	local dtSync = math.max(now - (session.LastSync or now), 0.03)
+	-- Elapsed time only, capped: a per-message time FLOOR here
+	-- would hand out free bar movement on every spam call and
+	-- quietly beat ReelBarMaxSpeed.
+	local dtSync = math.clamp(now - (session.LastSync or now), 0, 0.05)
 	session.LastSync = now
 	local allowed = Config.Fishing.ReelBarMaxSpeed * dtSync
 	local delta = math.clamp(barPos - session.Bar, -allowed, allowed)

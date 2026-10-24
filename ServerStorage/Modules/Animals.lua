@@ -461,17 +461,19 @@ function Animals:DamageWolf(wolf, amount, attacker)
 		self:_killWolf(wolf)
 		return
 	end
-	if not wolf.Owner and attacker then
-		-- Crossing into tameable range does NOT calm him: he
-		-- keeps fighting until he notices a dropped fish. Better
-		-- wolves ask more: the leader always wants 2 fish, a
-		-- regular wolf wants 2 half the time.
-		if wolf.Health <= W.TameHealth and wolf.FishNeeded == nil then
-			wolf.FishNeeded = (wolf.Leader or math.random() < W.TwoFishChance) and 2 or 1
-			wolf.FishEaten = 0
-			wolf.TameableSince = os.clock()
+	-- Crossing into tameable range rolls the fish price on ANY
+	-- damage source (fire included) -- otherwise a wolf burned
+	-- down to tameable range never got a price rolled and the
+	-- tame fallback charged him 1 fish, leader or not.
+	if not wolf.Owner and wolf.Health <= W.TameHealth and wolf.FishNeeded == nil then
+		wolf.FishNeeded = (wolf.Leader or math.random() < W.TwoFishChance) and 2 or 1
+		wolf.FishEaten = 0
+		wolf.TameableSince = os.clock()
+		if attacker then
 			self.Gameplay:Notify(attacker, "It's weak -- drop a fish to tame it!")
 		end
+	end
+	if not wolf.Owner and attacker then
 		-- The whole pack answers an attack -- except a wolf who
 		-- has already noticed a fish: he keeps going for it.
 		if wolf.State ~= "GoEat" then
@@ -494,12 +496,11 @@ function Animals:_killWolf(wolf)
 		self:_removeFromOwner(wolf)
 	end
 	wolf.Model:Destroy()
-	for i, w in ipairs(self.Wolves) do
-		if w == wolf then
-			table.remove(self.Wolves, i)
-			break
-		end
-	end
+	-- The record leaves self.Wolves at the next _step flush, not
+	-- here: kills land mid-iteration (burn ticks, pack fights),
+	-- and removing from the array there silently skips the next
+	-- wolf's step.
+	wolf.Removed = true
 end
 
 function Animals:_removeFromOwner(wolf)
@@ -671,6 +672,13 @@ function Animals:SetCommand(player, mode, targetPos)
 	self._commands[player] = mode
 	player:SetAttribute("WolfCommand", mode)
 	if mode == "Attack" and typeof(targetPos) == "Vector3" then
+		-- You command from where you stand: the order point must
+		-- be near YOU, not anywhere on the map.
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not root or (targetPos - root.Position).Magnitude > 70 then
+			return
+		end
 		local target = self:NearestWildWolf(targetPos, 50)
 		if target then
 			for _, wolf in ipairs(self:TamedWolves(player)) do
@@ -1061,6 +1069,33 @@ end
 
 function Animals:_step(dt)
 	local now = os.clock()
+	-- Flush deferred wolf removals before iterating, and drop
+	-- pack records whose last wolf is gone -- a dead pack's home
+	-- otherwise blocks its 130-stud separation disc forever and
+	-- spawn placement degrades to the unchecked fallback.
+	do
+		local anyRemoved = false
+		for i = #self.Wolves, 1, -1 do
+			if self.Wolves[i].Removed then
+				table.remove(self.Wolves, i)
+				anyRemoved = true
+			end
+		end
+		if anyRemoved then
+			for packId in pairs(self._packs) do
+				local alive = false
+				for _, wolf in ipairs(self.Wolves) do
+					if wolf.PackId == packId then
+						alive = true
+						break
+					end
+				end
+				if not alive then
+					self._packs[packId] = nil
+				end
+			end
+		end
+	end
 	-- Danger flag for the HUD: who is a wolf hunting right now?
 	self._dangerTick -= dt
 	if self._dangerTick <= 0 then
