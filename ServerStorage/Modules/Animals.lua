@@ -204,10 +204,29 @@ function Animals:_buildWolf()
 		wolf:SetAttribute("WalkTrackReady", true)
 	end
 	attackTrack = loadAnim("AttackAnim")
-	idleTrack = loadAnim("Idle_1_Anim") or loadAnim("IdleAnim")
-	if idleTrack then
-		idleTrack.Looped = true
+	-- Idle is a ROTATION, not one clip: every Idle* animation in
+	-- the model joins the wolf's play set and he cycles them.
+	local idleTracks = {}
+	local function addIdle(name)
+		local track = loadAnim(name)
+		if track then
+			track.Looped = true
+			table.insert(idleTracks, track)
+		end
 	end
+	addIdle("Idle_1_Anim")
+	addIdle("Idle_2_Anim")
+	addIdle("Idle_3_Anim")
+	addIdle("IdleAnim")
+	for _, d in ipairs(wolf:GetDescendants()) do
+		if d:IsA("Animation") and d.Name:sub(1, 4) == "Idle"
+			and d.Name ~= "Idle_1_Anim" and d.Name ~= "Idle_2_Anim"
+			and d.Name ~= "Idle_3_Anim" and d.Name ~= "IdleAnim"
+		then
+			addIdle(d.Name)
+		end
+	end
+	idleTrack = idleTracks[1]
 	local biteSound = wolf:FindFirstChild("damage", true)
 	if biteSound and biteSound:IsA("Sound") then
 		wolf:SetAttribute("BiteSoundReady", true)
@@ -245,6 +264,11 @@ function Animals:_buildWolf()
 		WalkTrack = walkTrack,
 		AttackTrack = attackTrack,
 		IdleTrack = idleTrack,
+		IdleTracks = idleTracks,
+		Mood = "Wandering",
+		MoodTarget = "",
+		PlayUntil = 0,
+		PlayTurn = 0,
 		BiteSound = biteSoundFound,
 		Tag = tag,
 		TagLabel = label,
@@ -701,6 +725,57 @@ end
 
 -- ---------- tags ----------
 
+-- Play time: the wolf stops wandering, picks a (different)
+-- idle animation from his set, and slowly turns while it
+-- plays. This is what keeps wild wolves looking alive.
+function Animals:_enterPlaying(wolf, now)
+	wolf.State = "Playing"
+	wolf.PlayUntil = now + 2 + math.random() * 2
+	wolf.PlayTurn = (math.random() - 0.5) * 0.9
+	if wolf.IdleTracks and #wolf.IdleTracks > 1 then
+		if wolf.IdleTrack then
+			wolf.IdleTrack:Stop(0.2)
+		end
+		wolf.IdleTrack = wolf.IdleTracks[math.random(#wolf.IdleTracks)]
+	end
+end
+
+-- Ajay's mood table, kept on every wolf and mirrored to model
+-- attributes so it is visible/manageable in Studio:
+--   Wandering / Watching (target) / Attacking (target) /
+--   Eating / Playing / Following / Pulling
+function Animals:_syncMood(wolf)
+	local mood, target = "Wandering", ""
+	local state = wolf.State
+	if state == "Aggro" then
+		mood = "Attacking"
+		target = wolf.TargetPlayer and wolf.TargetPlayer.Name or ""
+	elseif state == "Wary" then
+		mood = "Watching"
+		target = wolf.TargetPlayer and wolf.TargetPlayer.Name or ""
+	elseif state == "GoEat" then
+		mood = "Eating"
+	elseif state == "Playing" then
+		mood = "Playing"
+	elseif state == "Harness" then
+		mood = "Pulling"
+	elseif wolf.Owner then
+		mood = "Following"
+	end
+	if wolf.AttackWolf and os.clock() < (wolf.AttackUntil or 0) then
+		mood = "Attacking"
+		target = "wild wolf"
+	end
+	if wolf.Mood ~= mood then
+		wolf.Mood = mood
+		wolf.Model:SetAttribute("Mood", mood)
+	end
+	if wolf.MoodTarget ~= target then
+		wolf.MoodTarget = target
+		wolf.Model:SetAttribute("MoodTarget", target)
+	end
+end
+
 function Animals:_refreshTag(wolf)
 	local now = os.clock()
 	if now < wolf.HowlUntil then
@@ -1069,6 +1144,8 @@ function Animals:_step(dt)
 			end
 		end
 
+		self:_syncMood(wolf)
+
 		if wolf.State == "Roam" then
 			if think then
 				local near, dist = self:_nearestPlayer(pos, W.WaryRange)
@@ -1085,15 +1162,49 @@ function Animals:_step(dt)
 					end
 				end
 				if not wolf.RoamTarget or (wolf.RoamTarget - pos).Magnitude < 2 then
-					-- Wander the pack's 50x50 home range, spread
-					-- evenly over it (sqrt keeps it off-center).
-					local a = math.random() * math.pi * 2
-					local r = math.sqrt(math.random()) * W.RoamRadius
-					wolf.RoamTarget = wolf.Home + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
+					-- Arrived: about a third of the time he stops
+					-- to PLAY (idle animation, slow turn) before
+					-- wandering on -- wolves live, not just patrol.
+					if wolf.RoamTarget and math.random() < 0.34 then
+						wolf.RoamTarget = nil
+						self:_enterPlaying(wolf, now)
+					else
+						-- Wander the pack's 50x50 home range, spread
+						-- evenly over it (sqrt keeps it off-center).
+						local a = math.random() * math.pi * 2
+						local r = math.sqrt(math.random()) * W.RoamRadius
+						wolf.RoamTarget = wolf.Home + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
+					end
 				end
 			end
 			if wolf.RoamTarget then
 				self:_moveToward(wolf, wolf.RoamTarget, W.RoamSpeed, dt)
+			end
+		elseif wolf.State == "Playing" then
+			-- Still watching for trouble while he plays.
+			if think then
+				local near, dist = self:_nearestPlayer(pos, W.WaryRange)
+				if near then
+					local aggroRange = isNight and W.AggroRangeNight or W.AggroRangeDay
+					local nearRoot = near.Character and near.Character:FindFirstChild("HumanoidRootPart")
+					local sheltered = nearRoot and self:_shelteredByFire(nearRoot.Position)
+					if dist <= aggroRange and not sheltered then
+						wolf.State = "Aggro"
+						wolf.TargetPlayer = near
+					else
+						wolf.State = "Wary"
+						wolf.TargetPlayer = near
+					end
+				end
+			end
+			if wolf.State == "Playing" then
+				if now >= (wolf.PlayUntil or 0) then
+					wolf.State = "Roam"
+					wolf.RoamTarget = nil
+				else
+					wolf.Yaw += (wolf.PlayTurn or 0) * dt
+					self:_moveToward(wolf, pos, 0, dt)
+				end
 			end
 		elseif wolf.State == "Wary" then
 			local target = wolf.TargetPlayer
