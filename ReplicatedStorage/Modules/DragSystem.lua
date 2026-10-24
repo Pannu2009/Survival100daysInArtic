@@ -159,13 +159,13 @@ function DragSystem.Start(player, item)
 		return false
 	end
 
-	-- Our items rest anchored; ownership needs them unanchored first.
+	-- Items rest UNANCHORED in the world (Ajay's call): they
+	-- sit on the ground by physics, and a drop just falls.
 	item.Anchored = false
 
 	local canSet, reason = item:CanSetNetworkOwnership()
 	if not canSet then
 		warn("Cannot assign drag ownership:", reason)
-		item.Anchored = true
 		return false
 	end
 
@@ -185,7 +185,6 @@ function DragSystem.Start(player, item)
 	if not success then
 		serverDrags[item] = nil
 		playerDrags[player] = nil
-		item.Anchored = true
 		return false
 	end
 
@@ -278,7 +277,12 @@ function DragSystem.Stop(player, item)
 			item:SetNetworkOwnershipAuto()
 		end)
 
-		item.Anchored = true
+		-- A drop FALLS: no re-anchor (that froze items mid-air
+		-- at hover height), no leftover glide momentum -- it
+		-- drops straight down and settles on the ground.
+		item.Anchored = false
+		item.AssemblyLinearVelocity = Vector3.zero
+		item.AssemblyAngularVelocity = Vector3.zero
 
 		if DragSystem.OnStopped then
 			DragSystem.OnStopped(item)

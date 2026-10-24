@@ -86,7 +86,9 @@ function FishSystem:Spawn(x, z)
 	for _, part in ipairs(fish:GetDescendants()) do
 		if part:IsA("BasePart") then
 			if part == primary then
-				part.Anchored = true
+				-- Unanchored like the logs: it drops the last
+				-- stud to the ice and rests there by physics.
+				part.Anchored = false
 				part.CanCollide = true
 			else
 				part.Anchored = false

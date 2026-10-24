@@ -559,7 +559,10 @@ function Weapons:_dropLogPieces(treeModel, spotPos)
 				if part:IsA("BasePart") then
 					part.CanCollide = true
 					if part == logPart then
-						part.Anchored = true
+						-- Unanchored: logs rest on the ground by
+						-- physics (they are ground-snapped at
+						-- spawn), never frozen mid-air.
+						part.Anchored = false
 					else
 						part.Anchored = false
 						local weld = Instance.new("WeldConstraint")
