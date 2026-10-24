@@ -9,6 +9,16 @@ local Temperature = require(ServerModules:WaitForChild("Temperature"))
 local WorldGen = require(ServerModules:WaitForChild("WorldGen"))
 local WorldBuilder = require(ServerModules:WaitForChild("WorldBuilder"))
 local Gameplay = require(ServerModules:WaitForChild("Gameplay"))
+local Aegis = require(ServerModules:WaitForChild("Aegis"))
+
+-- Aegis guards the game's remotes in AUDIT mode: it validates,
+-- rate-limits and reports to the Discord webhook, but never
+-- kicks -- enforcement comes after a tuning pass on real flags.
+Aegis.init({
+	auditOnly = true,
+	kickOnDetect = false,
+	discordWebhook = "https://discord.com/api/webhooks/1465179301170122835/-yg6mbzS083VRRLvDvRWzDJZJW2aXCHH5l8fxTzU6_FYlUY4W3LDA-Rt2k_B-yWnoU0vEW",
+})
 local SledService = require(ServerModules:WaitForChild("SledService"))
 local DragSystem = require(SharedModules:WaitForChild("DragSystem"))
 

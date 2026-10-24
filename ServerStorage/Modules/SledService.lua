@@ -6,6 +6,7 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local DragSystem = require(Modules:WaitForChild("DragSystem"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
+local Aegis = require(script.Parent:WaitForChild("Aegis"))
 
 local SledService = {}
 SledService.__index = SledService
@@ -340,7 +341,7 @@ function SledService:Start()
 		storeRemote.Name = "StoreDraggedItem"
 		storeRemote.Parent = remotes
 	end
-	storeRemote.OnServerEvent:Connect(function(player)
+	Aegis.secure(storeRemote, { args = {}, rateLimit = { 6, 1 } }, function(player)
 		self:StoreDragged(player)
 	end)
 

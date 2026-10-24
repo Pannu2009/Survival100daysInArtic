@@ -9,6 +9,7 @@ local FishSystem = require(script.Parent:WaitForChild("FishSystem"))
 local Animals = require(script.Parent:WaitForChild("Animals"))
 local Weapons = require(script.Parent:WaitForChild("Weapons"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
+local Aegis = require(script.Parent:WaitForChild("Aegis"))
 
 local Gameplay = {}
 
@@ -85,9 +86,12 @@ function Gameplay:Start()
 		end
 	end
 
-	local remotes = Instance.new("Folder")
-	remotes.Name = "Remotes"
-	remotes.Parent = ReplicatedStorage
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then
+		remotes = Instance.new("Folder")
+		remotes.Name = "Remotes"
+		remotes.Parent = ReplicatedStorage
+	end
 
 	local setSprinting = Instance.new("RemoteEvent")
 	setSprinting.Name = "SetSprinting"
@@ -102,7 +106,7 @@ function Gameplay:Start()
 	local placeBlueprint = Instance.new("RemoteEvent")
 	placeBlueprint.Name = "PlaceBlueprint"
 	placeBlueprint.Parent = remotes
-	placeBlueprint.OnServerEvent:Connect(function(player, position)
+	Aegis.secure(placeBlueprint, { args = { "Vector3" } }, function(player, position)
 		if typeof(position) ~= "Vector3" or not finiteVector(position) then
 			return
 		end
@@ -134,14 +138,14 @@ function Gameplay:Start()
 	local eatFish = Instance.new("RemoteEvent")
 	eatFish.Name = "EatFish"
 	eatFish.Parent = remotes
-	eatFish.OnServerEvent:Connect(function(player, fish)
+	Aegis.secure(eatFish, { args = { "Instance" } }, function(player, fish)
 		self.Fish:Eat(player, fish)
 	end)
 
 	local toolAim = Instance.new("RemoteEvent")
 	toolAim.Name = "ToolAim"
 	toolAim.Parent = remotes
-	toolAim.OnServerEvent:Connect(function(player, toolName, hitInstance, hitPosition)
+	Aegis.secure(toolAim, { args = { "string", "Instance", "Vector3" } }, function(player, toolName, hitInstance, hitPosition)
 		if typeof(hitPosition) == "Vector3" and not finiteVector(hitPosition) then
 			return
 		end
@@ -156,7 +160,7 @@ function Gameplay:Start()
 	local fishingSync = Instance.new("RemoteEvent")
 	fishingSync.Name = "FishingSync"
 	fishingSync.Parent = remotes
-	fishingSync.OnServerEvent:Connect(function(player, barPos)
+	Aegis.secure(fishingSync, { args = { "number" }, rateLimit = { 40, 1 } }, function(player, barPos)
 		if typeof(barPos) == "number" then
 			self.Fish:SyncBar(player, barPos)
 		end
@@ -165,7 +169,7 @@ function Gameplay:Start()
 	local wolfCommand = Instance.new("RemoteEvent")
 	wolfCommand.Name = "WolfCommand"
 	wolfCommand.Parent = remotes
-	wolfCommand.OnServerEvent:Connect(function(player, mode, targetPos)
+	Aegis.secure(wolfCommand, { args = { "string", "Vector3?" } }, function(player, mode, targetPos)
 		if mode == "Follow" or mode == "Wander" or mode == "Alert" or mode == "Attack" then
 			self.Animals:SetCommand(player, mode, targetPos)
 		end
@@ -174,7 +178,7 @@ function Gameplay:Start()
 	local dragAction = Instance.new("RemoteEvent")
 	dragAction.Name = "DragAction"
 	dragAction.Parent = remotes
-	dragAction.OnServerEvent:Connect(function(player, action, target)
+	Aegis.secure(dragAction, { args = { "string", "Instance?" } }, function(player, action, target)
 		if action == "Drop" then
 			local item = DragSystem.GetPlayerItem(player)
 			if item then
@@ -208,7 +212,7 @@ function Gameplay:Start()
 		end
 	end)
 
-	setSprinting.OnServerEvent:Connect(function(player, value)
+	Aegis.secure(setSprinting, { args = { "boolean" } }, function(player, value)
 		self._sprinting[player] = value == true
 	end)
 
