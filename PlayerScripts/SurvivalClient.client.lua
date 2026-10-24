@@ -1734,7 +1734,12 @@ do
 				for _, model in ipairs(folder:GetChildren()) do
 					if (model:IsA("Model") or model:IsA("BasePart")) and not model:GetAttribute("SwayTracked") then
 						model:SetAttribute("SwayTracked", true)
-						local cf, size = model:GetBoundingBox()
+						local cf, size
+						if model:IsA("Model") then
+							cf, size = model:GetBoundingBox()
+						else
+							cf, size = model.CFrame, model.Size
+						end
 						table.insert(swayTargets, {
 							Model = model,
 							Base = model:GetPivot(),

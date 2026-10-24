@@ -247,8 +247,10 @@ function WorldBuilder:_plantTufts()
 			grass.Anchored = true
 			grass.CanCollide = false
 			grass.CanQuery = false
-			local s = rng:NextNumber(0.7, 1.9)
-			grass.Size = grass.Size * Vector3.new(s, s * rng:NextNumber(0.85, 1.3), s)
+			-- One uniform size for every clone, normalized by
+			-- the template's height: tufts stand ~1.1 studs.
+			local s = 1.1 / math.max(grass.Size.Y, 0.1)
+			grass.Size = grass.Size * s
 			grass.Parent = folder
 			grass:PivotTo(CFrame.new(grass.Position) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0))
 			self:SnapPartToGround(grass, grass, spot.X, spot.Z)
