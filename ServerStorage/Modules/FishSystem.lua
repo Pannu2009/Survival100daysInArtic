@@ -151,6 +151,7 @@ function FishSystem:Eat(player, fish)
 	else
 		survival:Damage(-heal)
 	end
+	self.Gameplay:RecordAction(player, "eat")
 	local pieces = (fish:GetAttribute("Pieces") or Config.Food.PiecesPerFish) - 1
 	if pieces <= 0 then
 		if part:GetAttribute("DraggedBy") then
@@ -574,6 +575,7 @@ function FishSystem:TickFishing(dt)
 				end
 				self:_endSession(player)
 				self.Gameplay:Notify(player, "Fish caught!")
+				self.Gameplay:RecordAction(player, "fish")
 				self:Spawn(holePos.X + toward.X, holePos.Z + toward.Z)
 			elseif session.Progress <= 0 or now > session.ReelEndsAt then
 				self:_endSession(player) -- it slipped away

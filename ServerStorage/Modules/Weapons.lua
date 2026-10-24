@@ -724,6 +724,7 @@ function Weapons:_hitTree(player, target, def)
 	end
 	self:_fellTree(target)
 	self.Gameplay:_markTutorial(player, "Felled")
+	self.Gameplay:RecordAction(player, "chop")
 end
 
 return Weapons

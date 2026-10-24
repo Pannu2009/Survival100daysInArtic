@@ -317,6 +317,13 @@ function Gameplay:_syncAttributes(player)
 	end
 end
 
+-- BehaviorGuard feed: the game's real player actions, so the
+-- metronome + adaptive bot checks have data. Warn-only, no
+-- behavior change -- this just gives Aegis something to learn.
+function Gameplay:RecordAction(player, action)
+	Aegis.recordAction(player, action)
+end
+
 function Gameplay:_makeSurvival(player)
 	local survival = SurvivalPlayer.new(self.Clock, self.Temperature)
 	survival.OnSickChanged:Connect(function(isSick)
