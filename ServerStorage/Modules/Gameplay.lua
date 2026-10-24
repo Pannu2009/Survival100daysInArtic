@@ -47,6 +47,7 @@ function Gameplay.new(world, clock, temperature)
 	self._tutorial = {}
 	self._burning = {}
 	self._burn = {}
+	self._cough = {}
 	self._spread = {}
 	self.Fish = FishSystem.new(self)
 	self.Animals = Animals.new(self)
@@ -106,9 +107,19 @@ function Gameplay:Start()
 	local placeBlueprint = Instance.new("RemoteEvent")
 	placeBlueprint.Name = "PlaceBlueprint"
 	placeBlueprint.Parent = remotes
-	Aegis.secure(placeBlueprint, { args = { "Vector3" } }, function(player, position)
+	Aegis.secure(placeBlueprint, { args = { "Vector3", "string?" } }, function(player, position, structureName)
 		if typeof(position) ~= "Vector3" or not finiteVector(position) then
 			return
+		end
+		local survival0 = self._survivals[player]
+		if not survival0 or survival0.Dead then
+			return
+		end
+		-- Phase 3 seam: the client names the structure; anything
+		-- not in the registry falls back to the campfire.
+		local structureId = "Campfire"
+		if typeof(structureName) == "string" and Config.Structures[structureName] then
+			structureId = structureName
 		end
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -129,10 +140,10 @@ function Gameplay:Start()
 			end
 		end
 		if mine >= 3 then
-			self:Notify(player, "Finish a campfire first (3 blueprints max)")
+			self:Notify(player, "Finish building first (3 blueprints max)")
 			return
 		end
-		local bp = self.World:PlaceBlueprint(position.X, position.Z)
+		local bp = self.World:PlaceBlueprint(position.X, position.Z, structureId)
 		if bp then
 			bp.PlacedBy = player
 		end
@@ -144,8 +155,12 @@ function Gameplay:Start()
 		return self:_addLogToBlueprint(player, bp)
 	end
 	self.World.OnBlueprintBuilt = function(bp)
-		for player in pairs(bp.Contributors) do
-			self:_markTutorial(player, "Built")
+		-- Tutorial credit is the CAMPFIRE build (Day 1); future
+		-- structures branch on bp.StructureId here.
+		if bp.StructureId == nil or bp.StructureId == "Campfire" then
+			for player in pairs(bp.Contributors) do
+				self:_markTutorial(player, "Built")
+			end
 		end
 	end
 	self.World.OnLightAttempt = function(player, fire)
@@ -268,6 +283,7 @@ function Gameplay:Start()
 		self._published[player] = nil
 		self._foot[player] = nil
 		self._burn[player] = nil
+		self._cough[player] = nil
 		self.Weapons:CleanupPlayer(player)
 	end)
 end
@@ -284,6 +300,7 @@ function Gameplay:_syncAttributes(player)
 		Warmth = math.floor(survival.Warmth),
 		Hunger = math.floor(survival.Hunger:Get()),
 		IsSick = survival.IsSick,
+		Coins = survival.Coins or 0,
 		LighterFuel = self.Weapons:GetFuel(player),
 		TutorialStep = self:_tutorialStep(player),
 	}
@@ -302,6 +319,13 @@ end
 
 function Gameplay:_makeSurvival(player)
 	local survival = SurvivalPlayer.new(self.Clock, self.Temperature)
+	survival.OnSickChanged:Connect(function(isSick)
+		if isSick then
+			self:Notify(player, "You're sick -- get warm and rest. And quiet: coughing draws wolves.")
+		else
+			self:Notify(player, "You feel better.")
+		end
+	end)
 	survival.OnDied:Connect(function()
 		self.Fish:_endSession(player)
 		local character = player.Character
@@ -723,6 +747,32 @@ local function standingInFire(gameplay, position)
 	return false
 end
 
+-- Sickness teeth: while sick, you cough every few seconds.
+-- The cough is published (CoughCount attribute) so every
+-- client can show it, and it is NOISE -- wolves in earshot
+-- come to look (Animals:NoiseAt). Being sick by your own
+-- fire is miserable; being sick in the open is dangerous.
+function Gameplay:_tickCough(player, survival, root)
+	if not survival.IsSick or survival.Dead then
+		self._cough[player] = nil
+		return
+	end
+	local now = os.clock()
+	local state = self._cough[player]
+	if not state then
+		state = { Next = now + Config.Sickness.CoughMinSeconds }
+		self._cough[player] = state
+	end
+	if now >= state.Next then
+		local span = Config.Sickness.CoughMaxSeconds - Config.Sickness.CoughMinSeconds
+		state.Next = now + Config.Sickness.CoughMinSeconds + math.random() * span
+		player:SetAttribute("CoughCount", (player:GetAttribute("CoughCount") or 0) + 1)
+		if root then
+			self.Animals:NoiseAt(root.Position, player, Config.Sickness.CoughRadius)
+		end
+	end
+end
+
 function Gameplay:_tickBurn(player, survival, root, dt)
 	local now = os.clock()
 	local state = self._burn[player]
@@ -812,6 +862,7 @@ function Gameplay:Update(dt)
 		end
 
 		self:_tickBurn(player, survival, root, dt)
+		self:_tickCough(player, survival, root)
 
 		-- Why is your warmth moving? Published for the HUD label
 		-- under the warmth bar.

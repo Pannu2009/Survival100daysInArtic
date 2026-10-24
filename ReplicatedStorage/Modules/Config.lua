@@ -48,6 +48,13 @@ Config.Sickness = {
 	ExposureSeconds = 90,
 	CureWarmth = 60,
 	CureSeconds = 20,
+	-- Coughing: while sick you cough every few seconds, and a
+	-- cough is NOISE -- wild wolves within CoughRadius hear it
+	-- and come to look (the design's real sickness danger).
+	CoughMinSeconds = 4,
+	CoughMaxSeconds = 8,
+	CoughRadius = 55,
+	CoughInvestigateSeconds = 12,
 }
 
 Config.World = {
@@ -141,10 +148,26 @@ Config.Tracks = {
 }
 
 Config.Blueprint = {
-	CampfireCostKg = 40,
 	PlaceRange = 25,
 	MinSpacing = 6,
 }
+
+-- Buildable structures: the blueprint flow (ghost, feed
+-- prompt, labels, completion) reads THIS table, so a new
+-- structure is one entry here + a completion branch in
+-- Gameplay -- not surgery in five files. Phase 3 adds the
+-- sleeping bag and the shed as entries.
+Config.Structures = {
+	Campfire = {
+		DisplayName = "CAMPFIRE",
+		ButtonText = "Campfire - 40kg of logs",
+		CostKg = 40,
+		AssetName = "BonFire", -- model in ReplicatedStorage/Assets
+		FrameName = "Campfire", -- PointFrames icon
+		PromptText = "Campfire blueprint",
+	},
+}
+Config.StructureOrder = { "Campfire" }
 
 Config.Lighter = {
 	StartFuel = 100,

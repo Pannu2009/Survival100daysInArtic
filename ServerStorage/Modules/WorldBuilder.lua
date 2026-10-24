@@ -587,9 +587,16 @@ function WorldBuilder:_createFire(x, z)
 	return fire
 end
 
--- A placed blueprint: a ghost of the campfire players fill with
--- logs (CampfireCostKg total) until it becomes a real fire.
-function WorldBuilder:PlaceBlueprint(x, z)
+-- A placed blueprint: a ghost of a structure players fill
+-- with logs (the structure's CostKg) until it completes. The
+-- structure def comes from Config.Structures -- the campfire
+-- is the first entry, not a hardcoded special case.
+function WorldBuilder:PlaceBlueprint(x, z, structureId)
+	structureId = structureId or "Campfire"
+	local def = Config.Structures[structureId]
+	if not def then
+		return nil
+	end
 	local hit = self:TerrainRaycastDown(x, z)
 	if not hit or hit.Material ~= Enum.Material.Snow then
 		return nil
@@ -599,10 +606,17 @@ function WorldBuilder:PlaceBlueprint(x, z)
 	end
 	local groundY = self:GroundY(x, z)
 
+	-- Ghost template: the campfire uses the cached BonFire
+	-- asset; other structures look their asset up by name.
+	local template = self.BonfireTemplate
+	if structureId ~= "Campfire" then
+		local assets = ReplicatedStorage:FindFirstChild("Assets")
+		template = assets and assets:FindFirstChild(def.AssetName)
+	end
 	local model
-	if self.BonfireTemplate then
-		model = self.BonfireTemplate:Clone()
-		model.Name = "CampfireBlueprint"
+	if template then
+		model = template:Clone()
+		model.Name = structureId .. "Blueprint"
 		for _, obj in ipairs(model:GetDescendants()) do
 			if obj:IsA("BasePart") then
 				obj.Anchored = true
@@ -621,7 +635,7 @@ function WorldBuilder:PlaceBlueprint(x, z)
 		end
 	else
 		model = Instance.new("Model")
-		model.Name = "CampfireBlueprint"
+		model.Name = structureId .. "Blueprint"
 		local marker = Instance.new("Part")
 		marker.Shape = Enum.PartType.Cylinder
 		marker.Size = Vector3.new(0.4, 6, 6)
@@ -652,11 +666,13 @@ function WorldBuilder:PlaceBlueprint(x, z)
 		Position = Vector3.new(x, groundY, z),
 		FedKg = 0,
 		Contributors = {},
+		StructureId = structureId,
+		CostKg = def.CostKg,
 	}
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Add log"
-	prompt.ObjectText = "Campfire blueprint"
+	prompt.ObjectText = def.PromptText
 	prompt.HoldDuration = 0.3
 	prompt.MaxActivationDistance = 10
 	prompt.Parent = core
@@ -665,9 +681,9 @@ function WorldBuilder:PlaceBlueprint(x, z)
 		if kg then
 			bp.FedKg += kg
 			if bp.Label then
-				bp.Label.Text = ("CAMPFIRE %d/%dkg"):format(math.floor(bp.FedKg), Config.Blueprint.CampfireCostKg)
+				bp.Label.Text = ("%s %d/%dkg"):format(def.DisplayName, math.floor(bp.FedKg), bp.CostKg)
 			end
-			if bp.FedKg >= Config.Blueprint.CampfireCostKg then
+			if bp.FedKg >= bp.CostKg then
 				self:CompleteBlueprint(bp)
 			end
 		end
@@ -694,7 +710,7 @@ function WorldBuilder:PlaceBlueprint(x, z)
 	label.Size = UDim2.new(1, -12, 1, 0)
 	label.Position = UDim2.fromOffset(6, 0)
 	label.BackgroundTransparency = 1
-	label.Text = ("CAMPFIRE 0/%dkg"):format(Config.Blueprint.CampfireCostKg)
+	label.Text = ("%s 0/%dkg"):format(def.DisplayName, def.CostKg)
 	label.TextColor3 = MARIGOLD
 	label.TextSize = 15
 	label.Font = Enum.Font.GothamBold
@@ -716,7 +732,13 @@ function WorldBuilder:CompleteBlueprint(bp)
 	if bp.Model then
 		bp.Model:Destroy()
 	end
-	local fire = self:_createFire(bp.Position.X, bp.Position.Z)
+	-- What a completed blueprint BECOMES: the campfire turns
+	-- into a fire here; Phase 3 structures complete through
+	-- OnBlueprintBuilt branches in Gameplay instead.
+	local fire = nil
+	if bp.StructureId == nil or bp.StructureId == "Campfire" then
+		fire = self:_createFire(bp.Position.X, bp.Position.Z)
+	end
 	if self.OnBlueprintBuilt then
 		self.OnBlueprintBuilt(bp)
 	end

@@ -359,20 +359,39 @@ addStroke(buildMenu, SILVER, 1, 0.4)
 local buildTitle = makeLabel(buildMenu, "BUILD", UDim2.new(1, -16, 0, 24), UDim2.fromOffset(8, 8), SILVER, 17)
 buildTitle.TextXAlignment = Enum.TextXAlignment.Center
 
-local campfireBuildButton = Instance.new("TextButton")
-campfireBuildButton.Size = UDim2.fromOffset(164, 46)
-campfireBuildButton.Position = UDim2.fromOffset(12, 42)
-campfireBuildButton.BackgroundColor3 = MARIGOLD
-campfireBuildButton.Text = "Campfire - 40kg of logs"
-campfireBuildButton.TextColor3 = AUBERGINE
-campfireBuildButton.TextSize = 15
-campfireBuildButton.Font = Enum.Font.GothamBold
-campfireBuildButton.BorderSizePixel = 0
-campfireBuildButton.Parent = buildMenu
-local campfireBuildCorner = Instance.new("UICorner")
-campfireBuildCorner.CornerRadius = UDim.new(0, 10)
-campfireBuildCorner.Parent = campfireBuildButton
-addStroke(campfireBuildButton, AUBERGINE, 1.5, 0.25)
+-- One button per buildable structure, generated from
+-- Config.Structures (Phase 3: new structures appear here by
+-- adding a registry entry -- no menu code changes).
+local startPlacing -- forward-declared; defined with the ghost below
+local selectedStructure = "Campfire"
+local structureButtons = 0
+for _, structureId in ipairs(Config.StructureOrder) do
+	local def = Config.Structures[structureId]
+	if def then
+		structureButtons += 1
+		local button = Instance.new("TextButton")
+		button.Size = UDim2.fromOffset(164, 46)
+		button.Position = UDim2.fromOffset(12, 42 + (structureButtons - 1) * 52)
+		button.BackgroundColor3 = MARIGOLD
+		button.Text = def.ButtonText
+		button.TextColor3 = AUBERGINE
+		button.TextSize = 15
+		button.Font = Enum.Font.GothamBold
+		button.BorderSizePixel = 0
+		button.Parent = buildMenu
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 10)
+		corner.Parent = button
+		addStroke(button, AUBERGINE, 1.5, 0.25)
+		local id = structureId
+		button.Activated:Connect(function()
+			selectedStructure = id
+			if startPlacing then
+				startPlacing()
+			end
+		end)
+	end
+end
 
 local buildIconHolder = Instance.new("Frame")
 buildIconHolder.Name = "BuildIconHolder"
@@ -382,9 +401,10 @@ buildIconHolder.BackgroundTransparency = 1
 buildIconHolder.BorderSizePixel = 0
 buildIconHolder.Parent = buildMenu
 
+buildMenu.Size = UDim2.fromOffset(300, 42 + structureButtons * 52 + 52)
 local buildCloseButton = Instance.new("TextButton")
 buildCloseButton.Size = UDim2.new(1, -24, 0, 34)
-buildCloseButton.Position = UDim2.fromOffset(12, 156)
+buildCloseButton.Position = UDim2.fromOffset(12, 42 + structureButtons * 52 + 6)
 buildCloseButton.BackgroundColor3 = SILVER
 buildCloseButton.BackgroundTransparency = 0.4
 buildCloseButton.Text = "Close"
@@ -452,7 +472,7 @@ local function stopPlacing()
 	end
 end
 
-local function startPlacing()
+startPlacing = function()
 	buildMenu.Visible = false
 	if not buildGhost then
 		buildGhost = Instance.new("Part")
@@ -473,11 +493,10 @@ local function startPlacing()
 	cancelPlaceButton.Visible = true
 end
 
-campfireBuildButton.Activated:Connect(startPlacing)
 cancelPlaceButton.Activated:Connect(stopPlacing)
 placeButton.Activated:Connect(function()
 	if aimPosition then
-		placeBlueprintRemote:FireServer(aimPosition)
+		placeBlueprintRemote:FireServer(aimPosition, selectedStructure)
 	end
 	stopPlacing()
 end)
@@ -778,8 +797,9 @@ local function clearBuildIcon()
 end
 local function showBuildIcon()
 	clearBuildIcon()
+	local def = Config.Structures[selectedStructure] or Config.Structures.Campfire
 	local pointFrames = ReplicatedStorage:FindFirstChild("PointFrames")
-	local template = pointFrames and pointFrames:FindFirstChild("Campfire")
+	local template = pointFrames and pointFrames:FindFirstChild(def.FrameName)
 	if template and template:IsA("ViewportFrame") then
 		local clone = template:Clone()
 		clone.Size = UDim2.fromOffset(100, 100)
@@ -803,9 +823,9 @@ local function showBuildIcon()
 	vpfCorner.Parent = vpf
 	buildIconLive = vpf
 	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
-	local fireModel = assets and (assets:FindFirstChild("BonFire") or assets:FindFirstChild("FireBox"))
+	local fireModel = assets and assets:FindFirstChild(def.AssetName)
 	if fireModel then
-		setViewportIcon(vpf, fireModel, "Campfire")
+		setViewportIcon(vpf, fireModel, selectedStructure)
 	end
 end
 buildMenu:GetPropertyChangedSignal("Visible"):Connect(function()
@@ -815,6 +835,53 @@ buildMenu:GetPropertyChangedSignal("Visible"):Connect(function()
 		clearBuildIcon()
 	end
 end)
+
+-- Coughs: the server bumps a player's CoughCount attribute
+-- when he coughs (sickness). Show a "*cough!*" tag over his
+-- head briefly; if a Sound named "Cough" is ever added to
+-- SoundService it plays too -- asset-optional, like the
+-- wolves' AttackAnim hook.
+local SoundService = game:GetService("SoundService")
+local Debris = game:GetService("Debris")
+local function showCough(anyPlayer)
+	local character = anyPlayer.Character
+	local head = character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
+	if not head then
+		return
+	end
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "CoughTag"
+	billboard.Size = UDim2.fromOffset(110, 30)
+	billboard.StudsOffset = Vector3.new(0, 2.6, 0)
+	billboard.MaxDistance = 60
+	billboard.Adornee = head
+	billboard.Parent = head
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Text = "*cough!*"
+	label.TextColor3 = MARIGOLD
+	label.TextSize = 16
+	label.Font = Enum.Font.GothamBold
+	label.Parent = billboard
+	Debris:AddItem(billboard, 1.2)
+	local template = SoundService:FindFirstChild("Cough")
+	if template and template:IsA("Sound") then
+		local sound = template:Clone()
+		sound.Parent = head
+		sound:Play()
+		Debris:AddItem(sound, 2)
+	end
+end
+local function watchCoughs(anyPlayer)
+	anyPlayer:GetAttributeChangedSignal("CoughCount"):Connect(function()
+		showCough(anyPlayer)
+	end)
+end
+for _, anyPlayer in ipairs(Players:GetPlayers()) do
+	watchCoughs(anyPlayer)
+end
+Players.PlayerAdded:Connect(watchCoughs)
 
 -- Platform control modes: the HUD and bindings follow the input the
 -- player is actually using and switch live when it changes (touch

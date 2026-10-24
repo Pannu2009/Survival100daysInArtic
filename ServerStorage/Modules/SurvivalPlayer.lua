@@ -19,6 +19,11 @@ function SurvivalPlayer.new(clock, temperature)
 	self._diedConn = nil
 	self.Warmth = Config.Survival.MaxWarmth
 	self.Hunger = Hunger.new()
+	-- Phase 3 seams (defaults = today's behavior): Insulation
+	-- scales cold exposure loss (fur clothing will lower it);
+	-- Coins is the merchant currency (loot will grant it).
+	self.Insulation = 1
+	self.Coins = 0
 	self.IsSick = false
 	self.Dead = false
 	self.OnDied = Signal.new()
@@ -91,7 +96,7 @@ function SurvivalPlayer:Update(dt, context)
 	end
 	self.Hunger:Update(dt, context.IsSprinting == true, drainScale)
 
-	local loss = self.Temperature:GetExposureRate(self.Clock:GetPhase())
+	local loss = self.Temperature:GetExposureRate(self.Clock:GetPhase()) * (self.Insulation or 1)
 	local gain = (context.FireRate or 0) + (context.WarmthBonus or 0)
 	self.Warmth = math.clamp(self.Warmth + (gain - loss) * dt, 0, Config.Survival.MaxWarmth)
 

@@ -436,6 +436,28 @@ function Animals:WolfFromInstance(instance)
 	return nil
 end
 
+-- A noise in the open (a sick player's cough): wild wolves in
+-- earshot turn toward whoever made it, and if he's too far for
+-- their eyes they trot over to look. Attention, not instant
+-- aggro -- the ordinary Wary/Aggro rules still decide, and
+-- firelight still protects him. Wolves mid-tame (GoEat) and
+-- wolves already hunting are not distracted.
+function Animals:NoiseAt(position, player, radius)
+	local now = os.clock()
+	for _, wolf in ipairs(self.Wolves) do
+		if not wolf.Owner and wolf.Health > 0 and not wolf.Removed
+			and wolf.State ~= "GoEat" and wolf.State ~= "Aggro"
+		then
+			if (wolf.Root.Position - position).Magnitude <= radius then
+				wolf.State = "Wary"
+				wolf.TargetPlayer = player
+				wolf.NoisePos = position
+				wolf.NoiseUntil = now + Config.Sickness.CoughInvestigateSeconds
+			end
+		end
+	end
+end
+
 function Animals:NearestWildWolf(position, maxDist)
 	local best, bestDist = nil, maxDist
 	for _, wolf in ipairs(self.Wolves) do
@@ -1250,13 +1272,29 @@ function Animals:_step(dt)
 				local d = (root.Position - pos).Magnitude
 				wolf.Yaw = yawLerp(wolf.Yaw, yawOf(horizontalDir(root.Position - pos)), dt * 7)
 				local aggroRange = isNight and W.AggroRangeNight or W.AggroRangeDay
+				local investigating = false
 				if d <= aggroRange and not self:_shelteredByFire(root.Position) then
 					wolf.State = "Aggro"
+					wolf.NoisePos = nil
 				elseif d > W.WaryRange + 10 then
-					wolf.State = "Roam"
-					wolf.TargetPlayer = nil
+					if wolf.NoisePos and now < (wolf.NoiseUntil or 0) then
+						-- Heard something (a cough): trot to the
+						-- spot for a look; his senses take over
+						-- once he's close or the trail goes cold.
+						investigating = true
+						self:_moveToward(wolf, wolf.NoisePos, W.RoamSpeed * 1.6, dt)
+						if (wolf.NoisePos - pos).Magnitude < 5 then
+							wolf.NoisePos = nil
+						end
+					else
+						wolf.NoisePos = nil
+						wolf.State = "Roam"
+						wolf.TargetPlayer = nil
+					end
 				end
-				self:_moveToward(wolf, pos, 0, dt) -- hold ground, keep facing
+				if not investigating then
+					self:_moveToward(wolf, pos, 0, dt) -- hold ground, keep facing
+				end
 			end
 		elseif wolf.State == "Aggro" then
 			local target = wolf.TargetPlayer
