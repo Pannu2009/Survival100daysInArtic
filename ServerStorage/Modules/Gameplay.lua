@@ -11,6 +11,15 @@ local Weapons = require(script.Parent:WaitForChild("Weapons"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 
 local Gameplay = {}
+
+-- Remote positions arrive from clients: a NaN component poisons
+-- every magnitude comparison downstream (NaN > x is false, so
+-- range checks PASS on garbage). Reject non-finite vectors at
+-- the sink, same rule as the fishing SyncBar hardening.
+local function finiteVector(v)
+	return v.X == v.X and v.Y == v.Y and v.Z == v.Z
+		and math.abs(v.X) < 1e6 and math.abs(v.Y) < 1e6 and math.abs(v.Z) < 1e6
+end
 Gameplay.__index = Gameplay
 
 local function getLogPart(log)
@@ -94,7 +103,7 @@ function Gameplay:Start()
 	placeBlueprint.Name = "PlaceBlueprint"
 	placeBlueprint.Parent = remotes
 	placeBlueprint.OnServerEvent:Connect(function(player, position)
-		if typeof(position) ~= "Vector3" then
+		if typeof(position) ~= "Vector3" or not finiteVector(position) then
 			return
 		end
 		local character = player.Character
@@ -133,6 +142,9 @@ function Gameplay:Start()
 	toolAim.Name = "ToolAim"
 	toolAim.Parent = remotes
 	toolAim.OnServerEvent:Connect(function(player, toolName, hitInstance, hitPosition)
+		if typeof(hitPosition) == "Vector3" and not finiteVector(hitPosition) then
+			return
+		end
 		self.Weapons:OnToolAim(player, toolName, hitInstance, hitPosition)
 	end)
 

@@ -193,7 +193,11 @@ function DragSystem.Update(player, item, targetPosition)
 		return false
 	end
 
-	if not validItem(item) or typeof(targetPosition) ~= "Vector3" then
+	if not validItem(item) or typeof(targetPosition) ~= "Vector3"
+		or targetPosition.X ~= targetPosition.X
+		or targetPosition.Y ~= targetPosition.Y
+		or targetPosition.Z ~= targetPosition.Z
+	then
 		DragSystem.Stop(player, item)
 		return false
 	end

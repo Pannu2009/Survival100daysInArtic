@@ -24,8 +24,15 @@ function TerrainBuilder.Build(layout)
 		terrain:FillBall(Vector3.new(peak.X, peak.Height * 0.8, peak.Z), peak.Radius * 0.34, Enum.Material.Snow)
 	end
 
+	local mountain = layout.Mountain
+	terrain:FillBall(Vector3.new(mountain.X, 0, mountain.Z), mountain.Radius, Enum.Material.Rock)
+	terrain:FillBall(Vector3.new(mountain.X, mountain.Height * 0.45, mountain.Z), mountain.Radius * 0.62, Enum.Material.Rock)
+	terrain:FillBall(Vector3.new(mountain.X, mountain.Height * 0.8, mountain.Z), mountain.Radius * 0.34, Enum.Material.Snow)
+
 	-- Frozen ponds: a shallow carved bowl, plugged with snow,
 	-- iced over with a glacier sheet just below the snow line.
+	-- Painted AFTER the big mountain so its rock skirt
+	-- never buries a pond rim; the lake still paints last.
 	-- Decoration (and slippery sled ice) -- only the lake
 	-- cracks for fishing.
 	for _, pond in ipairs(layout.Ponds or {}) do
@@ -33,11 +40,6 @@ function TerrainBuilder.Build(layout)
 		terrain:FillBlock(CFrame.new(pond.X, -4, pond.Z), Vector3.new(pond.Radius * 2, 4.4, pond.Radius * 2), Enum.Material.Snow)
 		terrain:FillBlock(CFrame.new(pond.X, -1.15, pond.Z), Vector3.new(pond.Radius * 2, 1.5, pond.Radius * 2), Enum.Material.Glacier)
 	end
-
-	local mountain = layout.Mountain
-	terrain:FillBall(Vector3.new(mountain.X, 0, mountain.Z), mountain.Radius, Enum.Material.Rock)
-	terrain:FillBall(Vector3.new(mountain.X, mountain.Height * 0.45, mountain.Z), mountain.Radius * 0.62, Enum.Material.Rock)
-	terrain:FillBall(Vector3.new(mountain.X, mountain.Height * 0.8, mountain.Z), mountain.Radius * 0.34, Enum.Material.Snow)
 
 	local lake = layout.Lake
 	terrain:FillBall(Vector3.new(lake.X, -8, lake.Z), lake.Radius, Enum.Material.Air)
