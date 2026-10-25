@@ -24,6 +24,10 @@ function SurvivalPlayer.new(clock, temperature)
 	-- Coins is the merchant currency (loot will grant it).
 	self.Insulation = 1
 	self.Coins = 0
+	-- Phase 3 seam: Sleep sets CureBoost while the player
+	-- sleeps in a bag, so sickness cures faster there.
+	-- Default 1 = today's cure speed, untouched otherwise.
+	self.CureBoost = 1
 	self.IsSick = false
 	self.Dead = false
 	self.OnDied = Signal.new()
@@ -135,7 +139,7 @@ end
 function SurvivalPlayer:_updateSickness(dt)
 	if self.IsSick then
 		if self.Warmth >= Config.Sickness.CureWarmth then
-			self._cureTime += dt
+			self._cureTime += dt * (self.CureBoost or 1)
 			if self._cureTime >= Config.Sickness.CureSeconds then
 				self.IsSick = false
 				self._cureTime = 0

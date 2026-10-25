@@ -7,6 +7,15 @@ local DragSystem = require(Modules:WaitForChild("DragSystem"))
 local SurvivalPlayer = require(script.Parent:WaitForChild("SurvivalPlayer"))
 local FishSystem = require(script.Parent:WaitForChild("FishSystem"))
 local Animals = require(script.Parent:WaitForChild("Animals"))
+-- Phase 3 systems, one per module. Kids is a child module
+-- UNDER Animals (Animals/Kids.lua), loaded from the parent
+-- ModuleScript -- not a sibling file.
+local Kids = require(script.Parent:WaitForChild("Animals"):WaitForChild("Kids"))
+local Sleep = require(script.Parent:WaitForChild("Sleep"))
+local Shelters = require(script.Parent:WaitForChild("Shelters"))
+local Pelts = require(script.Parent:WaitForChild("Pelts"))
+local Merchant = require(script.Parent:WaitForChild("Merchant"))
+local Coal = require(script.Parent:WaitForChild("Coal"))
 local Weapons = require(script.Parent:WaitForChild("Weapons"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 local Aegis = require(script.Parent:WaitForChild("Aegis"))
@@ -51,6 +60,14 @@ function Gameplay.new(world, clock, temperature)
 	self._spread = {}
 	self.Fish = FishSystem.new(self)
 	self.Animals = Animals.new(self)
+	self.Kids = Kids.new(self)
+	self.Sleep = Sleep.new(self)
+	self.Shelters = Shelters.new(self)
+	self.Pelts = Pelts.new(self)
+	self.Merchant = Merchant.new(self)
+	self.Coal = Coal.new(self)
+	self._sleepBagMultiplierGranted = false
+	self._kidMultiplierGranted = {}
 	self.Weapons = Weapons.new(self)
 	self._foot = {}
 	self._published = {}
@@ -75,6 +92,14 @@ function Gameplay:Start()
 	TrackMarks.Init(self.World)
 	self.Fish:Start()
 	self.Animals:Start()
+	-- Phase 3 setup: all six systems start here, after the
+	-- world is built (SurvivalServer builds before Start).
+	self.Sleep:Start()
+	self.Shelters:Start()
+	self.Pelts:Start()
+	self.Merchant:Start()
+	self.Coal:Start()
+	self.Kids:Start()
 
 	DragSystem.OnStopped = function(item)
 		local model = item.Parent
@@ -155,11 +180,33 @@ function Gameplay:Start()
 		return self:_addLogToBlueprint(player, bp)
 	end
 	self.World.OnBlueprintBuilt = function(bp)
-		-- Tutorial credit is the CAMPFIRE build (Day 1); future
+		-- Tutorial credit is the CAMPFIRE build (Day 1); Phase 3
 		-- structures branch on bp.StructureId here.
 		if bp.StructureId == nil or bp.StructureId == "Campfire" then
 			for player in pairs(bp.Contributors) do
 				self:_markTutorial(player, "Built")
+			end
+		elseif bp.StructureId == "SleepingBag" then
+			-- Phase 3: a built bag becomes a sleepable bag,
+			-- and the FIRST bag built on the server grants
+			-- the design's +1 sleeping-bag multiplier, once.
+			local model, anchor = self.World:CreateStructure("SleepingBag", bp.Position.X, bp.Position.Z, false)
+			if model and anchor then
+				self.Sleep:RegisterBag(model, anchor)
+			end
+			if not self._sleepBagMultiplierGranted then
+				self._sleepBagMultiplierGranted = true
+				self.Clock:SetMultiplier(self.Clock:GetMultiplier() + 1)
+				for _, player in ipairs(Players:GetPlayers()) do
+					self:Notify(player, "Sleeping bag built! Day multiplier +1.")
+				end
+			end
+		elseif bp.StructureId == "Shed" then
+			-- Phase 3: a built shed becomes a storage shelter
+			-- (warmth radius, see Shelters:WarmthBonusAt).
+			local model, _anchor = self.World:CreateStructure("Shed", bp.Position.X, bp.Position.Z, false)
+			if model then
+				self.Shelters:RegisterBuiltShed(model, bp.Position.X, bp.Position.Z)
 			end
 		end
 	end
@@ -274,6 +321,18 @@ function Gameplay:Start()
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		self.Animals:CleanupPlayer(player)
+		if self.Kids then
+			self.Kids:CleanupPlayer(player)
+		end
+		if self.Sleep then
+			self.Sleep:CleanupPlayer(player)
+		end
+		if self.Pelts then
+			self.Pelts:CleanupPlayer(player)
+		end
+		if self.Merchant then
+			self.Merchant:CleanupPlayer(player)
+		end
 		self.Fish:_endSession(player)
 		self._rodGranted[player] = nil
 		self:_releaseLogs(player)
@@ -301,6 +360,10 @@ function Gameplay:_syncAttributes(player)
 		Hunger = math.floor(survival.Hunger:Get()),
 		IsSick = survival.IsSick,
 		Coins = survival.Coins or 0,
+		Pelts = self.Pelts and self.Pelts:GetCount(player) or 0,
+		FurPieces = self.Pelts and self.Pelts:GetFur(player) or 0,
+		Medkits = self.Merchant and self.Merchant:GetMedkits(player) or 0,
+		KidCount = self.Kids and self.Kids:CountFor(player) or 0,
 		LighterFuel = self.Weapons:GetFuel(player),
 		TutorialStep = self:_tutorialStep(player),
 	}
@@ -334,6 +397,11 @@ function Gameplay:_makeSurvival(player)
 		end
 	end)
 	survival.OnDied:Connect(function()
+		-- Death is final, and a dead owner loses their kids:
+		-- they wait where they stand, rescuable by anyone.
+		if self.Kids then
+			self.Kids:OnOwnerGone(player)
+		end
 		self.Fish:_endSession(player)
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -394,6 +462,10 @@ function Gameplay:_onCharacter(player, character)
 		character:Destroy()
 		return
 	end
+	-- A revive that passed the check above consumes its flag
+	-- HERE: without this, one medkit revive would leave the
+	-- flag set and every later death would respawn for free.
+	self._reviving[player] = nil
 	self:_releaseLogs(player)
 	self._survivals[player] = self:_makeSurvival(player)
 	self._sprinting[player] = false
@@ -656,6 +728,24 @@ end
 -- fire's AddWoodBox is consumed as that fire's fuel.
 function Gameplay:_feedFires()
 	for _, fire in ipairs(self.World.Fires) do
+		-- Phase 3 coal: a coal piece dropped in a fire's
+		-- AddWoodBox burns as coal fuel (long + hot), not wood.
+		if fire.AddBox and self.Coal and self.Coal.Folder then
+			for _, piece in ipairs(self.Coal.Folder:GetChildren()) do
+				if piece:GetAttribute("Coal") == true then
+					local inBox = false
+					if piece:IsA("BasePart") then
+						local rel = fire.AddBox.CFrame:PointToObjectSpace(piece.Position)
+						local half = fire.AddBox.Size / 2 + Vector3.new(0.3, 0.3, 0.3)
+						inBox = math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
+					end
+					if inBox and piece:GetAttribute("DraggedBy") == nil then
+						piece:Destroy()
+						self.World:AddCoal(fire, 1)
+					end
+				end
+			end
+		end
 		if fire.AddBox then
 			for _, log in ipairs(self.LogsFolder:GetChildren()) do
 				if not log:GetAttribute("OnSled") then
@@ -715,6 +805,33 @@ function Gameplay:_attachDragPrompt(log)
 	if existing then
 		existing:Destroy()
 	end
+end
+
+-- Phase 3: one kid's rescue grants +1 day multiplier,
+-- once per kid per run (server-wide, like the bag).
+function Gameplay:GrantKidMultiplier(player, kidId)
+	if self._kidMultiplierGranted[kidId] then
+		return
+	end
+	self._kidMultiplierGranted[kidId] = true
+	self.Clock:SetMultiplier(self.Clock:GetMultiplier() + 1)
+	for _, other in ipairs(Players:GetPlayers()) do
+		self:Notify(other, ("Kid rescued! Day multiplier +1 (now x%d)."):format(self.Clock:GetMultiplier()))
+	end
+end
+
+-- Phase 3: a medkit revives a dead player. The _reviving
+-- flag lets exactly one fresh character through
+-- _onCharacter, which clears it -- death stays final
+-- for everyone without a medkit.
+function Gameplay:ReviveWithMedkit(player)
+	local survival = self._survivals[player]
+	if not survival or not survival.Dead then
+		return
+	end
+	self._reviving[player] = true
+	player:LoadCharacter()
+	self:Notify(player, "Medkit used -- you're back! Don't waste it.")
 end
 
 -- A small toast on one player's screen (caught / cooked /
@@ -817,6 +934,23 @@ function Gameplay:Update(dt)
 	local world = self.World
 	self.Fish:Cook(dt)
 	self.Fish:TickFishing(dt)
+	-- Phase 3 ticks: sleep hunger/wake, kid follow/work/
+	-- eat, coal deposit regrowth. Merchant restock is
+	-- day-driven (OnDayAdvanced), not tick-driven.
+	if self.Sleep then
+		self.Sleep:Update(dt)
+	end
+	if self.Kids then
+		self.Kids:Update(dt)
+	end
+	if self.Coal then
+		self.Coal:Update(dt)
+	end
+	for _, fire in ipairs(world.Fires) do
+		if self.Pelts then
+			self.Pelts:EnsureCraftPrompt(fire)
+		end
+	end
 	self:_feedFires()
 	self:_tickBurning(dt)
 	self:_spreadFire(dt)
@@ -856,6 +990,20 @@ function Gameplay:Update(dt)
 			local rate = world:WarmthRateAt(root.Position)
 			if rate then
 				context.FireRate = rate
+			end
+			-- Phase 3 warmth: a sleeping bag you sleep in,
+			-- and any shed/shelter you stand in, add bonus
+			-- warmth on top of fire rate (SurvivalPlayer
+			-- adds WarmthBonus to the fire rate).
+			local bonus = 0
+			if self.Sleep then
+				bonus += self.Sleep:GetWarmthBonus(player)
+			end
+			if self.Shelters then
+				bonus += self.Shelters:WarmthBonusAt(root.Position)
+			end
+			if bonus > 0 then
+				context.WarmthBonus = bonus
 			end
 		end
 		if root and not context.FireRate then

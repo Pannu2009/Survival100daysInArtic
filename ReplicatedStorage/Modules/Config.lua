@@ -88,8 +88,8 @@ Config.World = {
 	PeakMaxHeight = 44,
 	Tufts = 420,
 	TreesPerCluster = 45,
-	CabinsMin = 3,
-	CabinsMax = 6,
+	CabinsMin = 5,
+	CabinsMax = 10,
 }
 
 Config.Campfire = {
@@ -166,8 +166,28 @@ Config.Structures = {
 		FrameName = "Campfire", -- PointFrames icon
 		PromptText = "Campfire blueprint",
 	},
+	-- Phase 3: the sleeping bag is a warmth anchor you can
+	-- carry in blueprint form; the shed is a storage shelter.
+	-- Both complete through Gameplay.OnBlueprintBuilt, exactly
+	-- like the campfire -- no blueprint-flow surgery.
+	SleepingBag = {
+		DisplayName = "SLEEPING BAG",
+		ButtonText = "Sleeping bag - 15kg of logs",
+		CostKg = 15,
+		AssetName = "SleepingBag", -- model in ReplicatedStorage/Assets, if present
+		FrameName = "SleepingBag", -- PointFrames icon, if present
+		PromptText = "Sleeping bag blueprint",
+	},
+	Shed = {
+		DisplayName = "SHED",
+		ButtonText = "Shed - 60kg of logs",
+		CostKg = 60,
+		AssetName = "Shed", -- Ajay's shed model, if present in Assets
+		FrameName = "Shed", -- PointFrames icon, if present
+		PromptText = "Shed blueprint",
+	},
 }
-Config.StructureOrder = { "Campfire" }
+Config.StructureOrder = { "Campfire", "SleepingBag", "Shed" }
 
 Config.Lighter = {
 	StartFuel = 100,
@@ -284,6 +304,90 @@ Config.Fishing = {
 	ReelFallSpeed = 1.1,
 	ReelGainPerSecond = 26,
 	ReelLossPerSecond = 16,
+}
+
+-- Phase 3: sleeping. Sleep rides out the night at a hunger
+-- cost, keeps you warm in the bag, and cures sickness faster
+-- (CureBoost multiplies the cure rate in SurvivalPlayer).
+-- The first sleeping bag BUILT on a server grants +1 day
+-- multiplier, once -- that is the design's sleeping-bag source.
+Config.Sleep = {
+	HungerPerSecond = 0.12,
+	WarmthBonus = 2.0,
+	CureBoost = 2,
+	SleepRange = 14,
+}
+
+-- Phase 3: shelters. Built sheds and broken pre-placed
+-- shelters both give a small warmth bonus inside their radius;
+-- broken shelters carry loot crates (coins + a little food).
+Config.Shelters = {
+	WarmthRadius = 14,
+	WarmthBonus = 0.8,
+	LootCratesPerShelter = 2,
+	LootCoinsMin = 5,
+	LootCoinsMax = 25,
+	LootHunger = 8,
+}
+
+-- Phase 3: pelts and fur. Every wild wolf kill drops pelts
+-- (leader: 2, regular: 1). Three pelts craft one fur piece at
+-- a lit fire; each piece cuts cold exposure loss by 15%.
+Config.Pelts = {
+	LeaderPelts = 2,
+	RegularPelts = 1,
+	PeltsPerFur = 3,
+	InsulationPerFur = 0.15,
+	MaxFurPieces = 3,
+	CraftRange = 14,
+	CraftCooldown = 5,
+	SellPrice = 8,
+}
+
+-- Phase 3: kids (child module under Animals). Three kids per
+-- run; each rescue grants +1 day multiplier, once per kid.
+-- Kids follow their rescuer, work on a cycle, and eat: every
+-- EatInterval they take EatHunger from their owner's hunger
+-- (shared camp food, setup abstraction -- real food items are
+-- a slow-improve item). A hungry kid stops working until fed.
+Config.Kids = {
+	Count = 3,
+	MinDistance = 200,
+	MaxDistance = 600,
+	FollowSpeed = 6,
+	FollowStopDistance = 4,
+	RescueRange = 14,
+	WorkInterval = 120,
+	EatInterval = 240,
+	EatHunger = 2,
+	FeedHunger = 5,
+	TaskCycle = { "Wood", "Fish", "Route", "Idle" },
+}
+
+-- Phase 3: merchant. Stock is limited and restocks every
+-- 40 days (design). Prices are coins; medkits revive (see
+-- Gameplay:ReviveWithMedkit -- death stays final otherwise).
+Config.Merchant = {
+	RestockDays = 40,
+	TradeRange = 14,
+	Items = {
+		Food = { Price = 10, Hunger = 16, Stock = 10 },
+		Fuel = { Price = 5, Fuel = 25, Stock = 10 },
+		Medkit = { Price = 50, Stock = 3 },
+	},
+}
+
+-- Phase 3: coal. A far-map deposit (layout.CoalSpot, 600+
+-- studs out). Coal fed to a fire burns 3x longer than wood
+-- and adds a warmth bonus while its coal fuel lasts.
+Config.Coal = {
+	Lumps = 5,
+	FuelSecondsPerUnit = 60,
+	WarmthBonus = 1.2,
+	MineRange = 14,
+	MineCooldown = 2,
+	RespawnSeconds = 600,
+	Weight = 10,
 }
 
 Config.Food = {

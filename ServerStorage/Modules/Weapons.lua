@@ -279,6 +279,14 @@ end
 -- Spend one use of the lighter's fuel. Gameplay's fire actions
 -- (lighting a campfire, igniting a log) call this so the fuel
 -- lives in exactly one place even though fires live in Gameplay.
+-- Phase 3 seam: the merchant sells lighter fuel. Fuel
+-- lives in exactly one place (this table), so refills land
+-- here instead of Gameplay touching _fuel directly.
+function Weapons:AddFuel(player, amount)
+	local fuel = self._fuel[player] or 0
+	self._fuel[player] = fuel + amount
+end
+
 function Weapons:SpendFuel(player)
 	local def = Weapons.Definitions.Lighter
 	if not def or not def.FuelCost then

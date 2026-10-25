@@ -93,6 +93,12 @@ end
 function WorldBuilder:WarmthRateAt(position)
 	for _, fire in ipairs(self.Fires) do
 		if fire.Lit and fire.Fuel > 0 then
+			-- Phase 3 coal: while coal fuel lasts, this fire
+			-- warms harder than a wood fire (see AddCoal).
+			local rate = Config.Campfire.WarmthRate
+			if (fire.CoalFuel or 0) > 0 then
+				rate += Config.Coal.WarmthBonus
+			end
 			if fire.WarmthPart then
 				-- The FireBox volume is the warmth area when present.
 				local p = fire.WarmthPart.CFrame:PointToObjectSpace(position)
@@ -102,14 +108,14 @@ function WorldBuilder:WarmthRateAt(position)
 					and p.Y >= -s.Y / 2 - 2
 					and p.Y <= s.Y / 2 + 3
 				then
-					return Config.Campfire.WarmthRate
+					return rate
 				end
 			else
 				local radius = Config.Campfire.WarmthRadius
 				local dx = position.X - fire.Core.Position.X
 				local dz = position.Z - fire.Core.Position.Z
 				if dx * dx + dz * dz <= radius * radius then
-					return Config.Campfire.WarmthRate
+					return rate
 				end
 			end
 		end
@@ -152,6 +158,14 @@ function WorldBuilder:AddFuel(fire, burnUnits)
 	self:_refreshFireVisual(fire)
 end
 
+-- Phase 3 coal: a coal piece fed to a fire adds long
+-- fuel (60s/unit vs wood's 20s) and the coal warmth bonus
+-- in WarmthRateAt while it lasts. Called by Coal:FeedFire.
+function WorldBuilder:AddCoal(fire, burnUnits)
+	fire.CoalFuel = (fire.CoalFuel or 0) + burnUnits * Config.Coal.FuelSecondsPerUnit
+	self:_refreshFireVisual(fire)
+end
+
 function WorldBuilder:_refreshFireVisual(fire)
 	local burning = fire.Lit and fire.Fuel > 0
 	if fire.Fire then
@@ -174,6 +188,10 @@ function WorldBuilder:TickFire(dt)
 	for _, fire in ipairs(self.Fires) do
 		if fire.Lit and fire.Fuel > 0 then
 			fire.Fuel = math.max(0, fire.Fuel - dt)
+			-- Coal fuel burns alongside wood fuel, only while lit.
+			if (fire.CoalFuel or 0) > 0 then
+				fire.CoalFuel = math.max(0, fire.CoalFuel - dt)
+			end
 			if fire.Fuel <= 0 then
 				fire.Lit = false
 			end
@@ -743,6 +761,106 @@ function WorldBuilder:CompleteBlueprint(bp)
 		self.OnBlueprintBuilt(bp)
 	end
 	return fire
+end
+
+-- Phase 3 structures, built from a completed blueprint.
+-- Asset-first, never re-authored: if Ajay's model exists in
+-- ReplicatedStorage/Assets under the registry's AssetName it
+-- is cloned (scripts stripped, parts anchored); otherwise a
+-- clearly-marked code placeholder stands in so the system is
+-- playable and testable until he drops the real model in.
+-- Returns the model and an invisible anchor part that owning
+-- modules hang their prompts on. `broken` tilts a shed and
+-- marks it, for pre-placed broken shelters in the wild.
+function WorldBuilder:CreateStructure(structureId, x, z, broken)
+	local def = Config.Structures[structureId]
+	if not def then
+		return nil, nil
+	end
+	local groundY = self:GroundY(x, z)
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	local template = assets and assets:FindFirstChild(def.AssetName)
+	local model = nil
+	if template and (template:IsA("Model") or template:IsA("BasePart")) then
+		model = template:Clone()
+		model.Name = structureId
+		for _, obj in ipairs(model:GetDescendants()) do
+			if obj:IsA("BasePart") then
+				obj.Anchored = true
+			elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+				obj:Destroy()
+			end
+		end
+		model.Parent = workspace
+		if model:IsA("Model") then
+			self:SnapToGround(model, x, z)
+		else
+			model.Position = Vector3.new(x, groundY + model.Size.Y / 2, z)
+		end
+		print(("[Arctic] %s uses Assets.%s"):format(structureId, def.AssetName))
+	else
+		-- Placeholder, on purpose: one labelled model so the
+		-- structure is real in-game, not a silent no-op. Ajay's
+		-- model replaces it by name, no code change needed.
+		model = Instance.new("Model")
+		model.Name = structureId .. "PLACEHOLDER"
+		if structureId == "SleepingBag" then
+			local bag = Instance.new("Part")
+			bag.Name = "PLACEHOLDER_SleepingBag"
+			bag.Size = Vector3.new(4, 0.6, 2)
+			bag.CFrame = CFrame.new(x, groundY + 0.3, z)
+			bag.Anchored = true
+			bag.CanCollide = false
+			bag.Material = Enum.Material.Fabric
+			bag.Color = Color3.fromRGB(58, 15, 52)
+			bag.Parent = model
+		else
+			-- Shed placeholder: floor, two walls, a roof.
+			local floor = Instance.new("Part")
+			floor.Name = "PLACEHOLDER_ShedFloor"
+			floor.Size = Vector3.new(8, 0.4, 6)
+			floor.CFrame = CFrame.new(x, groundY + 0.2, z)
+			floor.Anchored = true
+			floor.Material = Enum.Material.WoodPlanks
+			floor.Color = Color3.fromRGB(120, 90, 60)
+			floor.Parent = model
+			local wall = Instance.new("Part")
+			wall.Name = "PLACEHOLDER_ShedWall"
+			wall.Size = Vector3.new(8, 4, 0.4)
+			wall.CFrame = CFrame.new(x, groundY + 2.2, z - 3)
+			wall.Anchored = true
+			wall.Material = Enum.Material.WoodPlanks
+			wall.Color = Color3.fromRGB(120, 90, 60)
+			wall.Parent = model
+			local roof = Instance.new("Part")
+			roof.Name = "PLACEHOLDER_ShedRoof"
+			roof.Size = Vector3.new(9, 0.4, 7)
+			roof.CFrame = CFrame.new(x, groundY + 4.4, z)
+			roof.Anchored = true
+			roof.Material = Enum.Material.Slate
+			roof.Color = Color3.fromRGB(90, 90, 100)
+			roof.Parent = model
+		end
+		model.Parent = workspace
+		warn(("[Arctic] Assets.%s not found - %s is a placeholder"):format(def.AssetName, structureId))
+	end
+	if broken then
+		-- A broken shed in the wild: knocked over, not pristine.
+		local pivot = model:GetPivot()
+		model:PivotTo(pivot * CFrame.Angles(0, 0, 0.15))
+		model:SetAttribute("Broken", true)
+	end
+	model:SetAttribute("StructureId", structureId)
+	local anchor = Instance.new("Part")
+	anchor.Name = "StructureCore"
+	anchor.Size = Vector3.new(2, 2, 2)
+	anchor.CFrame = CFrame.new(x, groundY + 1.5, z)
+	anchor.Anchored = true
+	anchor.Transparency = 1
+	anchor.CanCollide = false
+	anchor.CanTouch = false
+	anchor.Parent = model
+	return model, anchor
 end
 
 function WorldBuilder:UpdateState(clock, temperature)
