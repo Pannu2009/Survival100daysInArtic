@@ -5,7 +5,7 @@ local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local TerrainBuilder = require(script.Parent:WaitForChild("TerrainBuilder"))
 
-local AUBERGINE = Color3.fromHex("3A0F34")
+local NAVY = Color3.fromHex("0B1E2E") -- Frost Night base (see client)
 local SILVER = Color3.fromHex("DDE3E7")
 local MARIGOLD = Color3.fromHex("EAA000")
 
@@ -547,7 +547,7 @@ function WorldBuilder:_createFire(x, z)
 
 	local bg = Instance.new("Frame")
 	bg.Size = UDim2.fromScale(1, 1)
-	bg.BackgroundColor3 = AUBERGINE
+	bg.BackgroundColor3 = NAVY
 	bg.BackgroundTransparency = 0.25
 	bg.BorderSizePixel = 0
 	bg.Parent = billboard
@@ -662,7 +662,7 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 		marker.CanCollide = false
 		marker.CanQuery = false
 		marker.Material = Enum.Material.SmoothPlastic
-		marker.Color = MARIGOLD
+		marker.Color = Color3.fromHex("7FE7F2") -- Frost Night: blueprint marker is not fire
 		marker.Transparency = 0.5
 		marker.Parent = model
 		model.Parent = workspace
@@ -716,7 +716,7 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 
 	local bg = Instance.new("Frame")
 	bg.Size = UDim2.fromScale(1, 1)
-	bg.BackgroundColor3 = AUBERGINE
+	bg.BackgroundColor3 = NAVY
 	bg.BackgroundTransparency = 0.25
 	bg.BorderSizePixel = 0
 	bg.Parent = billboard
@@ -729,7 +729,7 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 	label.Position = UDim2.fromOffset(6, 0)
 	label.BackgroundTransparency = 1
 	label.Text = ("%s 0/%dkg"):format(def.DisplayName, def.CostKg)
-	label.TextColor3 = MARIGOLD
+	label.TextColor3 = Color3.fromHex("7FE7F2")
 	label.TextSize = 15
 	label.Font = Enum.Font.GothamBold
 	label.TextXAlignment = Enum.TextXAlignment.Center

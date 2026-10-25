@@ -24,7 +24,8 @@ local eatRemote = remotes:WaitForChild("EatFish")
 local openBuildMenuRemote = remotes:WaitForChild("OpenBuildMenu")
 local placeBlueprintRemote = remotes:WaitForChild("PlaceBlueprint")
 
-local AUBERGINE = Color3.fromHex("3A0F34")
+local NAVY = Color3.fromHex("0B1E2E") -- Frost Night base: deep navy panels/backgrounds
+local CYAN = Color3.fromHex("7FE7F2") -- Frost Night cold accent: glacier cyan
 local SILVER = Color3.fromHex("DDE3E7")
 local MARIGOLD = Color3.fromHex("EAA000")
 
@@ -75,7 +76,7 @@ dayBanner.Name = "DayBanner"
 dayBanner.BackgroundTransparency = 1
 dayBanner.AnchorPoint = Vector2.new(0.5, 0)
 dayBanner.Position = UDim2.new(0.5, 0, 0, 0)
-dayBanner.Size = UDim2.fromOffset(520, 34)
+dayBanner.Size = UDim2.new(0.6, 0, 0, 34) -- Frost Night batch 1: Scale width so the banner never clips on narrow phones
 dayBanner.Text = "Day: 1"
 dayBanner.TextColor3 = Color3.new(1, 1, 1)
 dayBanner.TextSize = 24
@@ -148,9 +149,10 @@ sickLabel.Visible = false
 -- Day 1 objective banner (top center).
 local objectivePanel = Instance.new("Frame")
 objectivePanel.Name = "ObjectivePanel"
-objectivePanel.Size = UDim2.fromOffset(330, 30)
-objectivePanel.Position = UDim2.new(0.5, -165, 0, 50)
-objectivePanel.BackgroundColor3 = AUBERGINE
+objectivePanel.Size = UDim2.new(0.42, 40, 0, 30) -- Frost Night batch 1: Scale width (+40px floor so the text fits)
+objectivePanel.AnchorPoint = Vector2.new(0.5, 0)
+objectivePanel.Position = UDim2.new(0.5, 0, 0, 50)
+objectivePanel.BackgroundColor3 = NAVY
 objectivePanel.BackgroundTransparency = 0.25
 objectivePanel.BorderSizePixel = 0
 objectivePanel.Parent = gui
@@ -177,7 +179,7 @@ local function makeStatFrame(name, size, position, anchorPoint)
 	frame.Size = size
 	frame.Position = position
 	frame.AnchorPoint = anchorPoint
-	frame.BackgroundColor3 = AUBERGINE
+	frame.BackgroundColor3 = NAVY
 	frame.BackgroundTransparency = 0.25
 	frame.BorderSizePixel = 0
 	frame.Parent = gui
@@ -203,7 +205,7 @@ local function makeBar(parent, name)
 	trackCorner.Parent = track
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.fromScale(1, 1)
-	fill.BackgroundColor3 = MARIGOLD
+	fill.BackgroundColor3 = CYAN
 	fill.BorderSizePixel = 0
 	fill.Parent = track
 	local fillCorner = Instance.new("UICorner")
@@ -212,19 +214,50 @@ local function makeBar(parent, name)
 	return fill
 end
 
-local healthFrame = makeStatFrame("HealthFrame", UDim2.fromOffset(216, 36), UDim2.new(1, -6, 0, 3), Vector2.new(1, 0))
+local healthFrame = makeStatFrame("HealthFrame", UDim2.new(0.22, 40, 0, 36), UDim2.new(1, -6, 0, 3), Vector2.new(1, 0))
 local healthFill = makeBar(healthFrame, "Health")
-local warmthFrame = makeStatFrame("WarmthFrame", UDim2.fromOffset(172, 28), UDim2.new(0, 8, 0.42, 0), Vector2.new(0, 0))
+local warmthFrame = makeStatFrame("WarmthFrame", UDim2.new(0.18, 40, 0, 28), UDim2.new(0, 8, 0.42, 0), Vector2.new(0, 0))
 -- Why warmth is moving, in words, right under the bar.
-local warmthWhy = makeLabel(gui, "", UDim2.fromOffset(180, 14), UDim2.new(0, 14, 0.42, 31), SILVER, 11)
+local warmthWhy = makeLabel(gui, "", UDim2.new(0.18, 40, 0, 14), UDim2.new(0, 14, 0.42, 31), SILVER, 11)
 warmthWhy.TextXAlignment = Enum.TextXAlignment.Left
 local warmthFill = makeBar(warmthFrame, "Warmth")
-local hungerFrame = makeStatFrame("HungerFrame", UDim2.fromOffset(172, 28), UDim2.new(0, 8, 0.42, 34), Vector2.new(0, 0))
+local hungerFrame = makeStatFrame("HungerFrame", UDim2.new(0.18, 40, 0, 28), UDim2.new(0, 8, 0.42, 34), Vector2.new(0, 0))
 local hungerFill = makeBar(hungerFrame, "Hunger")
+
+
+-- Wallet HUD (Frost Night batch 1, Phase 3 readout): the server
+-- already publishes Coins / Pelts / FurPieces / Medkits / KidCount
+-- via Gameplay:_syncAttributes, so this only READS player
+-- attributes -- no new remote, no poll. Updated in refreshPlayer,
+-- which already runs on player.AttributeChanged.
+local walletFrame = makeStatFrame("WalletFrame", UDim2.new(0.22, 40, 0, 44), UDim2.new(1, -6, 0, 45), Vector2.new(1, 0))
+local walletLine1 = makeLabel(walletFrame, "Coins: 0  Medkits: 0", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 3), CYAN, 12)
+walletLine1.TextXAlignment = Enum.TextXAlignment.Center
+local walletLine2 = makeLabel(walletFrame, "Pelts: 0  Fur: 0  Kids: 0", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 23), SILVER, 12)
+walletLine2.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Wind pill (Frost Night batch 1, client-only): reads the wind
+-- the server already publishes on ReplicatedStorage (WindDir /
+-- WindStrength, used by the blowing-snow dressing). Compass is an
+-- approximation from that published angle, not a new simulation.
+local windFrame = makeStatFrame("WindFrame", UDim2.new(0.18, 40, 0, 26), UDim2.new(0, 8, 0.42, 68), Vector2.new(0, 0))
+local windLabel = makeLabel(windFrame, "Wind --", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 4), CYAN, 12)
+windLabel.TextXAlignment = Enum.TextXAlignment.Center
+local function refreshWind()
+	local dir = ReplicatedStorage:GetAttribute("WindDir") or 0.8
+	local strength = ReplicatedStorage:GetAttribute("WindStrength") or 0.2
+	local dirs = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
+	local deg = (math.deg(dir) % 360 + 360) % 360
+	local idx = math.floor(((deg + 22.5) % 360) / 45) + 1
+	windLabel.Text = ("Wind %s · %d%%"):format(dirs[idx], math.floor(strength * 100 + 0.5))
+end
+ReplicatedStorage:GetAttributeChangedSignal("WindDir"):Connect(refreshWind)
+ReplicatedStorage:GetAttributeChangedSignal("WindStrength"):Connect(refreshWind)
+refreshWind()
 
 -- Lighter fuel: a small pill floating just over the hotbar,
 -- visible only while the lighter is in hand.
-local lighterFuelPill = makeStatFrame("LighterFuel", UDim2.fromOffset(120, 26), UDim2.new(0.5, -60, 1, -118), Vector2.new(0, 0))
+local lighterFuelPill = makeStatFrame("LighterFuel", UDim2.new(0.14, 40, 0, 26), UDim2.new(0.5, 0, 1, -118), Vector2.new(0.5, 0))
 lighterFuelPill.Visible = false
 local lighterFuelLabel = makeLabel(lighterFuelPill, "Fuel: 100", UDim2.new(1, 0, 1, 0), UDim2.fromOffset(0, 0), SILVER, 13)
 lighterFuelLabel.TextXAlignment = Enum.TextXAlignment.Center
@@ -236,7 +269,7 @@ sprintButton.Position = UDim2.new(1, -88, 1, -84)
 sprintButton.TextSize = 13
 sprintButton.BackgroundColor3 = MARIGOLD
 sprintButton.Text = "SPRINT"
-sprintButton.TextColor3 = AUBERGINE
+sprintButton.TextColor3 = NAVY
 sprintButton.TextSize = 17
 sprintButton.Font = Enum.Font.GothamBold
 sprintButton.BorderSizePixel = 0
@@ -245,7 +278,7 @@ sprintButton.Parent = gui
 local sprintCorner = Instance.new("UICorner")
 sprintCorner.CornerRadius = UDim.new(0.5, 0)
 sprintCorner.Parent = sprintButton
-addStroke(sprintButton, AUBERGINE, 1.5, 0.25)
+addStroke(sprintButton, NAVY, 1.5, 0.25)
 
 -- Context action: appears while a dragged log hovers over the sled's
 -- cargo zone. Tappable on touch, clickable on PC, key-bound per
@@ -255,7 +288,7 @@ storeButton.Name = "StoreButton"
 storeButton.Size = UDim2.fromOffset(72, 72)
 storeButton.Position = UDim2.new(1, -88, 1, -164)
 storeButton.TextSize = 14
-storeButton.BackgroundColor3 = MARIGOLD
+storeButton.BackgroundColor3 = CYAN
 storeButton.Text = ""
 storeButton.AutoButtonColor = true
 storeButton.BorderSizePixel = 0
@@ -265,9 +298,9 @@ storeButton.Parent = gui
 local storeCorner = Instance.new("UICorner")
 storeCorner.CornerRadius = UDim.new(0.5, 0)
 storeCorner.Parent = storeButton
-addStroke(storeButton, AUBERGINE, 1.5, 0.25)
+addStroke(storeButton, NAVY, 1.5, 0.25)
 
-local storeTitle = makeLabel(storeButton, "STORE ITEM", UDim2.new(1, -8, 0, 22), UDim2.fromOffset(4, 6), AUBERGINE, 15)
+local storeTitle = makeLabel(storeButton, "STORE ITEM", UDim2.new(1, -8, 0, 22), UDim2.fromOffset(4, 6), NAVY, 15)
 storeTitle.TextXAlignment = Enum.TextXAlignment.Center
 local storeHint = makeLabel(storeButton, "", UDim2.fromOffset(100, 14), UDim2.new(0.5, -50, 1, 2), SILVER, 11)
 storeHint.TextXAlignment = Enum.TextXAlignment.Center
@@ -286,10 +319,10 @@ local eatButton = Instance.new("TextButton")
 eatButton.Name = "EatButton"
 eatButton.Size = UDim2.fromOffset(72, 72)
 eatButton.Position = UDim2.new(1, -88, 1, -244)
-eatButton.BackgroundColor3 = MARIGOLD
+eatButton.BackgroundColor3 = CYAN
 eatButton.Text = "EAT"
 eatButton.TextSize = 14
-eatButton.TextColor3 = AUBERGINE
+eatButton.TextColor3 = NAVY
 eatButton.TextSize = 16
 eatButton.Font = Enum.Font.GothamBold
 eatButton.BorderSizePixel = 0
@@ -298,7 +331,7 @@ eatButton.Parent = gui
 local eatCorner = Instance.new("UICorner")
 eatCorner.CornerRadius = UDim.new(0.5, 0)
 eatCorner.Parent = eatButton
-addStroke(eatButton, AUBERGINE, 1.5, 0.25)
+addStroke(eatButton, NAVY, 1.5, 0.25)
 local eatHint = makeLabel(eatButton, "tap", UDim2.fromOffset(100, 14), UDim2.new(0.5, -50, 1, 2), SILVER, 11)
 eatHint.TextXAlignment = Enum.TextXAlignment.Center
 eatHint.Visible = false
@@ -313,9 +346,9 @@ grabButton.Name = "GrabButton"
 grabButton.Size = UDim2.fromOffset(72, 72)
 grabButton.Position = UDim2.new(1, -88, 1, -324)
 grabButton.TextSize = 14
-grabButton.BackgroundColor3 = MARIGOLD
+grabButton.BackgroundColor3 = CYAN
 grabButton.Text = "GRAB"
-grabButton.TextColor3 = AUBERGINE
+grabButton.TextColor3 = NAVY
 grabButton.TextSize = 16
 grabButton.Font = Enum.Font.GothamBold
 grabButton.BorderSizePixel = 0
@@ -324,7 +357,7 @@ grabButton.Parent = gui
 local grabCorner = Instance.new("UICorner")
 grabCorner.CornerRadius = UDim.new(0.5, 0)
 grabCorner.Parent = grabButton
-addStroke(grabButton, AUBERGINE, 1.5, 0.25)
+addStroke(grabButton, NAVY, 1.5, 0.25)
 local grabTarget = nil
 grabButton.Activated:Connect(function()
 	if myDragPartRef and myDragPartRef() then
@@ -345,9 +378,10 @@ eatButton.Activated:Connect(tryEat)
 -- Build menu (blueprint stick) + campfire placement mode.
 local buildMenu = Instance.new("Frame")
 buildMenu.Name = "BuildMenu"
-buildMenu.Size = UDim2.fromOffset(300, 200)
-buildMenu.Position = UDim2.new(0.5, -150, 0.5, -100)
-buildMenu.BackgroundColor3 = AUBERGINE
+buildMenu.Size = UDim2.new(0.42, 40, 0, 200) -- Frost Night batch 1: Scale width, centered by anchor
+buildMenu.AnchorPoint = Vector2.new(0.5, 0.5)
+buildMenu.Position = UDim2.new(0.5, 0, 0.5, 0)
+buildMenu.BackgroundColor3 = NAVY
 buildMenu.BackgroundTransparency = 0.1
 buildMenu.BorderSizePixel = 0
 buildMenu.Visible = false
@@ -370,11 +404,11 @@ for _, structureId in ipairs(Config.StructureOrder) do
 	if def then
 		structureButtons += 1
 		local button = Instance.new("TextButton")
-		button.Size = UDim2.fromOffset(164, 46)
-		button.Position = UDim2.fromOffset(12, 42 + (structureButtons - 1) * 52)
-		button.BackgroundColor3 = MARIGOLD
+		button.Size = UDim2.new(0.55, 0, 0, 46)
+		button.Position = UDim2.new(0.04, 0, 0, 42 + (structureButtons - 1) * 52)
+		button.BackgroundColor3 = CYAN
 		button.Text = def.ButtonText
-		button.TextColor3 = AUBERGINE
+		button.TextColor3 = NAVY
 		button.TextSize = 15
 		button.Font = Enum.Font.GothamBold
 		button.BorderSizePixel = 0
@@ -382,7 +416,7 @@ for _, structureId in ipairs(Config.StructureOrder) do
 		local corner = Instance.new("UICorner")
 		corner.CornerRadius = UDim.new(0, 10)
 		corner.Parent = button
-		addStroke(button, AUBERGINE, 1.5, 0.25)
+		addStroke(button, NAVY, 1.5, 0.25)
 		local id = structureId
 		button.Activated:Connect(function()
 			selectedStructure = id
@@ -395,20 +429,20 @@ end
 
 local buildIconHolder = Instance.new("Frame")
 buildIconHolder.Name = "BuildIconHolder"
-buildIconHolder.Size = UDim2.fromOffset(100, 100)
-buildIconHolder.Position = UDim2.fromOffset(188, 42)
+buildIconHolder.Size = UDim2.new(0.33, 0, 0, 100)
+buildIconHolder.Position = UDim2.new(0.62, 0, 0, 42)
 buildIconHolder.BackgroundTransparency = 1
 buildIconHolder.BorderSizePixel = 0
 buildIconHolder.Parent = buildMenu
 
-buildMenu.Size = UDim2.fromOffset(300, 42 + structureButtons * 52 + 52)
+buildMenu.Size = UDim2.new(0.42, 40, 0, 42 + structureButtons * 52 + 52)
 local buildCloseButton = Instance.new("TextButton")
 buildCloseButton.Size = UDim2.new(1, -24, 0, 34)
 buildCloseButton.Position = UDim2.fromOffset(12, 42 + structureButtons * 52 + 6)
 buildCloseButton.BackgroundColor3 = SILVER
 buildCloseButton.BackgroundTransparency = 0.4
 buildCloseButton.Text = "Close"
-buildCloseButton.TextColor3 = AUBERGINE
+buildCloseButton.TextColor3 = NAVY
 buildCloseButton.TextSize = 14
 buildCloseButton.Font = Enum.Font.GothamBold
 buildCloseButton.BorderSizePixel = 0
@@ -432,9 +466,9 @@ local placeButton = Instance.new("TextButton")
 placeButton.Name = "PlaceButton"
 placeButton.Size = UDim2.fromOffset(150, 50)
 placeButton.Position = UDim2.new(0.5, -160, 1, -128)
-placeButton.BackgroundColor3 = MARIGOLD
+placeButton.BackgroundColor3 = CYAN
 placeButton.Text = "PLACE HERE"
-placeButton.TextColor3 = AUBERGINE
+placeButton.TextColor3 = NAVY
 placeButton.TextSize = 16
 placeButton.Font = Enum.Font.GothamBold
 placeButton.BorderSizePixel = 0
@@ -443,7 +477,7 @@ placeButton.Parent = gui
 local placeCorner = Instance.new("UICorner")
 placeCorner.CornerRadius = UDim.new(0, 12)
 placeCorner.Parent = placeButton
-addStroke(placeButton, AUBERGINE, 1.5, 0.25)
+addStroke(placeButton, NAVY, 1.5, 0.25)
 
 local cancelPlaceButton = Instance.new("TextButton")
 cancelPlaceButton.Name = "CancelPlaceButton"
@@ -452,7 +486,7 @@ cancelPlaceButton.Position = UDim2.new(0.5, 2, 1, -128)
 cancelPlaceButton.BackgroundColor3 = SILVER
 cancelPlaceButton.BackgroundTransparency = 0.25
 cancelPlaceButton.Text = "Cancel"
-cancelPlaceButton.TextColor3 = AUBERGINE
+cancelPlaceButton.TextColor3 = NAVY
 cancelPlaceButton.TextSize = 15
 cancelPlaceButton.Font = Enum.Font.GothamBold
 cancelPlaceButton.BorderSizePixel = 0
@@ -461,7 +495,7 @@ cancelPlaceButton.Parent = gui
 local cancelPlaceCorner = Instance.new("UICorner")
 cancelPlaceCorner.CornerRadius = UDim.new(0, 12)
 cancelPlaceCorner.Parent = cancelPlaceButton
-addStroke(cancelPlaceButton, AUBERGINE, 1.5, 0.4)
+addStroke(cancelPlaceButton, NAVY, 1.5, 0.4)
 
 local function stopPlacing()
 	placing = false
@@ -484,7 +518,7 @@ startPlacing = function()
 		buildGhost.CanQuery = false
 		buildGhost.CanTouch = false
 		buildGhost.Material = Enum.Material.SmoothPlastic
-		buildGhost.Color = MARIGOLD
+		buildGhost.Color = CYAN -- Frost Night: placement preview is not fire, so not marigold
 		buildGhost.Transparency = 0.45
 	end
 	buildGhost.Parent = workspace
@@ -505,7 +539,7 @@ local hotbar = Instance.new("Frame")
 hotbar.Name = "Hotbar"
 hotbar.Size = UDim2.fromOffset(302, 56)
 hotbar.Position = UDim2.new(0.5, -151, 1, -64)
-hotbar.BackgroundColor3 = AUBERGINE
+hotbar.BackgroundColor3 = NAVY
 hotbar.BackgroundTransparency = 0.25
 hotbar.BorderSizePixel = 0
 hotbar.Parent = gui
@@ -636,20 +670,20 @@ local function makePoolSlot(index)
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = slot
-	addStroke(slot, AUBERGINE, 1, 0.6)
+	addStroke(slot, NAVY, 1, 0.6)
 	local icon = Instance.new("Frame")
 	icon.Name = "IconHolder"
-	icon.Size = UDim2.fromOffset(44, 44)
-	icon.Position = UDim2.fromOffset(12, 2)
+	icon.Size = UDim2.new(0.65, 0, 0.76, 0)
+	icon.Position = UDim2.new(0.18, 0, 0.03, 0)
 	icon.BackgroundTransparency = 1
 	icon.BorderSizePixel = 0
 	icon.Parent = slot
 	local label = makeLabel(slot, "", UDim2.new(1, -8, 0, 12), UDim2.fromOffset(4, 46), SILVER, 11)
 	label.TextXAlignment = Enum.TextXAlignment.Center
-	local value = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 24), MARIGOLD, 13)
+	local value = makeLabel(slot, "", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 24), CYAN, 13)
 	value.Visible = false
 	value.TextXAlignment = Enum.TextXAlignment.Center
-	local hint = makeLabel(slot, "", UDim2.fromOffset(24, 14), UDim2.fromOffset(3, 2), AUBERGINE, 11)
+	local hint = makeLabel(slot, "", UDim2.fromOffset(24, 14), UDim2.fromOffset(3, 2), NAVY, 11)
 	slotPool[index] = { Frame = slot, Name = label, Value = value, Hint = hint, Icon = icon, IconTool = nil }
 	slot.Activated:Connect(function()
 		local toolName = slotTools[index]
@@ -732,7 +766,7 @@ local function setSlotIcon(entry, toolName)
 		return
 	end
 	local clone = template:Clone()
-	clone.Size = UDim2.fromOffset(44, 44)
+	clone.Size = UDim2.fromScale(1, 1)
 	clone.Position = UDim2.fromOffset(0, 0)
 	clone.Parent = entry.Icon
 end
@@ -760,7 +794,7 @@ local function refreshHotbar()
 				setSlotIcon(entry, toolName)
 			end
 			local equipped = character and character:FindFirstChild(toolName) ~= nil
-			entry.Frame.BackgroundColor3 = equipped and MARIGOLD or SILVER
+			entry.Frame.BackgroundColor3 = equipped and CYAN or SILVER
 			entry.Frame.BackgroundTransparency = equipped and 0 or 0.75
 			entry.Value.Text = equipped and "in hand" or ""
 			entry.Hint.Text = slotHintFor(i)
@@ -802,16 +836,16 @@ local function showBuildIcon()
 	local template = pointFrames and pointFrames:FindFirstChild(def.FrameName)
 	if template and template:IsA("ViewportFrame") then
 		local clone = template:Clone()
-		clone.Size = UDim2.fromOffset(100, 100)
+		clone.Size = UDim2.fromScale(1, 1)
 		clone.Position = UDim2.fromOffset(0, 0)
 		clone.Parent = buildIconHolder
 		buildIconLive = clone
 		return
 	end
 	local vpf = Instance.new("ViewportFrame")
-	vpf.Size = UDim2.fromOffset(100, 100)
+	vpf.Size = UDim2.fromScale(1, 1)
 	vpf.Position = UDim2.fromOffset(0, 0)
-	vpf.BackgroundColor3 = Color3.fromRGB(24, 8, 22)
+	vpf.BackgroundColor3 = Color3.fromRGB(11, 30, 46)
 	vpf.BackgroundTransparency = 0.2
 	vpf.BorderSizePixel = 0
 	vpf.Ambient = Color3.fromRGB(165, 165, 178)
@@ -1002,8 +1036,9 @@ end
 local TweenService = game:GetService("TweenService")
 local toastHolder = Instance.new("Frame")
 toastHolder.Name = "Toasts"
-toastHolder.Size = UDim2.fromOffset(360, 120)
-toastHolder.Position = UDim2.new(0.5, -180, 0, 88)
+toastHolder.Size = UDim2.new(0.4, 0, 0, 120)
+toastHolder.AnchorPoint = Vector2.new(0.5, 0)
+toastHolder.Position = UDim2.new(0.5, 0, 0, 88)
 toastHolder.BackgroundTransparency = 1
 toastHolder.BorderSizePixel = 0
 toastHolder.Parent = gui
@@ -1024,8 +1059,8 @@ local function toast(text)
 		table.remove(labels, 1):Destroy()
 	end
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.fromOffset(340, 28)
-	label.BackgroundColor3 = AUBERGINE
+	label.Size = UDim2.new(0.94, 0, 0, 28)
+	label.BackgroundColor3 = NAVY
 	label.BackgroundTransparency = 0.25
 	label.TextColor3 = Color3.new(1, 1, 1)
 	label.Font = Enum.Font.GothamBold
@@ -1066,7 +1101,8 @@ dangerStroke.Color = Color3.fromRGB(214, 48, 43)
 dangerStroke.Thickness = 5
 dangerStroke.Transparency = 0.5
 dangerStroke.Parent = dangerFrame
-local dangerLabel = makeLabel(gui, "WOLVES ARE HUNTING YOU", UDim2.fromOffset(340, 24), UDim2.new(0.5, -170, 0, 128), Color3.fromRGB(255, 90, 80), 17)
+local dangerLabel = makeLabel(gui, "WOLVES ARE HUNTING YOU", UDim2.new(0.4, 0, 0, 24), UDim2.new(0.5, 0, 0, 128), Color3.fromRGB(255, 90, 80), 17)
+dangerLabel.AnchorPoint = Vector2.new(0.5, 0)
 dangerLabel.TextXAlignment = Enum.TextXAlignment.Center
 dangerLabel.Visible = false
 local dangerStroke2 = Instance.new("UIStroke")
@@ -1088,7 +1124,7 @@ local function refreshPlayer()
 	end
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
 	local hungerNow = player:GetAttribute("Hunger") or Config.Survival.MaxHunger
-	hungerFill.BackgroundColor3 = hungerNow <= 10 and Color3.fromRGB(214, 48, 43) or MARIGOLD
+	hungerFill.BackgroundColor3 = hungerNow <= 10 and Color3.fromRGB(214, 48, 43) or CYAN
 	-- Warmth reason + danger + the two loud warnings (cooldowned).
 	local warmState = player:GetAttribute("WarmState") or ""
 	warmthWhy.Text = warmState
@@ -1111,6 +1147,8 @@ local function refreshPlayer()
 		toast("You're starving -- eat something!")
 	end
 	lighterFuelLabel.Text = "Fuel: " .. tostring(player:GetAttribute("LighterFuel") or 0)
+	walletLine1.Text = ("Coins: %d  Medkits: %d"):format(player:GetAttribute("Coins") or 0, player:GetAttribute("Medkits") or 0)
+	walletLine2.Text = ("Pelts: %d  Fur: %d  Kids: %d"):format(player:GetAttribute("Pelts") or 0, player:GetAttribute("FurPieces") or 0, player:GetAttribute("KidCount") or 0)
 	-- The tutorial ends the moment the campfire is lit (step 5):
 	-- the banner goes away for good.
 	local tutorialStep = player:GetAttribute("TutorialStep") or 1
@@ -1140,7 +1178,7 @@ for i, mode in ipairs({ "Follow", "Wander", "Alert", "Attack" }) do
 	b.Position = UDim2.new(0, 14, 1, -76 - (i - 1) * 64)
 	b.BackgroundColor3 = SILVER
 	b.BackgroundTransparency = 0.25
-	b.TextColor3 = AUBERGINE
+	b.TextColor3 = NAVY
 	b.Font = Enum.Font.GothamBold
 	b.TextSize = 10
 	b.Text = mode:upper()
@@ -1150,7 +1188,7 @@ for i, mode in ipairs({ "Follow", "Wander", "Alert", "Attack" }) do
 	local bc = Instance.new("UICorner")
 	bc.CornerRadius = UDim.new(0.5, 0)
 	bc.Parent = b
-	addStroke(b, AUBERGINE, 1.5, 0.5)
+	addStroke(b, NAVY, 1.5, 0.5)
 	b.Activated:Connect(function()
 		local targetPos
 		if mode == "Attack" then
@@ -1173,7 +1211,7 @@ local function refreshWolfButtons()
 	local active = player:GetAttribute("WolfCommand") or "Follow"
 	for m, b in pairs(wolfButtons) do
 		b.Visible = count > 0
-		b.BackgroundColor3 = m == active and MARIGOLD or SILVER
+		b.BackgroundColor3 = m == active and CYAN or SILVER
 	end
 end
 player:GetAttributeChangedSignal("WolfCount"):Connect(refreshWolfButtons)
@@ -1187,8 +1225,9 @@ refreshWolfButtons()
 -- with -- so they render locally at full frame rate.
 local fishingPanel = Instance.new("Frame")
 fishingPanel.Name = "FishingPanel"
-fishingPanel.Size = UDim2.fromOffset(472, 124)
-fishingPanel.Position = UDim2.new(0.5, -236, 1, -208)
+fishingPanel.Size = UDim2.new(0.55, 0, 0, 124) -- Frost Night batch 1: Scale width
+fishingPanel.AnchorPoint = Vector2.new(0.5, 0)
+fishingPanel.Position = UDim2.new(0.5, 0, 1, -208)
 fishingPanel.BackgroundTransparency = 1
 fishingPanel.BorderSizePixel = 0
 fishingPanel.Visible = false
@@ -1200,8 +1239,8 @@ fishingTitleStroke.Thickness = 1.4
 fishingTitleStroke.Parent = fishingTitle
 fishingTitle.TextXAlignment = Enum.TextXAlignment.Center
 local reelTrack = Instance.new("Frame")
-reelTrack.Size = UDim2.fromOffset(440, 26)
-reelTrack.Position = UDim2.fromOffset(16, 46)
+reelTrack.Size = UDim2.new(0.93, 0, 0, 26)
+reelTrack.Position = UDim2.new(0.035, 0, 0, 46)
 reelTrack.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
 reelTrack.BackgroundTransparency = 0.35
 reelTrack.BorderSizePixel = 0
@@ -1231,14 +1270,14 @@ local fishMarkerCorner = Instance.new("UICorner")
 fishMarkerCorner.CornerRadius = UDim.new(0, 4)
 fishMarkerCorner.Parent = fishMarker
 local progressTrack = Instance.new("Frame")
-progressTrack.Size = UDim2.fromOffset(440, 10)
-progressTrack.Position = UDim2.fromOffset(16, 84)
+progressTrack.Size = UDim2.new(0.93, 0, 0, 10)
+progressTrack.Position = UDim2.new(0.035, 0, 0, 84)
 progressTrack.BackgroundColor3 = SILVER
 progressTrack.BackgroundTransparency = 0.7
 progressTrack.BorderSizePixel = 0
 progressTrack.Parent = fishingPanel
 local progressFill = Instance.new("Frame")
-progressFill.BackgroundColor3 = MARIGOLD
+progressFill.BackgroundColor3 = CYAN
 progressFill.BorderSizePixel = 0
 progressFill.Size = UDim2.fromScale(0, 1)
 progressFill.Parent = progressTrack
@@ -1255,7 +1294,7 @@ biteBadge.Parent = fishingPanel
 local biteBadgeCorner = Instance.new("UICorner")
 biteBadgeCorner.CornerRadius = UDim.new(0.5, 0)
 biteBadgeCorner.Parent = biteBadge
-local biteBadgeText = makeLabel(biteBadge, "!", UDim2.new(1, 0, 1, 0), UDim2.fromOffset(0, -2), AUBERGINE, 42)
+local biteBadgeText = makeLabel(biteBadge, "!", UDim2.new(1, 0, 1, 0), UDim2.fromOffset(0, -2), NAVY, 42)
 biteBadgeText.TextXAlignment = Enum.TextXAlignment.Center
 local bobberDot = Instance.new("Frame")
 bobberDot.Size = UDim2.fromOffset(14, 14)
@@ -1352,7 +1391,7 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
 		catchBar.Size = UDim2.fromOffset(trackWidth * half * 2, 26)
 		catchBar.Position = UDim2.fromOffset((localBar - half) * trackWidth, 0)
 		local overlap = math.abs(localBar - fish) <= half
-		catchBar.BackgroundColor3 = overlap and MARIGOLD or Color3.new(1, 1, 1)
+		catchBar.BackgroundColor3 = overlap and CYAN or Color3.new(1, 1, 1)
 		fishMarker.Position = UDim2.fromOffset(fish * trackWidth - 8, 5)
 		local progress = (player:GetAttribute("FishingProgress") or 0) / 100
 		progressFill.Size = UDim2.fromScale(math.clamp(progress, 0, 1), 1)
