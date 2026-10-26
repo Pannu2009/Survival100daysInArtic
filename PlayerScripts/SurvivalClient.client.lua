@@ -68,6 +68,25 @@ local function addStroke(parent, color, thickness, transparency)
 	return stroke
 end
 
+-- Glassy shine: a thin white strip across the top of a panel.
+-- Studio has no true backdrop blur, so this + lighter strokes +
+-- more transparency is the Studio version of glass. Added before
+-- the panel's labels, so text stays on top of the shine.
+local function addGloss(parent)
+	local shine = Instance.new("Frame")
+	shine.Name = "Gloss"
+	shine.Size = UDim2.new(1, -16, 0, 9)
+	shine.Position = UDim2.fromOffset(8, 4)
+	shine.BackgroundColor3 = Color3.new(1, 1, 1)
+	shine.BackgroundTransparency = 0.78
+	shine.BorderSizePixel = 0
+	shine.Parent = parent
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 5)
+	corner.Parent = shine
+	return shine
+end
+
 
 -- Day counter: flush with the top center of the screen, plain
 -- white text with a thin black stroke.
@@ -153,13 +172,14 @@ objectivePanel.Size = UDim2.new(0.42, 40, 0, 30) -- Frost Night batch 1: Scale w
 objectivePanel.AnchorPoint = Vector2.new(0.5, 0)
 objectivePanel.Position = UDim2.new(0.5, 0, 0, 50)
 objectivePanel.BackgroundColor3 = NAVY
-objectivePanel.BackgroundTransparency = 0.25
+objectivePanel.BackgroundTransparency = 0.18
 objectivePanel.BorderSizePixel = 0
 objectivePanel.Parent = gui
 local objectiveCorner = Instance.new("UICorner")
-objectiveCorner.CornerRadius = UDim.new(0, 8)
+objectiveCorner.CornerRadius = UDim.new(0, 12)
 objectiveCorner.Parent = objectivePanel
-addStroke(objectivePanel, SILVER, 1, 0.55)
+addStroke(objectivePanel, SILVER, 1, 0.35)
+addGloss(objectivePanel)
 local objectiveLabel = makeLabel(objectivePanel, "Day 1: Fell a tree", UDim2.new(1, -12, 1, 0), UDim2.fromOffset(6, 0), SILVER, 13)
 objectiveLabel.TextXAlignment = Enum.TextXAlignment.Center
 
@@ -180,13 +200,14 @@ local function makeStatFrame(name, size, position, anchorPoint)
 	frame.Position = position
 	frame.AnchorPoint = anchorPoint
 	frame.BackgroundColor3 = NAVY
-	frame.BackgroundTransparency = 0.25
+	frame.BackgroundTransparency = 0.18
 	frame.BorderSizePixel = 0
 	frame.Parent = gui
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
+	corner.CornerRadius = UDim.new(0, 12)
 	corner.Parent = frame
-	addStroke(frame, SILVER, 1, 0.55)
+	addStroke(frame, SILVER, 1, 0.35)
+	addGloss(frame)
 	return frame
 end
 
@@ -382,14 +403,15 @@ buildMenu.Size = UDim2.new(0.42, 40, 0, 200) -- Frost Night batch 1: Scale width
 buildMenu.AnchorPoint = Vector2.new(0.5, 0.5)
 buildMenu.Position = UDim2.new(0.5, 0, 0.5, 0)
 buildMenu.BackgroundColor3 = NAVY
-buildMenu.BackgroundTransparency = 0.1
+buildMenu.BackgroundTransparency = 0.18
 buildMenu.BorderSizePixel = 0
 buildMenu.Visible = false
 buildMenu.Parent = gui
 local buildMenuCorner = Instance.new("UICorner")
 buildMenuCorner.CornerRadius = UDim.new(0, 12)
 buildMenuCorner.Parent = buildMenu
-addStroke(buildMenu, SILVER, 1, 0.4)
+addStroke(buildMenu, SILVER, 1, 0.3)
+addGloss(buildMenu)
 local buildTitle = makeLabel(buildMenu, "BUILD", UDim2.new(1, -16, 0, 24), UDim2.fromOffset(8, 8), SILVER, 17)
 buildTitle.TextXAlignment = Enum.TextXAlignment.Center
 
@@ -540,14 +562,15 @@ hotbar.Name = "Hotbar"
 hotbar.Size = UDim2.fromOffset(302, 56)
 hotbar.Position = UDim2.new(0.5, -151, 1, -64)
 hotbar.BackgroundColor3 = NAVY
-hotbar.BackgroundTransparency = 0.25
+hotbar.BackgroundTransparency = 0.18
 hotbar.BorderSizePixel = 0
 hotbar.Parent = gui
 
 local hotbarCorner = Instance.new("UICorner")
-hotbarCorner.CornerRadius = UDim.new(0, 10)
+hotbarCorner.CornerRadius = UDim.new(0, 12)
 hotbarCorner.Parent = hotbar
-addStroke(hotbar, SILVER, 1, 0.55)
+addStroke(hotbar, SILVER, 1, 0.35)
+addGloss(hotbar)
 
 local inputMode = "Keyboard"
 local function toggleTool(toolName)
