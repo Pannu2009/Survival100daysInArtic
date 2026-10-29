@@ -96,6 +96,18 @@ local function showBlackScreen(player)
 	frame.BorderSizePixel = 0
 	frame.ZIndex = 10
 	frame.Parent = gui
+	local loadingLabel = Instance.new("TextLabel")
+	loadingLabel.Name = "LoadingLabel"
+	loadingLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+	loadingLabel.Size = UDim2.fromScale(0.8, 0.2)
+	loadingLabel.Position = UDim2.fromScale(0.5, 0.5)
+	loadingLabel.BackgroundTransparency = 1
+	loadingLabel.Text = "Loading..."
+	loadingLabel.TextColor3 = Color3.new(1, 1, 1)
+	loadingLabel.Font = Enum.Font.GothamBold
+	loadingLabel.TextScaled = true
+	loadingLabel.ZIndex = 11
+	loadingLabel.Parent = gui
 	gui.Parent = playerGui
 	return gui
 end
@@ -112,41 +124,46 @@ local function makeHostGui(player, remote)
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "HostQueueGui"
 	gui.ResetOnSpawn = false
+	-- Mobile-compatible: everything in Scale, not Offset, so
+	-- the GUI adapts to phone screens instead of overflowing
+	-- or shrinking to a corner. Anchor in the centre.
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 420, 0, 220)
-	frame.Position = UDim2.new(0.5, -210, 0.5, -110)
+	frame.AnchorPoint = Vector2.new(0.5, 0.5)
+	frame.Size = UDim2.fromScale(0.85, 0.5)
+	frame.Position = UDim2.fromScale(0.5, 0.5)
 	frame.BackgroundColor3 = Color3.fromRGB(11, 30, 46)
 	frame.BorderSizePixel = 0
 	frame.Parent = gui
 	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, 0, 0, 40)
+	title.Size = UDim2.fromScale(1, 0.22)
 	title.BackgroundTransparency = 1
 	title.Text = "Choose Queue Size"
 	title.TextColor3 = Color3.fromRGB(221, 227, 231)
 	title.Font = Enum.Font.GothamBold
-	title.TextSize = 20
+	title.TextScaled = true
 	title.Parent = frame
 	for i = 1, MAX_SIZE do
 		local button = Instance.new("TextButton")
 		button.Name = "Size" .. i
-		button.Size = UDim2.new(0, 56, 0, 56)
-		button.Position = UDim2.new(0, 20 + (i - 1) * 76, 0, 60)
+		button.Size = UDim2.fromScale(0.16, 0.35)
+		button.Position = UDim2.new(0.04 + (i - 1) * 0.19, 0, 0.30, 0)
 		button.Text = tostring(i)
 		button.TextColor3 = Color3.fromRGB(11, 30, 46)
 		button.BackgroundColor3 = Color3.fromRGB(221, 227, 231)
 		button.Font = Enum.Font.GothamBold
-		button.TextSize = 20
+		button.TextScaled = true
 		button.Parent = frame
 	end
 	local create = Instance.new("TextButton")
 	create.Name = "CreateButton"
-	create.Size = UDim2.new(0, 200, 0, 50)
-	create.Position = UDim2.new(0.5, -100, 0, 150)
+	create.AnchorPoint = Vector2.new(0.5, 0.5)
+	create.Size = UDim2.fromScale(0.5, 0.25)
+	create.Position = UDim2.fromScale(0.5, 0.82)
 	create.Text = "Create"
 	create.TextColor3 = Color3.fromRGB(8, 17, 28)
 	create.BackgroundColor3 = Color3.fromRGB(125, 211, 252)
 	create.Font = Enum.Font.GothamBold
-	create.TextSize = 20
+	create.TextScaled = true
 	create.Parent = frame
 	gui.Parent = playerGui
 	return gui
@@ -160,6 +177,19 @@ function Queue.Start()
 	if not reserved then
 		warn("[Queue] Workspace.QueueFolder.Queue1.Reserved not found -- queue not started")
 		return
+	end
+	-- Hollow from the inside: a solid Reserved box pushes a
+	-- player back out the moment moveToIn puts him inside
+	-- it, and the prune loop then cancels his queue -- which
+	-- is why the host GUI got stuck. A queue box is a
+	-- VOLUME, not a wall: no collision, touch still on.
+	-- In is the same: a teleport target, never a collider.
+	reserved.CanCollide = false
+	reserved.CanTouch = true
+	if inPart and inPart:IsA("BasePart") then
+		inPart.CanCollide = false
+		inPart.CanTouch = false
+		inPart.Anchored = true
 	end
 	local playerLabel = findLabel(queue, "PlayerLabel")
 	local timeLabel = findLabel(queue, "TimeLabel")
@@ -219,6 +249,13 @@ function Queue.Start()
 	end
 
 	local function resetQueue()
+		if host then
+			local playerGui = host:FindFirstChild("PlayerGui")
+			local gui = playerGui and playerGui:FindFirstChild("HostQueueGui")
+			if gui then
+				gui:Destroy()
+			end
+		end
 		members = {}
 		host = nil
 		queueSize = nil

@@ -60,6 +60,16 @@ if serverMode == "Lobby" then
 	return
 end
 
+-- Game mode: the lobby queue must not exist in the game
+-- world at all -- no Reserved box to touch, no labels,
+-- no In part. Destroy the whole QueueFolder here, before
+-- world generation, so a game server never sees it.
+local queueFolder = workspace:FindFirstChild("QueueFolder")
+if queueFolder then
+	queueFolder:Destroy()
+	print("[Arctic] Game server: QueueFolder removed")
+end
+
 -- Aegis guards the game's remotes in AUDIT mode: it validates,
 -- rate-limits and reports to the Discord webhook, but never
 -- kicks -- enforcement comes after a tuning pass on real flags.
