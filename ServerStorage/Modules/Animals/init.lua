@@ -54,6 +54,7 @@ function Animals.new(gameplay)
 	self.Wolves = {}
 	self._byOwner = {}
 	self._commands = {}
+	self._behaviours = {} -- per-player: Passive / Neutral / Attack
 	self._packs = {}
 	self._nextPackId = 0
 	self._dangerSet = {}
@@ -699,7 +700,20 @@ function Animals:_claimWolf(wolf, lastDragger)
 	print(("[Arctic] %s tamed a wolf (%d/%d)"):format(owner.Name, #list, W.TeamLimit))
 end
 
+function Animals:SetBehaviour(player, behaviour)
+	if behaviour ~= "Passive" and behaviour ~= "Neutral" and behaviour ~= "Attack" then
+		return
+	end
+	self._behaviours[player] = behaviour
+	player:SetAttribute("WolfBehaviour", behaviour)
+end
+
 function Animals:SetCommand(player, mode, targetPos)
+	if mode == "Attack" and self._behaviours[player] == "Passive" then
+		-- Passive wolves never attack, even on a direct order.
+		self.Gameplay:Notify(player, "Wolf is Passive -- it will not attack.")
+		return
+	end
 	self._commands[player] = mode
 	player:SetAttribute("WolfCommand", mode)
 	if mode == "Attack" and typeof(targetPos) == "Vector3" then
@@ -760,6 +774,7 @@ function Animals:CleanupPlayer(player)
 	end
 	self._byOwner[player] = nil
 	self._commands[player] = nil
+	self._behaviours[player] = nil
 end
 
 -- ---------- tags ----------
@@ -1416,7 +1431,10 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 	end
 
 	local mode = self._commands[owner] or "Follow"
-	if mode == "Wander" then
+	if mode == "Stop" then
+		-- Stop: stay exactly where you are, do nothing.
+		self:_moveToward(wolf, pos, 0, dt)
+	elseif mode == "Wander" then
 		local anchor = wolf.Anchor or pos
 		if (root.Position - anchor).Magnitude > 110 then
 			anchor = root.Position
@@ -1429,20 +1447,27 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 		end
 		self:_moveToward(wolf, wolf.RoamTarget, W.RoamSpeed + 1.5, dt)
 	elseif mode == "Alert" then
-		-- Stay close, watch, and howl toward trouble.
+		-- Alert (new rule): stay close, and if a wild wolf
+		-- comes within 25 studs, howl AND go attack it.
+		-- Passive wolves howl only, never attack.
 		local back = root.Position - horizontalDir(root.CFrame.LookVector) * 5
 		if (pos - back).Magnitude > 3 then
 			self:_moveToward(wolf, back, W.FollowSpeed, dt)
 		end
-		local threat = self:NearestWildWolf(pos, 60)
+		local threat = self:NearestWildWolf(pos, 25)
 		if threat then
 			wolf.Yaw = yawLerp(wolf.Yaw, yawOf(horizontalDir(threat.Root.Position - pos)), dt * 7)
-			self:_moveToward(wolf, pos, 0, dt)
 			if now >= wolf.NextHowl then
 				wolf.NextHowl = now + 6
 				wolf.HowlUntil = now + 1.6
 				self:_refreshTag(wolf)
 			end
+			if self._behaviours[owner] ~= "Passive" and wolf.AttackWolf ~= threat then
+				wolf.AttackWolf = threat
+				wolf.AttackUntil = now + W.AttackSeconds
+			end
+		else
+			self:_moveToward(wolf, pos, 0, dt)
 		end
 	else -- Follow (and Attack with no live order)
 		local back = horizontalDir(root.CFrame.LookVector) * -1
@@ -1452,7 +1477,7 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 		if wolf.SlotIndex == 1 then
 			side = 0
 		end
-		local slot = root.Position + back * (3.5 + row * 2.2) + right * (side * 1.7)
+		local slot = root.Position + back * (8 + row * 2.2) + right * (side * 1.7)
 		local d = self:_moveSmart(wolf, slot, W.FollowSpeed, dt)
 		if d > 70 then
 			self:_placeAt(wolf, slot)

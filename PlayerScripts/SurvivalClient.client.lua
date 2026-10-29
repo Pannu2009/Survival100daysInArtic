@@ -1505,9 +1505,306 @@ for i, mode in ipairs({ "Follow", "Wander", "Alert", "Attack" }) do
 	wolfButtons[mode] = b
 end
 
+
+-- Wolf radial wheel (Ark-style): Studio-built
+-- StarterGui.RadialGui -> WolfRadial (runtime copy in
+-- PlayerGui.RadialGui). Wedges are ImageLabels "1".."6",
+-- each with a Label child; Center holds the centre label.
+-- Hold the whistle button to open, move pointer/finger
+-- to pick, release to fire. Behaviour opens a 3-way
+-- submenu (Passive / Neutral / Attack) after a short
+-- hover, so one hold can reach it.
+local radialRunService = game:GetService("RunService")
+local radialPlayerGui = player:FindFirstChild("PlayerGui")
+local radialScreen = radialPlayerGui and radialPlayerGui:FindFirstChild("RadialGui")
+local wolfRadial = radialScreen and radialScreen:FindFirstChild("WolfRadial")
+local radialWedges = {}
+local radialCenterLabel = nil
+local radialFound = false
+local radialHolding = false
+local radialTouchHolding = false
+local radialSelected = nil
+local radialSubmenu = false
+local radialHoverSince = 0
+local radialPointer = nil
+local radialScale = nil
+
+local whistleButton = Instance.new("TextButton")
+whistleButton.Name = "WolfWhistle"
+whistleButton.Size = UDim2.fromOffset(56, 56)
+whistleButton.Position = UDim2.new(0, 14, 1, -76)
+whistleButton.BackgroundColor3 = MARIGOLD
+whistleButton.BackgroundTransparency = 0.25
+whistleButton.TextColor3 = NAVY
+whistleButton.Font = Enum.Font.GothamBold
+whistleButton.TextSize = 10
+whistleButton.Text = "WOLF"
+whistleButton.AutoButtonColor = true
+whistleButton.Visible = false
+whistleButton.Parent = gui
+local whistleCorner = Instance.new("UICorner")
+whistleCorner.CornerRadius = UDim.new(0.5, 0)
+whistleCorner.Parent = whistleButton
+addStroke(whistleButton, NAVY, 1.5, 0.5)
+
+local function radialTryWire()
+	if radialFound or not wolfRadial then
+		return radialFound
+	end
+	local centerFrame = wolfRadial:FindFirstChild("Center")
+	if centerFrame then
+		radialCenterLabel = centerFrame:FindFirstChild("Label", true)
+	end
+	local mainNames = { "Follow", "Alert", "Stop", "Behaviour", "Wandering", "Extra" }
+	local mainCommands = { "Follow", "Alert", "Stop", "Behaviour", "Wander", "Extra" }
+	local subNames = { "Passive", "Neutral", "Attack" }
+	for i = 1, 6 do
+		local wedge = wolfRadial:FindFirstChild(tostring(i))
+		if wedge and wedge:IsA("GuiObject") then
+			local label = wedge:FindFirstChild("Label", true)
+			if label then
+				label.Text = mainNames[i]
+			end
+			radialWedges[#radialWedges + 1] = {
+				wedge = wedge,
+				label = label,
+				mainName = mainNames[i],
+				mainCommand = mainCommands[i],
+				subName = subNames[i],
+			}
+		end
+	end
+	if #radialWedges == 0 then
+		return false
+	end
+	radialFound = true
+	wolfRadial.Visible = false
+	for _, w in ipairs(radialWedges) do
+		if w.wedge:IsA("ImageLabel") then
+			w.wedge.ImageTransparency = 0.5
+		end
+	end
+	radialScale = wolfRadial:FindFirstChildOfClass("UIScale")
+	if not radialScale then
+		radialScale = Instance.new("UIScale")
+		radialScale.Parent = wolfRadial
+	end
+	return true
+end
+
+local function radialDisplay(w)
+	if radialSubmenu then
+		return w.subName or w.mainName
+	end
+	return w.mainName
+end
+
+local function radialApplySelection()
+	for _, w in ipairs(radialWedges) do
+		if w.wedge:IsA("ImageLabel") and w.wedge.Visible then
+			-- Selected = solid (0), default = faded (0.5).
+			-- A selected value of 1 would hide the wedge
+			-- entirely, so it is not used here.
+			local target = (w == radialSelected) and 0 or 0.5
+			TweenService:Create(w.wedge, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { ImageTransparency = target }):Play()
+		end
+	end
+	if radialCenterLabel then
+		if radialSelected then
+			radialCenterLabel.Text = radialDisplay(radialSelected)
+		elseif radialSubmenu then
+			radialCenterLabel.Text = "Behaviour"
+		else
+			radialCenterLabel.Text = "Wolf"
+		end
+	end
+end
+
+local function radialEnterSubmenu()
+	if radialSubmenu then
+		return
+	end
+	radialSubmenu = true
+	radialSelected = nil
+	for _, w in ipairs(radialWedges) do
+		if w.subName then
+			w.wedge.Visible = true
+			if w.label then
+				w.label.Text = w.subName
+			end
+		else
+			w.wedge.Visible = false
+		end
+	end
+	radialApplySelection()
+end
+
+local function radialExitSubmenu()
+	if not radialSubmenu then
+		return
+	end
+	radialSubmenu = false
+	radialSelected = nil
+	for _, w in ipairs(radialWedges) do
+		w.wedge.Visible = true
+		if w.label then
+			w.label.Text = w.mainName
+		end
+	end
+	radialApplySelection()
+end
+
+local function radialUpdateSelection()
+	if not radialHolding or not radialFound or not radialPointer then
+		return
+	end
+	local centre = wolfRadial.AbsolutePosition + wolfRadial.AbsoluteSize / 2
+	local dir = radialPointer - centre
+	local dist = dir.Magnitude
+	local outer = wolfRadial.AbsoluteSize.X / 2
+	local inner = outer * 0.35
+	local newSelected = nil
+	if dist >= inner and dist <= outer * 1.2 then
+		local angle = math.deg(math.atan2(-dir.Y, dir.X))
+		local bestDiff = 180
+		for _, w in ipairs(radialWedges) do
+			if w.wedge.Visible and w.label and (not radialSubmenu or w.subName) then
+				local lc = w.label.AbsolutePosition + w.label.AbsoluteSize / 2
+				local ld = lc - centre
+				local la = math.deg(math.atan2(-ld.Y, ld.X))
+				local diff = math.abs((angle - la + 180) % 360 - 180)
+				if diff < bestDiff then
+					bestDiff = diff
+					newSelected = w
+				end
+			end
+		end
+		if bestDiff > 30 then
+			newSelected = nil
+		end
+	end
+	if newSelected ~= radialSelected then
+		radialSelected = newSelected
+		radialHoverSince = os.clock()
+		radialApplySelection()
+		if radialSelected then
+			SoundModule.PlayService("UI_Hover")
+		end
+	elseif radialSelected and radialSelected.mainCommand == "Behaviour" and not radialSubmenu and os.clock() - radialHoverSince > 0.4 then
+		radialEnterSubmenu()
+	end
+end
+
+local function radialOpen()
+	if not radialFound then
+		return
+	end
+	radialHolding = true
+	radialSelected = nil
+	radialSubmenu = false
+	for _, w in ipairs(radialWedges) do
+		w.wedge.Visible = true
+		if w.label then
+			w.label.Text = w.mainName
+		end
+		if w.wedge:IsA("ImageLabel") then
+			w.wedge.ImageTransparency = 0.5
+		end
+	end
+	if radialCenterLabel then
+		radialCenterLabel.Text = "Wolf"
+	end
+	wolfRadial.Visible = true
+	if radialScale then
+		radialScale.Scale = 0.85
+		TweenService:Create(radialScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	end
+end
+
+local function radialClose(fire)
+	if not radialHolding then
+		return
+	end
+	radialHolding = false
+	local sel = radialSelected
+	local wasSubmenu = radialSubmenu
+	wolfRadial.Visible = false
+	radialSelected = nil
+	if fire and sel then
+		SoundModule.PlayService("UI_Click")
+		if wasSubmenu and sel.subName then
+			local behaviourRemote = remotes:FindFirstChild("WolfBehaviour")
+			if behaviourRemote then
+				behaviourRemote:FireServer(sel.subName)
+			end
+		elseif sel.mainCommand == "Follow" or sel.mainCommand == "Alert" or sel.mainCommand == "Stop" or sel.mainCommand == "Wander" then
+			wolfCommandRemote:FireServer(sel.mainCommand, nil)
+		elseif sel.mainCommand == "Attack" then
+			local targetPos
+			local cam = workspace.CurrentCamera
+			if cam then
+				local params = RaycastParams.new()
+				params.FilterType = Enum.RaycastFilterType.Exclude
+				params.FilterDescendantsInstances = { player.Character }
+				local hit = workspace:Raycast(cam.CFrame.Position, cam.CFrame.LookVector * 60, params)
+				targetPos = hit and hit.Position or (cam.CFrame.Position + cam.CFrame.LookVector * 35)
+			end
+			wolfCommandRemote:FireServer("Attack", targetPos)
+		end
+	end
+	radialExitSubmenu()
+end
+
+whistleButton.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		radialTouchHolding = input.UserInputType == Enum.UserInputType.Touch
+		radialPointer = input.Position
+		radialOpen()
+	end
+end)
+whistleButton.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		radialClose(true)
+	end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if radialHolding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		radialPointer = input.Position
+	end
+end)
+radialRunService.RenderStepped:Connect(function()
+	if radialHolding and not radialTouchHolding then
+		radialPointer = UserInputService:GetMouseLocation()
+	end
+	radialUpdateSelection()
+end)
+
+radialTryWire()
+if not radialFound and radialPlayerGui then
+	radialPlayerGui.ChildAdded:Connect(function(child)
+		if child.Name == "RadialGui" then
+			wolfRadial = child:FindFirstChild("WolfRadial")
+			if radialTryWire() then
+				whistleButton.Visible = (player:GetAttribute("WolfCount") or 0) > 0
+				for _, b in pairs(wolfButtons) do
+					b.Visible = false
+				end
+			end
+		end
+	end)
+end
+
 local function refreshWolfButtons()
 	local count = player:GetAttribute("WolfCount") or 0
 	local active = player:GetAttribute("WolfCommand") or "Follow"
+	if radialFound then
+		for _, b in pairs(wolfButtons) do
+			b.Visible = false
+		end
+		whistleButton.Visible = count > 0
+		return
+	end
+	whistleButton.Visible = false
 	for m, b in pairs(wolfButtons) do
 		b.Visible = count > 0
 		b.BackgroundColor3 = m == active and CYAN or SILVER

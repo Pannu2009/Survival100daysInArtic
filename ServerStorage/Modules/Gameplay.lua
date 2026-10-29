@@ -287,8 +287,17 @@ function Gameplay:Start()
 	wolfCommand.Name = "WolfCommand"
 	wolfCommand.Parent = remotes
 	Aegis.secure(wolfCommand, { args = { "string", "Vector3?" } }, function(player, mode, targetPos)
-		if mode == "Follow" or mode == "Wander" or mode == "Alert" or mode == "Attack" then
+		if mode == "Follow" or mode == "Wander" or mode == "Alert" or mode == "Attack" or mode == "Stop" then
 			self.Animals:SetCommand(player, mode, targetPos)
+		end
+	end)
+
+	local wolfBehaviour = Instance.new("RemoteEvent")
+	wolfBehaviour.Name = "WolfBehaviour"
+	wolfBehaviour.Parent = remotes
+	Aegis.secure(wolfBehaviour, { args = { "string" } }, function(player, behaviour)
+		if behaviour == "Passive" or behaviour == "Neutral" or behaviour == "Attack" then
+			self.Animals:SetBehaviour(player, behaviour)
 		end
 	end)
 
