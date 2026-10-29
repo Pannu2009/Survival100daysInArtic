@@ -18,6 +18,7 @@ local Merchant = require(script.Parent:WaitForChild("Merchant"))
 local Coal = require(script.Parent:WaitForChild("Coal"))
 local Weapons = require(script.Parent:WaitForChild("Weapons"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
+local Economy = require(script.Parent:WaitForChild("Economy"))
 local Aegis = require(script.Parent:WaitForChild("Aegis"))
 
 local Gameplay = {}
@@ -49,6 +50,8 @@ end
 function Gameplay.new(world, clock, temperature)
 	local self = setmetatable({}, Gameplay)
 	self.World = world
+	self.Economy = Economy
+	Economy.Init(function(player) return self._survivals[player] end)
 	self.Clock = clock
 	self.Temperature = temperature
 	self._survivals = {}

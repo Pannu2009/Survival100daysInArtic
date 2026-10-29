@@ -130,12 +130,14 @@ function Merchant:Buy(player, itemName)
 			itemName, Config.Merchant.RestockDays))
 		return
 	end
-	if (survival.Coins or 0) < item.Price then
+	if not self.Gameplay.Economy.CanAfford(player, item.Price) then
 		self.Gameplay:Notify(player, ("Need %d coins for %s (you have %d)."):format(
-			itemName, itemName, survival.Coins or 0))
+			itemName, itemName, self.Gameplay.Economy.Get(player)))
 		return
 	end
-	survival.Coins -= item.Price
+	if not self.Gameplay.Economy.Spend(player, item.Price) then
+		return
+	end
 	self.Stock[itemName] -= 1
 	if itemName == "Food" then
 		survival.Hunger:Eat(item.Hunger)
@@ -163,7 +165,7 @@ function Merchant:SellPelt(player)
 		return
 	end
 	self.Gameplay.Pelts.Counts[player] -= 1
-	survival.Coins = (survival.Coins or 0) + Config.Pelts.SellPrice
+	self.Gameplay.Economy.Add(player, Config.Pelts.SellPrice)
 	self.Gameplay:Notify(player, ("Sold a pelt for %d coins."):format(Config.Pelts.SellPrice))
 end
 

@@ -114,7 +114,7 @@ function Shelters:_takeLoot(player, crate)
 	end
 	crate:Destroy()
 	local coins = math.random(Config.Shelters.LootCoinsMin, Config.Shelters.LootCoinsMax)
-	survival.Coins = (survival.Coins or 0) + coins
+	self.Gameplay.Economy.Add(player, coins)
 	survival.Hunger:Eat(Config.Shelters.LootHunger)
 	self.Gameplay:Notify(player, ("Loot! +%d coins, a little food."):format(coins))
 	self.Gameplay:RecordAction(player, "loot")

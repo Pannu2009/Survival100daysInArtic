@@ -913,10 +913,22 @@ function SledService:_makeRopes(player)
 	end
 	local rootPart = self._rootPart
 
+	-- Hitches start at the sled's front corners, not the centre:
+	-- a rope drawn to the centre point looks attached to nothing
+	-- for the first frames, and sags through the sled body.
 	local hitches = {}
-	for _, suffix in ipairs({ "L", "R" }) do
+	local sledCF = rootPart.CFrame
+	local cornerFwd = self._halfLength * 0.85
+	local cornerSide = self._footprint.X / 2 - 0.4
+	for i, suffix in ipairs({ "L", "R" }) do
 		local hitch = Instance.new("Attachment")
 		hitch.Name = "Hitch" .. suffix
+		local side = i == 1 and -1 or 1
+		local cornerWorld = sledCF.Position
+			+ sledCF.LookVector * cornerFwd
+			+ sledCF.RightVector * (side * cornerSide)
+			+ Vector3.new(0, 1, 0)
+		hitch.CFrame = sledCF:ToObjectSpace(CFrame.new(cornerWorld))
 		hitch.Parent = rootPart
 		table.insert(hitches, hitch)
 	end
@@ -933,8 +945,9 @@ function SledService:_makeRopes(player)
 			local beam = Instance.new("Beam")
 			beam.Attachment0 = att
 			beam.Attachment1 = hitches[i]
-			beam.Width0 = 0.09
-			beam.Width1 = 0.09
+			beam.Width0 = 0.14
+			beam.Width1 = 0.14
+			beam.Segments = 8
 			beam.Color = ColorSequence.new(Color3.fromRGB(122, 92, 58))
 			beam.FaceCamera = false
 			beam.Parent = rootPart

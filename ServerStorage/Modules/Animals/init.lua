@@ -4,6 +4,8 @@ local Players = game:GetService("Players")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
+local AnimationModule = require(Modules:WaitForChild("AnimationModule"))
+local SoundModule = require(Modules:WaitForChild("SoundModule"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 
 local PathfindingService = game:GetService("PathfindingService")
@@ -198,12 +200,12 @@ function Animals:_buildWolf()
 		end)
 		return ok and track or nil
 	end
-	walkTrack = loadAnim("WalkAnim")
+	walkTrack = loadAnim(AnimationModule.Wolf.Walk)
 	if walkTrack then
 		walkTrack.Looped = true
 		wolf:SetAttribute("WalkTrackReady", true)
 	end
-	attackTrack = loadAnim("AttackAnim")
+	attackTrack = loadAnim(AnimationModule.Wolf.Attack)
 	-- Idle is a ROTATION, not one clip: every Idle* animation in
 	-- the model joins the wolf's play set and he cycles them.
 	local idleTracks = {}
@@ -214,10 +216,7 @@ function Animals:_buildWolf()
 			table.insert(idleTracks, track)
 		end
 	end
-	addIdle("Idle_1_Anim")
-	addIdle("Idle_2_Anim")
-	addIdle("Idle_3_Anim")
-	addIdle("IdleAnim")
+	for _, idleName in ipairs(AnimationModule.Wolf.Idle) do addIdle(idleName) end
 	for _, d in ipairs(wolf:GetDescendants()) do
 		if d:IsA("Animation") and d.Name:sub(1, 4) == "Idle"
 			and d.Name ~= "Idle_1_Anim" and d.Name ~= "Idle_2_Anim"
@@ -227,7 +226,7 @@ function Animals:_buildWolf()
 		end
 	end
 	idleTrack = idleTracks[1]
-	local biteSound = wolf:FindFirstChild("damage", true)
+	local biteSound = wolf:FindFirstChild(SoundModule.Wolf.Bite, true)
 	if biteSound and biteSound:IsA("Sound") then
 		wolf:SetAttribute("BiteSoundReady", true)
 		biteSoundFound = biteSound
@@ -451,6 +450,7 @@ function Animals:NoiseAt(position, player, radius)
 			if (wolf.Root.Position - position).Magnitude <= radius then
 				wolf.State = "Wary"
 				wolf.TargetPlayer = player
+				wolf.WarySince = now
 				wolf.NoisePos = position
 				wolf.NoiseUntil = now + Config.Sickness.CoughInvestigateSeconds
 			end
@@ -972,7 +972,7 @@ function Animals:_computePath(from, to)
 	local path = PathfindingService:CreatePath({
 		AgentRadius = 1.2,
 		AgentHeight = 3,
-		AgentCanJump = false,
+		AgentCanJump = true,
 		AgentCanClimb = false,
 	})
 	local ok = pcall(function()
@@ -1003,15 +1003,23 @@ function Animals:_moveSmart(wolf, targetPos, speed, dt)
 		return targetDist
 	end
 	local now = os.clock()
+	-- A failed compute used to retry EVERY frame (pathfinding
+	-- is expensive, and a wolf on rough snow would stutter).
+	-- Cache the failure briefly and walk direct meanwhile.
+	if now < (wolf.PathFailUntil or 0) then
+		self:_moveToward(wolf, targetPos, speed, dt)
+		return targetDist
+	end
 	local path = wolf.Path
 	if not path or (path.TargetPos - targetPos).Magnitude > 8 or now > path.ExpiresAt then
 		local points = self:_computePath(pos, targetPos)
 		if points then
-			wolf.Path = { Points = points, Index = 2, TargetPos = targetPos, ExpiresAt = now + 2.5 }
+			wolf.Path = { Points = points, Index = 2, TargetPos = targetPos, ExpiresAt = now + 5 }
 			path = wolf.Path
 		else
 			wolf.Path = nil
 			path = nil
+			wolf.PathFailUntil = now + 1.5
 		end
 	end
 	if not path then
@@ -1072,7 +1080,7 @@ function Animals:_moveToward(wolf, targetPos, speed, dt)
 			wolf.MarkSide = -(wolf.MarkSide or 1)
 			local right = Vector3.new(math.cos(wolf.Yaw), 0, -math.sin(wolf.Yaw))
 			local paw = Vector3.new(pos.X, pos.Y, pos.Z) + right * (0.35 * wolf.MarkSide)
-			TrackMarks.SpawnFoot(paw, wolf.Yaw, 6)
+			TrackMarks.SpawnPaw(paw, wolf.Yaw, 10)
 		end
 	end
 	local groundY = self.Gameplay.World:GroundY(pos.X, pos.Z)
@@ -1225,6 +1233,7 @@ function Animals:_step(dt)
 					else
 						wolf.State = "Wary"
 						wolf.TargetPlayer = near
+						wolf.WarySince = now
 					end
 				end
 				if not wolf.RoamTarget or (wolf.RoamTarget - pos).Magnitude < 2 then
@@ -1244,7 +1253,9 @@ function Animals:_step(dt)
 				end
 			end
 			if wolf.RoamTarget then
-				self:_moveToward(wolf, wolf.RoamTarget, W.RoamSpeed, dt)
+				-- Long wanders pathfind (around trees/rocks/fire);
+				-- _moveSmart falls back to direct under 8 studs.
+				self:_moveSmart(wolf, wolf.RoamTarget, W.RoamSpeed, dt)
 			end
 		elseif wolf.State == "Playing" then
 			-- Still watching for trouble while he plays.
@@ -1302,7 +1313,32 @@ function Animals:_step(dt)
 					end
 				end
 				if not investigating then
-					self:_moveToward(wolf, pos, 0, dt) -- hold ground, keep facing
+					-- The old code held ground here FOREVER while a
+					-- player watched from wary range: the wolf just
+					-- stood doing his idle animation. Now he paces
+					-- around the player after 3s, and after 8s of
+					-- no aggro he gives up and wanders off.
+					if not wolf.WarySince then
+						wolf.WarySince = now
+					end
+					local waryFor = now - wolf.WarySince
+					if waryFor > 8 then
+						wolf.State = "Roam"
+						wolf.TargetPlayer = nil
+						wolf.WarySince = nil
+						wolf.RoamTarget = nil
+					elseif waryFor > 3 then
+						if not wolf.WaryPaceTarget or now > (wolf.WaryPaceUntil or 0)
+							or (wolf.WaryPaceTarget - pos).Magnitude < 3 then
+							local a = math.random() * math.pi * 2
+							wolf.WaryPaceTarget = root.Position
+								+ Vector3.new(math.cos(a) * 18, 0, math.sin(a) * 18)
+							wolf.WaryPaceUntil = now + 3
+						end
+						self:_moveSmart(wolf, wolf.WaryPaceTarget, W.RoamSpeed, dt)
+					else
+						self:_moveToward(wolf, pos, 0, dt) -- hold ground, keep facing
+					end
 				end
 			end
 		elseif wolf.State == "Aggro" then

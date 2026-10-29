@@ -141,8 +141,8 @@ Config.Sled = {
 }
 
 Config.Tracks = {
-	SledLife = 7,
-	FootLife = 8,
+	SledLife = 12,
+	FootLife = 12,
 	SledStep = 2.2,
 	FootStep = 1.9,
 }
@@ -401,11 +401,8 @@ Config.Food = {
 	CookSeconds = 5,
 }
 
-Config.Animations = {
-	Chop = "",
-	Carry = "",
-	Sleep = "",
-	Shiver = "",
-}
+-- Animations are owned by AnimationModule now (split out of
+-- Config); this table is kept as a compatibility alias only.
+Config.Animations = require(script.Parent:WaitForChild("AnimationModule")).Player
 
 return Config

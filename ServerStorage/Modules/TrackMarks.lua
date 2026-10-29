@@ -225,12 +225,38 @@ function TrackMarks.SpawnFoot(position, yaw, life)
 	end
 	local cf = CFrame.new(Vector3.new(position.X, hit.Position.Y + 0.04, position.Z))
 		* CFrame.Angles(0, yaw, 0)
-	local toe = newMarkPart(Vector3.new(0.8, 0.05, 0.95))
+	local toe = newMarkPart(Vector3.new(0.9, 0.05, 1.0))
 	toe.CFrame = cf * CFrame.new(0, 0, 0.3)
-	local heel = newMarkPart(Vector3.new(0.68, 0.05, 0.5))
+	local heel = newMarkPart(Vector3.new(0.75, 0.05, 0.55))
 	heel.CFrame = cf * CFrame.new(0, 0, -0.5)
-	addMark({ toe, heel }, 0.35, life)
+	addMark({ toe, heel }, 0.25, life)
 	pressAtPoint(position, 0.35, life)
+end
+
+-- Wolf paw print: a main pad plus three toe lobes in front,
+-- smaller and darker than a boot print, so a wolf trail does
+-- not read as a human walking. Callers pass the paw position.
+function TrackMarks.SpawnPaw(position, yaw, life)
+	local hit = snowHit(position.X, position.Z)
+	if not hit then
+		return
+	end
+	local cf = CFrame.new(Vector3.new(position.X, hit.Position.Y + 0.04, position.Z))
+		* CFrame.Angles(0, yaw, 0)
+	local pad = newMarkPart(Vector3.new(0.6, 0.05, 0.55))
+	pad.CFrame = cf
+	local toes = {}
+	for _, off in ipairs({ -0.22, 0, 0.22 }) do
+		local toe = newMarkPart(Vector3.new(0.18, 0.05, 0.22))
+		toe.CFrame = cf * CFrame.new(off, 0, 0.42)
+		table.insert(toes, toe)
+	end
+	local parts = { pad }
+	for _, toe in ipairs(toes) do
+		table.insert(parts, toe)
+	end
+	addMark(parts, 0.25, life)
+	pressAtPoint(position, 0.3, life)
 end
 
 -- One runner trail segment from `from` to `to`, pitched so it hugs
@@ -248,9 +274,9 @@ function TrackMarks.SpawnSegment(from, to, depth01, life)
 	if length < 0.1 then
 		return
 	end
-	local part = newMarkPart(Vector3.new(0.55, 0.05, length + 0.25))
+	local part = newMarkPart(Vector3.new(0.5, 0.05, length + 0.25))
 	part.CFrame = CFrame.lookAt((a + b) / 2, b)
-	addMark({ part }, 0.5 - 0.3 * math.clamp(depth01, 0, 1), life)
+	addMark({ part }, 0.4 - 0.3 * math.clamp(depth01, 0, 1), life)
 	pressAtPoint(to, depth01, life)
 end
 
