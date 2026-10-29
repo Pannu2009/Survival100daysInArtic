@@ -1785,7 +1785,7 @@ if not radialFound and radialPlayerGui then
 		if child.Name == "RadialGui" then
 			wolfRadial = child:FindFirstChild("WolfRadial")
 			if radialTryWire() then
-				whistleButton.Visible = (player:GetAttribute("WolfCount") or 0) > 0
+				whistleButton.Visible = true -- test mode: show without a tamed wolf
 				for _, b in pairs(wolfButtons) do
 					b.Visible = false
 				end
@@ -1801,7 +1801,10 @@ local function refreshWolfButtons()
 		for _, b in pairs(wolfButtons) do
 			b.Visible = false
 		end
-		whistleButton.Visible = count > 0
+		-- Test mode: whistle always shows, even with 0 wolves,
+		-- so the wheel can be tested without taming first.
+		-- Firing a command with no wolves just does nothing.
+		whistleButton.Visible = true
 		return
 	end
 	whistleButton.Visible = false
