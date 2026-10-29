@@ -17,7 +17,66 @@ for _ = 1, 30 do
 	task.wait(0.1)
 	serverMode = ReplicatedStorage:GetAttribute("ServerMode")
 end
+-- Camera (client-side, same rule as the server): lobby
+-- Classic, game LockFirstPerson.
+pcall(function()
+	player.DevComputerCameraMode = serverMode == "Lobby"
+		and Enum.DevComputerCameraMode.Classic
+		or Enum.DevComputerCameraMode.LockFirstPerson
+end)
+pcall(function()
+	player.DevTouchCameraMode = serverMode == "Lobby"
+		and Enum.DevTouchCameraMode.Classic
+		or Enum.DevTouchCameraMode.LockFirstPerson
+end)
 if serverMode == "Lobby" then
+	-- Lobby client: wire the host queue GUI the server
+	-- creates (size buttons + Create -> QueueHostCreate).
+	-- This runs instead of the survival HUD in lobby mode.
+	task.spawn(function()
+		local playerGui = player:WaitForChild("PlayerGui")
+		local remotes = ReplicatedStorage:WaitForChild("Remotes")
+		local hostRemote = remotes:WaitForChild("QueueHostCreate")
+		local function wireHostGui(gui)
+			local frame = gui:WaitForChild("Frame", 5)
+			if not frame then
+				return
+			end
+			local selected = 1
+			for i = 1, 5 do
+				local button = frame:FindFirstChild("Size" .. i)
+				if button then
+					button.Activated:Connect(function()
+						selected = i
+						for j = 1, 5 do
+							local other = frame:FindFirstChild("Size" .. j)
+							if other then
+								other.BackgroundColor3 = (j == selected)
+									and Color3.fromRGB(125, 211, 252)
+									or Color3.fromRGB(221, 227, 231)
+							end
+						end
+					end)
+				end
+			end
+			local create = frame:FindFirstChild("CreateButton")
+			if create then
+				create.Activated:Connect(function()
+					hostRemote:FireServer(selected)
+					gui:Destroy()
+				end)
+			end
+		end
+		playerGui.ChildAdded:Connect(function(child)
+			if child.Name == "HostQueueGui" then
+				wireHostGui(child)
+			end
+		end)
+		local existing = playerGui:FindFirstChild("HostQueueGui")
+		if existing then
+			wireHostGui(existing)
+		end
+	end)
 	return
 end
 local StarterGui = game:GetService("StarterGui")

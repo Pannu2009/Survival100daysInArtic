@@ -3,6 +3,7 @@ local Lighting = game:GetService("Lighting")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
+local FireEffect = require(Modules:WaitForChild("FireEffect"))
 local TerrainBuilder = require(script.Parent:WaitForChild("TerrainBuilder"))
 
 local NAVY = Color3.fromHex("0B1E2E") -- Frost Night base (see client)
@@ -430,12 +431,22 @@ function WorldBuilder:_createFire(x, z)
 		GroundY = groundY,
 	}
 
-	local flame = campfire:FindFirstChildOfClass("Fire", true)
-	if not flame then
-		flame = Instance.new("Fire")
-		flame.Size = 6
-		flame.Heat = 12
-		flame.Parent = fireCore
+	-- Ajay's utils.Fire emitter is the fire visual now: clone
+	-- it onto the core and let _refreshFireVisual toggle it
+	-- with Lit/Fuel, like the BonFire emitters above.
+	for _, emitter in ipairs(FireEffect.AttachFire(fireCore)) do
+		table.insert(fire.Emitters, emitter)
+	end
+	-- Legacy Fire object only if utils.Fire was not found.
+	local flame = nil
+	if #fire.Emitters == 0 then
+		flame = campfire:FindFirstChildOfClass("Fire", true)
+		if not flame then
+			flame = Instance.new("Fire")
+			flame.Size = 6
+			flame.Heat = 12
+			flame.Parent = fireCore
+		end
 	end
 	fire.Fire = flame
 

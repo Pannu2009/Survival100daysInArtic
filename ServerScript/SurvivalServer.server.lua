@@ -19,6 +19,32 @@ local ServerMode = require(ServerModules:WaitForChild("ServerMode"))
 local serverMode = ServerMode.Detect()
 ReplicatedStorage:SetAttribute("ServerMode", serverMode)
 print("[Arctic] Server mode: " .. serverMode)
+-- Camera: lobby = Classic (free camera), game = LockFirstPerson.
+-- StarterPlayer sets the default for new joins; the per-player
+-- Dev modes below cover players already in the server.
+pcall(function()
+	local StarterPlayer = game:GetService("StarterPlayer")
+	StarterPlayer.CameraMode = serverMode == "Lobby"
+		and Enum.CameraMode.Classic
+		or Enum.CameraMode.LockFirstPerson
+end)
+local function setCameraMode(player)
+	local mode = serverMode == "Lobby"
+		and Enum.DevComputerCameraMode.Classic
+		or Enum.DevComputerCameraMode.LockFirstPerson
+	pcall(function()
+		player.DevComputerCameraMode = mode
+	end)
+	pcall(function()
+		player.DevTouchCameraMode = serverMode == "Lobby"
+			and Enum.DevTouchCameraMode.Classic
+			or Enum.DevTouchCameraMode.LockFirstPerson
+	end)
+end
+game:GetService("Players").PlayerAdded:Connect(setCameraMode)
+for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+	setCameraMode(player)
+end
 if serverMode == "Lobby" then
 	-- Lobby server: players spawn normally (CharacterAutoLoads
 	-- stays true, Gameplay never turns it off here) into the

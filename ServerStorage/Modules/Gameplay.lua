@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
+local FireEffect = require(Modules:WaitForChild("FireEffect"))
 local DragSystem = require(Modules:WaitForChild("DragSystem"))
 local SurvivalPlayer = require(script.Parent:WaitForChild("SurvivalPlayer"))
 local FishSystem = require(script.Parent:WaitForChild("FishSystem"))
@@ -689,11 +690,17 @@ function Gameplay:_setBurning(log)
 	end
 	self:_refreshLog(log)
 
-	local flame = Instance.new("Fire")
-	flame.Name = "BurnFlame"
-	flame.Size = 5
-	flame.Heat = 10
-	flame.Parent = logPart
+	local burnEmitters = FireEffect.AttachFire(logPart)
+	for _, emitter in ipairs(burnEmitters) do
+		emitter.Enabled = true
+	end
+	if #burnEmitters == 0 then
+		local flame = Instance.new("Fire")
+		flame.Name = "BurnFlame"
+		flame.Size = 5
+		flame.Heat = 10
+		flame.Parent = logPart
+	end
 	local light = Instance.new("PointLight")
 	light.Name = "BurnLight"
 	light.Color = Color3.fromRGB(255, 176, 66)
@@ -954,12 +961,20 @@ function Gameplay:_tickBurn(player, survival, root, dt)
 		if not state then
 			state = { Acc = 0 }
 			self._burn[player] = state
-			local flame = Instance.new("Fire")
-			flame.Name = "BurnFlames"
-			flame.Heat = 9
-			flame.Size = 4
-			flame.Parent = root
-			state.Flame = flame
+			local burnEmitters = FireEffect.AttachFire(root)
+			for _, emitter in ipairs(burnEmitters) do
+				emitter.Enabled = true
+			end
+			if #burnEmitters == 0 then
+				local flame = Instance.new("Fire")
+				flame.Name = "BurnFlames"
+				flame.Heat = 9
+				flame.Size = 4
+				flame.Parent = root
+				state.Flame = flame
+			else
+				state.Flames = burnEmitters
+			end
 			self:Notify(player, "You're on fire!")
 		end
 		state.Until = now + math.random(Config.Campfire.BurnSecondsMin, Config.Campfire.BurnSecondsMax)
@@ -968,6 +983,13 @@ function Gameplay:_tickBurn(player, survival, root, dt)
 		if not root or now > (state.Until or 0) then
 			if state.Flame then
 				state.Flame:Destroy()
+			end
+			if state.Flames then
+				for _, emitter in ipairs(state.Flames) do
+					if emitter.Parent then
+						emitter:Destroy()
+					end
+				end
 			end
 			self._burn[player] = nil
 			return
