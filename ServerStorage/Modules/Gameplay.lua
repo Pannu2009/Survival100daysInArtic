@@ -146,6 +146,36 @@ function Gameplay:Start()
 		if typeof(structureName) == "string" and Config.Structures[structureName] then
 			structureId = structureName
 		end
+		-- Session limits (Ajay, post-playtest): 1 campfire per
+		-- SESSION (server-wide), 1 sleeping bag per PLAYER.
+		if structureId == "Campfire" then
+			local hasFire = self.World and #self.World.Fires >= 1
+			if not hasFire and self.World then
+				for _, bp in ipairs(self.World.Blueprints) do
+					if bp.StructureId == "Campfire" then hasFire = true break end
+				end
+			end
+			if hasFire then
+				self:Notify(player, "Only 1 campfire can be built per session.")
+				return
+			end
+		elseif structureId == "SleepingBag" then
+			local hasBag = false
+			if self.Sleep then
+				for _, bag in pairs(self.Sleep.Bags) do
+					if bag.Owner == player then hasBag = true break end
+				end
+			end
+			if not hasBag and self.World then
+				for _, bp in ipairs(self.World.Blueprints) do
+					if bp.StructureId == "SleepingBag" and bp.PlacedBy == player then hasBag = true break end
+				end
+			end
+			if hasBag then
+				self:Notify(player, "You already have a sleeping bag (1 per player). Carry it instead.")
+				return
+			end
+		end
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if not root then
@@ -192,7 +222,11 @@ function Gameplay:Start()
 			-- the design's +1 sleeping-bag multiplier, once.
 			local model, anchor = self.World:CreateStructure("SleepingBag", bp.Position.X, bp.Position.Z, false)
 			if model and anchor then
-				self.Sleep:RegisterBag(model, anchor)
+				local owner = bp.PlacedBy
+				if not owner then
+					for pl in pairs(bp.Contributors) do owner = pl break end
+				end
+				self.Sleep:RegisterBag(model, anchor, owner)
 			end
 			if not self._sleepBagMultiplierGranted then
 				self._sleepBagMultiplierGranted = true
@@ -291,6 +325,19 @@ function Gameplay:Start()
 		end
 	end)
 
+	local kidAssign = Instance.new("RemoteEvent")
+	kidAssign.Name = "KidAssignTask"
+	kidAssign.Parent = remotes
+	Aegis.secure(kidAssign, { args = { "number", "string" } }, function(player, kidId, task)
+		if not self.Kids or typeof(kidId) ~= "number" or typeof(task) ~= "string" then return end
+		for _, kid in ipairs(self.Kids.Kids) do
+			if kid.Id == kidId then
+				self.Kids:AssignTask(player, kid, task)
+				break
+			end
+		end
+	end)
+
 	Aegis.secure(setSprinting, { args = { "boolean" } }, function(player, value)
 		self._sprinting[player] = value == true
 	end)
@@ -360,10 +407,10 @@ function Gameplay:_syncAttributes(player)
 		Hunger = math.floor(survival.Hunger:Get()),
 		IsSick = survival.IsSick,
 		Coins = survival.Coins or 0,
-		Pelts = self.Pelts and self.Pelts:GetCount(player) or 0,
-		FurPieces = self.Pelts and self.Pelts:GetFur(player) or 0,
-		Medkits = self.Merchant and self.Merchant:GetMedkits(player) or 0,
-		KidCount = self.Kids and self.Kids:CountFor(player) or 0,
+		-- Stats only: Pelts / Fur / Medkits / KidCount are no longer
+		-- published to the HUD. The systems still run internally
+		-- (crafting, merchant, kids), they just are not shown.
+		KidPanel = self.Kids and self.Kids:PanelStringFor(player) or "",
 		LighterFuel = self.Weapons:GetFuel(player),
 		TutorialStep = self:_tutorialStep(player),
 	}

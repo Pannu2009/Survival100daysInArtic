@@ -361,7 +361,7 @@ Config.Kids = {
 	EatInterval = 240,
 	EatHunger = 2,
 	FeedHunger = 5,
-	TaskCycle = { "Wood", "Fish", "Route", "Idle" },
+	TaskCycle = { "Wood", "Fish", "Stay", "Idle" }, -- panel tasks: wood, fishing, stay at campfire, idle
 }
 
 -- Phase 3: merchant. Stock is limited and restocks every

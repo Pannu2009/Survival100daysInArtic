@@ -246,16 +246,144 @@ local hungerFrame = makeStatFrame("HungerFrame", UDim2.new(0.18, 40, 0, 28), UDi
 local hungerFill = makeBar(hungerFrame, "Hunger")
 
 
--- Wallet HUD (Frost Night batch 1, Phase 3 readout): the server
--- already publishes Coins / Pelts / FurPieces / Medkits / KidCount
--- via Gameplay:_syncAttributes, so this only READS player
--- attributes -- no new remote, no poll. Updated in refreshPlayer,
+-- Stats HUD (Coins only): no leaderstats, no Pelts / Fur /
+-- Medkits / Kids readout. The server publishes Coins as a
+-- player attribute (Stats, not a leaderboard) and this only
+-- READS it -- no new remote, no poll. Updated in refreshPlayer,
 -- which already runs on player.AttributeChanged.
-local walletFrame = makeStatFrame("WalletFrame", UDim2.new(0.22, 40, 0, 44), UDim2.new(1, -6, 0, 45), Vector2.new(1, 0))
-local walletLine1 = makeLabel(walletFrame, "Coins: 0  Medkits: 0", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 3), CYAN, 12)
+local walletFrame = makeStatFrame("WalletFrame", UDim2.new(0.22, 40, 0, 24), UDim2.new(1, -6, 0, 45), Vector2.new(1, 0))
+local walletLine1 = makeLabel(walletFrame, "Coins: 0", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 3), CYAN, 12)
 walletLine1.TextXAlignment = Enum.TextXAlignment.Center
-local walletLine2 = makeLabel(walletFrame, "Pelts: 0  Fur: 0  Kids: 0", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 23), SILVER, 12)
-walletLine2.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Kids panel: one row per rescued kid, from the server's
+-- KidPanel attribute ("Name|Task|AssignedBy;..."). No
+-- leaderstats, no Pelts/Fur/Medkit readout here either.
+-- ASSIGN-TASK opens the task menu: Get Wood / Go Fishing /
+-- Stay at Campfire / Idle. Kid index in panel order = kid Id
+-- (Arzh=1, Noor=2, Veer=3, spawn order on the server).
+local kidAssignRemote = remotes:WaitForChild("KidAssignTask")
+local kidsPanel = makeStatFrame("KidsPanel", UDim2.new(0.30, 40, 0, 30), UDim2.new(0, 8, 0.42, 100), Vector2.new(0, 0))
+kidsPanel.Visible = false
+local kidsTitle = makeLabel(kidsPanel, "KIDS", UDim2.new(1, -12, 0, 20), UDim2.fromOffset(6, 4), SILVER, 13)
+kidsTitle.TextXAlignment = Enum.TextXAlignment.Center
+local kidsRows = Instance.new("Frame")
+kidsRows.Name = "KidsRows"
+kidsRows.Size = UDim2.new(1, -12, 1, -30)
+kidsRows.Position = UDim2.fromOffset(6, 28)
+kidsRows.BackgroundTransparency = 1
+kidsRows.Parent = kidsPanel
+local taskMenu = Instance.new("Frame")
+taskMenu.Name = "KidTaskMenu"
+taskMenu.Size = UDim2.new(0.42, 40, 0, 240)
+taskMenu.AnchorPoint = Vector2.new(0.5, 0.5)
+taskMenu.Position = UDim2.new(0.5, 0, 0.5, 0)
+taskMenu.BackgroundColor3 = NAVY
+taskMenu.BackgroundTransparency = 0.18
+taskMenu.BorderSizePixel = 0
+taskMenu.Visible = false
+taskMenu.Parent = gui
+local taskMenuCorner = Instance.new("UICorner")
+taskMenuCorner.CornerRadius = UDim.new(0, 12)
+taskMenuCorner.Parent = taskMenu
+addStroke(taskMenu, SILVER, 1, 0.35)
+addGloss(taskMenu)
+local taskMenuTitle = makeLabel(taskMenu, "ASSIGN TASK", UDim2.new(1, -16, 0, 24), UDim2.fromOffset(8, 8), SILVER, 15)
+taskMenuTitle.TextXAlignment = Enum.TextXAlignment.Center
+local selectedKidId = nil
+local function closeTaskMenu()
+	taskMenu.Visible = false
+	selectedKidId = nil
+end
+local taskButtons = {
+	{ "Get Wood", "Wood" },
+	{ "Go Fishing", "Fish" },
+	{ "Stay at Campfire", "Stay" },
+	{ "Idle", "Idle" },
+}
+for i, btn in ipairs(taskButtons) do
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, -24, 0, 38)
+	b.Position = UDim2.fromOffset(12, 36 + (i - 1) * 44)
+	b.Text = btn[1]
+	b.TextColor3 = NAVY
+	b.BackgroundColor3 = CYAN
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 14
+	b.BorderSizePixel = 0
+	b.Parent = taskMenu
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 8)
+	c.Parent = b
+	b.Activated:Connect(function()
+		if selectedKidId then
+			kidAssignRemote:FireServer(selectedKidId, btn[2])
+		end
+		closeTaskMenu()
+	end)
+end
+local taskClose = Instance.new("TextButton")
+taskClose.Size = UDim2.new(1, -24, 0, 30)
+taskClose.Position = UDim2.fromOffset(12, 212)
+taskClose.Text = "Close"
+taskClose.TextColor3 = SILVER
+taskClose.BackgroundColor3 = NAVY
+taskClose.Font = Enum.Font.GothamBold
+taskClose.TextSize = 13
+taskClose.BorderSizePixel = 0
+taskClose.Parent = taskMenu
+taskClose.Activated:Connect(closeTaskMenu)
+local function rebuildKidsPanel()
+	for _, child in ipairs(kidsRows:GetChildren()) do
+		child:Destroy()
+	end
+	local data = player:GetAttribute("KidPanel") or ""
+	if data == "" then
+		kidsPanel.Visible = false
+		return
+	end
+	local rows = string.split(data, ";")
+	kidsPanel.Size = UDim2.new(0.30, 40, 0, 30 + #rows * 68)
+	kidsPanel.Visible = true
+	for i, row in ipairs(rows) do
+		local parts = string.split(row, "|")
+		local name = parts[1] or ("Kid " .. i)
+		local task = parts[2] or "Idle"
+		local by = parts[3] or "-"
+		local rowFrame = Instance.new("Frame")
+		rowFrame.Size = UDim2.new(1, 0, 0, 62)
+		rowFrame.Position = UDim2.fromOffset(0, (i - 1) * 68)
+		rowFrame.BackgroundTransparency = 0.4
+		rowFrame.BackgroundColor3 = NAVY
+		rowFrame.BorderSizePixel = 0
+		rowFrame.Parent = kidsRows
+		local rc = Instance.new("UICorner")
+		rc.CornerRadius = UDim.new(0, 8)
+		rc.Parent = rowFrame
+		makeLabel(rowFrame, ("name: %s   task: %s"):format(name, task), UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 4), SILVER, 12)
+		makeLabel(rowFrame, ("taskAssignBy: %s"):format(by), UDim2.new(1, -8, 0, 16), UDim2.fromOffset(4, 22), CYAN, 11)
+		local assign = Instance.new("TextButton")
+		assign.Size = UDim2.new(1, -8, 0, 22)
+		assign.Position = UDim2.fromOffset(4, 38)
+		assign.Text = "ASSIGN-TASK"
+		assign.TextColor3 = NAVY
+		assign.BackgroundColor3 = MARIGOLD
+		assign.Font = Enum.Font.GothamBold
+		assign.TextSize = 12
+		assign.BorderSizePixel = 0
+		assign.Parent = rowFrame
+		local ac = Instance.new("UICorner")
+		ac.CornerRadius = UDim.new(0, 6)
+		ac.Parent = assign
+		local kidId = i
+		assign.Activated:Connect(function()
+			selectedKidId = kidId
+			taskMenuTitle.Text = ("ASSIGN TASK - %s"):format(name)
+			taskMenu.Visible = true
+		end)
+	end
+end
+player:GetAttributeChangedSignal("KidPanel"):Connect(rebuildKidsPanel)
+rebuildKidsPanel()
 
 -- Wind pill (Frost Night batch 1, client-only): reads the wind
 -- the server already publishes on ReplicatedStorage (WindDir /
@@ -380,11 +508,37 @@ grabCorner.CornerRadius = UDim.new(0.5, 0)
 grabCorner.Parent = grabButton
 addStroke(grabButton, NAVY, 1.5, 0.25)
 local grabTarget = nil
+-- Dedicated DROP: while dragging this button is the drop control.
+-- Fallback Drop even if myDragPart tracking missed (the fish bug):
+-- the server drops whatever item this player holds, by GetPlayerItem.
+local dropButton = Instance.new("TextButton")
+dropButton.Name = "DropButton"
+dropButton.Size = UDim2.fromOffset(72, 72)
+dropButton.Position = UDim2.new(1, -88, 1, -324)
+dropButton.Text = "DROP"
+dropButton.TextColor3 = NAVY
+dropButton.BackgroundColor3 = MARIGOLD
+dropButton.Font = Enum.Font.GothamBold
+dropButton.TextSize = 16
+dropButton.BorderSizePixel = 0
+dropButton.Visible = false
+dropButton.ZIndex = 10
+dropButton.Parent = gui
+local dropCorner = Instance.new("UICorner")
+dropCorner.CornerRadius = UDim.new(0.5, 0)
+dropCorner.Parent = dropButton
+addStroke(dropButton, NAVY, 1.5, 0.25)
+dropButton.Activated:Connect(function()
+	dragActionRemote:FireServer("Drop")
+end)
 grabButton.Activated:Connect(function()
 	if myDragPartRef and myDragPartRef() then
 		dragActionRemote:FireServer("Drop")
 	elseif grabTarget then
 		dragActionRemote:FireServer("Grab", grabTarget)
+	else
+		-- Stuck-drag fallback: server drops the player's held item.
+		dragActionRemote:FireServer("Drop")
 	end
 end)
 
@@ -1170,8 +1324,7 @@ local function refreshPlayer()
 		toast("You're starving -- eat something!")
 	end
 	lighterFuelLabel.Text = "Fuel: " .. tostring(player:GetAttribute("LighterFuel") or 0)
-	walletLine1.Text = ("Coins: %d  Medkits: %d"):format(player:GetAttribute("Coins") or 0, player:GetAttribute("Medkits") or 0)
-	walletLine2.Text = ("Pelts: %d  Fur: %d  Kids: %d"):format(player:GetAttribute("Pelts") or 0, player:GetAttribute("FurPieces") or 0, player:GetAttribute("KidCount") or 0)
+	walletLine1.Text = ("Coins: %d"):format(player:GetAttribute("Coins") or 0)
 	-- The tutorial ends the moment the campfire is lit (step 5):
 	-- the banner goes away for good.
 	local tutorialStep = player:GetAttribute("TutorialStep") or 1
@@ -1454,19 +1607,31 @@ local lastDragSend = 0
 local dragSmoothedTarget = nil
 local dragSmoothedPart = nil
 local function trackLog(log)
-	local part = log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
-	if not part then
-		return
-	end
-	local function check()
-		if part:GetAttribute("DraggedBy") == player.UserId then
-			myDragPart = part
-		elseif myDragPart == part then
-			myDragPart = nil
+	-- Track EVERY part of the item (a fish has 5 welded parts,
+	-- only its primary is Draggable). Latching onto just the
+	-- first part was the stuck-fish bug: secondary parts never
+	-- get DraggedBy, so myDragPart never updated and the client
+	-- never streamed the drag.
+	local parts = {}
+	if log:IsA("BasePart") then
+		table.insert(parts, log)
+	else
+		for _, d in ipairs(log:GetDescendants()) do
+			if d:IsA("BasePart") then table.insert(parts, d) end
 		end
 	end
-	part:GetAttributeChangedSignal("DraggedBy"):Connect(check)
-	check()
+	if #parts == 0 then return end
+	for _, part in ipairs(parts) do
+		local function check()
+			if part:GetAttribute("DraggedBy") == player.UserId then
+				myDragPart = part
+			elseif myDragPart == part then
+				myDragPart = nil
+			end
+		end
+		part:GetAttributeChangedSignal("DraggedBy"):Connect(check)
+		check()
+	end
 end
 for _, log in ipairs(logsFolder:GetChildren()) do
 	trackLog(log)
@@ -1519,11 +1684,12 @@ RunService.RenderStepped:Connect(function()
 	lastGrabCheck = now
 	if myDragPart then
 		grabTarget = nil
-		grabButton.Text = "DROP"
-		grabButton.Visible = true
+		grabButton.Visible = false
+		dropButton.Visible = true
 		grabHighlight.Parent = nil
 		return
 	end
+	dropButton.Visible = false
 	local camera = workspace.CurrentCamera
 	local character = player.Character
 	if not camera or not character then

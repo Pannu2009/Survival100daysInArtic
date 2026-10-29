@@ -125,8 +125,12 @@ function Kids:_spawnKid(id, position)
 	label.TextSize = 15
 	label.Font = Enum.Font.GothamBold
 	label.Parent = tag
+	-- Kid names for the panel (first kid is Arzh, per Ajay's panel
+	-- sketch). Rename here if Ajay renames a kid.
+	local kidNames = { "Arzh", "Noor", "Veer" }
 	local kid = {
 		Id = id,
+		Name = kidNames[id] or ("Kid " .. id),
 		Model = model,
 		Anchor = anchor,
 		Tag = label,
@@ -134,6 +138,8 @@ function Kids:_spawnKid(id, position)
 		Owner = nil,
 		Hungry = false,
 		Task = "Idle",
+		TaskAssignBy = nil,
+		HomePosition = nil,
 		TaskTimer = 0,
 		EatTimer = 0,
 		RouteTarget = nil,
@@ -167,8 +173,11 @@ function Kids:_addPrompts(kid)
 	assign.MaxActivationDistance = 12
 	assign.Enabled = false
 	assign.Parent = anchor
+	-- Panel is the assign path now: the prompt just points there.
 	assign.Triggered:Connect(function(player)
-		self:CycleTask(player, kid)
+		if kid.Owner == player then
+			self.Gameplay:Notify(player, "Open the Kids panel to assign " .. kid.Name .. " a task.")
+		end
 	end)
 	kid.AssignPrompt = assign
 	local feed = Instance.new("ProximityPrompt")
@@ -198,40 +207,67 @@ function Kids:Rescue(player, kid)
 	if (root.Position - kid.Anchor.Position).Magnitude > Config.Kids.RescueRange then
 		return
 	end
-	kid.State = "Following"
+	-- Stay at base: rescued kids do NOT follow the player.
+	-- Home is where they were rescued; a Stay task moves them
+	-- to the campfire instead (see AssignTask).
+	kid.State = "AtBase"
 	kid.Owner = player
 	kid.Hungry = false
 	kid.Task = "Idle"
+	kid.TaskAssignBy = nil
+	kid.HomePosition = kid.Anchor and kid.Anchor.Position or nil
 	kid.TaskTimer = 0
 	kid.EatTimer = 0
 	if kid.RescuePrompt then
 		kid.RescuePrompt.Enabled = false
 	end
-	if kid.AssignPrompt then
-		kid.AssignPrompt.Enabled = true
-	end
-	kid.Tag.Text = "Kid -- following you"
+	-- AssignPrompt stays disabled: the Kids panel assigns tasks.
+	kid.Tag.Text = kid.Name .. " -- at base, assign a task"
 	self.Gameplay:GrantKidMultiplier(player, kid.Id)
-	self.Gameplay:Notify(player, "Kid rescued! Assign work with the kid's prompt -- and remember, kids eat too.")
+	self.Gameplay:Notify(player, "Kid rescued! Open the Kids panel to assign a task -- and remember, kids eat too.")
 end
 
-function Kids:CycleTask(player, kid)
-	if kid.Owner ~= player or kid.State ~= "Following" then
-		return
+function Kids:AssignTask(player, kid, task)
+	if kid.Owner ~= player or kid.State ~= "AtBase" then
+		return false
 	end
-	local cycle = Config.Kids.TaskCycle
-	local nextIndex = 1
-	for i, task in ipairs(cycle) do
-		if task == kid.Task then
-			nextIndex = i % #cycle + 1
-			break
-		end
+	-- Panel tasks only: Get Wood, Go Fishing, Stay at Campfire, Idle.
+	local allowed = { Wood = true, Fish = true, Stay = true, Idle = true }
+	if not allowed[task] then
+		return false
 	end
-	kid.Task = cycle[nextIndex]
+	kid.Task = task
+	kid.TaskAssignBy = player.Name
 	kid.TaskTimer = 0
 	kid.RouteTarget = nil
-	kid.Tag.Text = ("Kid -- working: %s"):format(kid.Task)
-	self.Gameplay:Notify(player, ("Kid's task: %s"):format(kid.Task))
+	if task == "Stay" then
+		-- Stay at campfire: move to the first built fire, if any,
+		-- otherwise stay at home base.
+		local fires = self.Gameplay.World and self.Gameplay.World.Fires
+		local fire = fires and fires[1]
+		if fire and fire.Core and kid.Model then
+			local fp = fire.Core.Position
+			local gy = self.Gameplay.World:GroundY(fp.X + 3, fp.Z)
+			kid.Model:PivotTo(CFrame.new(fp.X + 3, gy + 1.2, fp.Z))
+			kid.HomePosition = Vector3.new(fp.X + 3, gy, fp.Z)
+		end
+	end
+	kid.Tag.Text = ("%s -- %s"):format(kid.Name, task)
+	self.Gameplay:Notify(player, ("%s's task: %s"):format(kid.Name, task))
+	return true
+end
+
+-- Panel data for one player, as "Name|Task|AssignedBy;..." so the
+-- client panel needs no new remote: it reads KidPanel attribute.
+function Kids:PanelStringFor(player)
+	local rows = {}
+	for _, kid in ipairs(self.Kids) do
+		if kid.Owner == player then
+			table.insert(rows, ("%s|%s|%s"):format(
+				kid.Name, kid.Task, kid.TaskAssignBy or "-"))
+		end
+	end
+	return table.concat(rows, ";")
 end
 
 function Kids:Feed(player, kid)
@@ -247,7 +283,7 @@ function Kids:Feed(player, kid)
 		return
 	end
 	survival.Hunger:Eat(-Config.Kids.FeedHunger)
-	kid.State = "Following"
+	kid.State = "AtBase"
 	kid.Hungry = false
 	kid.EatTimer = 0
 	if kid.FeedPrompt then
@@ -265,6 +301,8 @@ function Kids:OnOwnerGone(player)
 			kid.Owner = nil
 			kid.State = "Lost"
 			kid.Task = "Idle"
+			kid.TaskAssignBy = nil
+			kid.HomePosition = nil
 			kid.Tag.Text = "Kid -- rescue me!"
 			if kid.RescuePrompt then
 				kid.RescuePrompt.Enabled = true
@@ -345,18 +383,13 @@ function Kids:_doWork(kid)
 			self.Gameplay.Fish:Spawn(root.Position.X + 3, root.Position.Z)
 			self.Gameplay:Notify(owner, "Your kid caught a fish!")
 		end
-	elseif kid.Task == "Route" then
-		-- Setup route: the kid runs a supply loop and comes
-		-- back with a few coins. A real sled-route haul
-		-- (kid + wolf team + sled) is the slow-improve item.
-		survival.Coins = (survival.Coins or 0) + 3
-		self.Gameplay:Notify(owner, "Your kid's route brought back 3 coins.")
+	-- Stay / Idle: no work yield, kid just stays at base.
 	end
 end
 
 function Kids:Update(dt)
 	for _, kid in ipairs(self.Kids) do
-		if kid.State ~= "Following" or not kid.Owner then
+		if kid.State ~= "AtBase" or not kid.Owner then
 			continue
 		end
 		local owner = kid.Owner
@@ -367,23 +400,16 @@ function Kids:Update(dt)
 			self:OnOwnerGone(owner)
 			continue
 		end
-		-- Follow: ground-snapped kinematic stepping, like
-		-- Animals' wolves -- no physics ownership fights.
-		-- If the kid falls far behind, resync to the owner
-		-- instead of sprinting across the map forever.
-		local kidPos = kid.Anchor.Position
-		local toOwner = Vector3.new(root.Position.X - kidPos.X, 0, root.Position.Z - kidPos.Z)
-		local dist = toOwner.Magnitude
-		if dist > 60 then
-			kid.Model:PivotTo(CFrame.new(root.Position.X, kidPos.Y, root.Position.Z))
-		elseif dist > Config.Kids.FollowStopDistance then
-			local step = toOwner.Unit * math.min(Config.Kids.FollowSpeed * dt, dist)
-			local nx, nz = kidPos.X + step.X, kidPos.Z + step.Z
-			local gy = self.Gameplay.World:GroundY(nx, nz)
-			kid.Model:PivotTo(CFrame.new(nx, gy + 1.2, nz))
+		-- At base: NO following. The kid stays where HomePosition
+		-- says (rescue spot, or the campfire after a Stay task).
+		if kid.HomePosition and kid.Model then
+			local hp = kid.HomePosition
+			local kp = kid.Anchor.Position
+			if (Vector3.new(kp.X - hp.X, 0, kp.Z - hp.Z)).Magnitude > 2 then
+				local gy = self.Gameplay.World:GroundY(hp.X, hp.Z)
+				kid.Model:PivotTo(CFrame.new(hp.X, gy + 1.2, hp.Z))
+			end
 		end
-		-- Eat: shared camp food, on a timer. At zero owner
-		-- hunger the kid goes hungry and stops working.
 		kid.EatTimer += dt
 		if kid.EatTimer >= Config.Kids.EatInterval then
 			kid.EatTimer = 0
@@ -391,14 +417,14 @@ function Kids:Update(dt)
 				survival.Hunger:Eat(-Config.Kids.EatHunger)
 			else
 				kid.Hungry = true
-				kid.Tag.Text = "Kid -- hungry! Feed me."
+				kid.Tag.Text = kid.Name .. " -- hungry! Feed me."
 				if kid.FeedPrompt then
 					kid.FeedPrompt.Enabled = true
 				end
 				self.Gameplay:Notify(owner, "Your kid is hungry and stopped working!")
 			end
 		end
-		if kid.State == "Following" and not kid.Hungry and kid.Task ~= "Idle" then
+		if not kid.Hungry and (kid.Task == "Wood" or kid.Task == "Fish") then
 			kid.TaskTimer += dt
 			if kid.TaskTimer >= Config.Kids.WorkInterval then
 				kid.TaskTimer = 0
@@ -406,8 +432,8 @@ function Kids:Update(dt)
 			end
 		end
 	end
-	-- Hungry is a flag, not a state: hungry kids still
-	-- follow their owner, they just stop working until fed.
+	-- Hungry is a flag, not a state: hungry kids stay at base,
+	-- they just stop working until fed.
 end
 
 return Kids
