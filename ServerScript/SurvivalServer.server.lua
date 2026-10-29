@@ -11,6 +11,24 @@ local WorldBuilder = require(ServerModules:WaitForChild("WorldBuilder"))
 local Gameplay = require(ServerModules:WaitForChild("Gameplay"))
 local Aegis = require(ServerModules:WaitForChild("Aegis"))
 
+local ServerMode = require(ServerModules:WaitForChild("ServerMode"))
+
+-- Single-place setup: this same place runs BOTH roles.
+-- Public server = lobby (no world, no survival systems).
+-- Private server = game (full flow below). Studio = game.
+local serverMode = ServerMode.Detect()
+ReplicatedStorage:SetAttribute("ServerMode", serverMode)
+print("[Arctic] Server mode: " .. serverMode)
+if serverMode == "Lobby" then
+	-- Lobby server: players spawn normally (CharacterAutoLoads
+	-- stays true, Gameplay never turns it off here) into the
+	-- lobby build in Studio. No terrain, no clock, no wolves,
+	-- no survival loop -- the lobby shop/queue code runs here
+	-- when it lands. Returning ends this script, not the server.
+	print("[Arctic] Lobby server: world generation skipped")
+	return
+end
+
 -- Aegis guards the game's remotes in AUDIT mode: it validates,
 -- rate-limits and reports to the Discord webhook, but never
 -- kicks -- enforcement comes after a tuning pass on real flags.

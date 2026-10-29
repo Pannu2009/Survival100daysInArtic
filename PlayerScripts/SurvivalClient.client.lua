@@ -4,6 +4,22 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
+-- Single-place setup: in a lobby server, do NOT build the
+-- survival HUD and do NOT wait for game remotes (they never
+-- exist in lobby mode). Wait briefly for the server's
+-- ServerMode attribute; no attribute yet = game (fallback,
+-- so old servers and early Studio joins still work).
+local serverMode = ReplicatedStorage:GetAttribute("ServerMode")
+for _ = 1, 30 do
+	if serverMode ~= nil then
+		break
+	end
+	task.wait(0.1)
+	serverMode = ReplicatedStorage:GetAttribute("ServerMode")
+end
+if serverMode == "Lobby" then
+	return
+end
 local StarterGui = game:GetService("StarterGui")
 task.spawn(function()
 	for _ = 1, 20 do
