@@ -32,6 +32,7 @@ task.spawn(function()
 end)
 local Config = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Config"))
 local DragSystem = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("DragSystem"))
+local SoundModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("SoundModule"))
 DragSystem.InitClient()
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local setSprinting = remotes:WaitForChild("SetSprinting")
@@ -757,6 +758,7 @@ local function toggleTool(toolName)
 	local tool = backpack and backpack:FindFirstChild(toolName)
 	if tool then
 		humanoid:EquipTool(tool)
+		SoundModule.PlayService("Equip")
 	end
 end
 
@@ -1303,6 +1305,7 @@ dangerStroke2.Color = Color3.new(0, 0, 0)
 dangerStroke2.Thickness = 1.2
 dangerStroke2.Parent = dangerLabel
 
+local heartSound = nil
 local lastColdWarn = 0
 local lastFoodWarn = 0
 
@@ -1314,6 +1317,47 @@ local function refreshPlayer()
 		frost.BackgroundTransparency = 0.55 + 0.45 * (warmthNow / 35)
 	else
 		frost.BackgroundTransparency = 1
+	end
+	-- Heart: below 30% health, UI_Heart loops, faster as
+	-- health falls. Speed slider 1 to 3 (3 = max, near death):
+	-- 30% -> 1, 15% -> 2, 0% -> 3.
+	local healthNow = player:GetAttribute("Health") or Config.Survival.MaxHealth
+	local playerGui = player:FindFirstChild("PlayerGui")
+	if playerGui then
+		if healthNow < 30 and healthNow > 0 then
+			if not heartSound or not heartSound.Parent then
+				heartSound = SoundModule.PlayService("UI_Heart", true)
+			end
+			if heartSound then
+				heartSound.PlaybackSpeed = math.clamp(1 + (1 - healthNow / 30) * 2, 1, 3)
+				if not heartSound.IsPlaying then
+					heartSound:Play()
+				end
+			end
+		elseif heartSound and heartSound.IsPlaying then
+			heartSound:Stop()
+		end
+		-- DeathGui: Enabled on death, button wiring lands later.
+		local deathGui = playerGui:FindFirstChild("DeathGui")
+		if deathGui then
+			deathGui.Enabled = healthNow <= 0
+		end
+		-- ColdGui: your Bottom/Left/Right/Top frames + Image.
+		-- Only transparencies are touched -- your UIGradients
+		-- keep their shape. Warmth >= 35 = invisible, warmth 0
+		-- = most visible (0.3 transparency on frames/image).
+		local coldGui = playerGui:FindFirstChild("ColdGui")
+		if coldGui then
+			local coldness = math.clamp((35 - warmthNow) / 35, 0, 1)
+			local coldTransparency = 1 - coldness * 0.7
+			for _, child in ipairs(coldGui:GetDescendants()) do
+				if child:IsA("Frame") then
+					child.BackgroundTransparency = coldTransparency
+				elseif child:IsA("ImageLabel") then
+					child.ImageTransparency = coldTransparency
+				end
+			end
+		end
 	end
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
 	local hungerNow = player:GetAttribute("Hunger") or Config.Survival.MaxHunger
@@ -1381,7 +1425,11 @@ for i, mode in ipairs({ "Follow", "Wander", "Alert", "Attack" }) do
 	bc.CornerRadius = UDim.new(0.5, 0)
 	bc.Parent = b
 	addStroke(b, NAVY, 1.5, 0.5)
+	b.MouseEnter:Connect(function()
+		SoundModule.PlayService("UI_Hover")
+	end)
 	b.Activated:Connect(function()
+		SoundModule.PlayService("UI_Click")
 		local targetPos
 		if mode == "Attack" then
 			local cam = workspace.CurrentCamera

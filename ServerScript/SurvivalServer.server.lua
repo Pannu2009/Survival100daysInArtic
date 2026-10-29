@@ -23,9 +23,14 @@ if serverMode == "Lobby" then
 	-- Lobby server: players spawn normally (CharacterAutoLoads
 	-- stays true, Gameplay never turns it off here) into the
 	-- lobby build in Studio. No terrain, no clock, no wolves,
-	-- no survival loop -- the lobby shop/queue code runs here
-	-- when it lands. Returning ends this script, not the server.
+	-- no survival loop. Lobby systems start here and keep
+	-- running on their own loops after this script returns
+	-- (returning ends this script, not the server).
 	print("[Arctic] Lobby server: world generation skipped")
+	local LobbyTag = require(ServerModules:WaitForChild("LobbyTag"))
+	LobbyTag.Start()
+	local Queue = require(ServerModules:WaitForChild("Queue"))
+	Queue.Start()
 	return
 end
 
