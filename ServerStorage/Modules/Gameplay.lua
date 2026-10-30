@@ -23,6 +23,7 @@ local Weapons = require(script.Parent:WaitForChild("Weapons"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 local Economy = require(script.Parent:WaitForChild("Economy"))
 local Aegis = require(script.Parent:WaitForChild("Aegis"))
+local Network = require(Modules:WaitForChild("Network"))
 
 local Gameplay = {}
 
@@ -72,6 +73,7 @@ function Gameplay.new(world, clock, temperature)
 	self.Pelts = Pelts.new(self)
 	self.Meat = Meat.new(self)
 	self.Sack = Sack.new(self)
+	self.Net = Network
 	self.Merchant = Merchant.new(self)
 	self.Coal = Coal.new(self)
 	self._sleepBagMultiplierGranted = false
@@ -127,6 +129,10 @@ function Gameplay:Start()
 		remotes.Name = "Remotes"
 		remotes.Parent = ReplicatedStorage
 	end
+	-- Network: the single packet layer. New features use
+	-- Net, old remotes stay until they migrate one by one.
+	Network:InitServer()
+	self.Net = Network
 
 	local setSprinting = Instance.new("RemoteEvent")
 	setSprinting.Name = "SetSprinting"
@@ -271,16 +277,16 @@ function Gameplay:Start()
 	Aegis.secure(eatMeat, { args = { "Instance" } }, function(player, meat)
 		self.Meat:Eat(player, meat)
 	end)
-	local sackAction = Instance.new("RemoteEvent")
-	sackAction.Name = "SackAction"
-	sackAction.Parent = remotes
-	Aegis.secure(sackAction, { args = { "string" } }, function(player, action)
+	-- Batch 1 sack, now on Net: client sends { Action = "Store"|"Take" },
+	-- server re-checks the dragged item and the 5-item cap in Sack.
+	Network:ListenToClient("SackAction", function(player, data)
+		local action = typeof(data) == "table" and data.Action or nil
 		if action == "Store" then
 			self.Sack:Store(player)
 		elseif action == "Take" then
 			self.Sack:Take(player)
 		end
-	end)
+	end, { RateLimit = 10 })
 
 	local toolAim = Instance.new("RemoteEvent")
 	toolAim.Name = "ToolAim"

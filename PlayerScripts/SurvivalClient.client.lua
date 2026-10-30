@@ -98,7 +98,13 @@ local setSprinting = remotes:WaitForChild("SetSprinting")
 local storeRemote = remotes:WaitForChild("StoreDraggedItem", 10)
 local eatRemote = remotes:WaitForChild("EatFish")
 local eatMeatRemote = remotes:WaitForChild("EatMeat", 10)
-local sackRemote = remotes:WaitForChild("SackAction", 10)
+local Net = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"))
+Net:InitClient()
+Net:ListenToServer("UpdateInventory", function(itemData)
+	if itemData and typeof(itemData.Sack) == "number" then
+		player:SetAttribute("SackCount", itemData.Sack)
+	end
+end)
 local openBuildMenuRemote = remotes:WaitForChild("OpenBuildMenu")
 local placeBlueprintRemote = remotes:WaitForChild("PlaceBlueprint")
 
@@ -582,16 +588,13 @@ sackCorner.CornerRadius = UDim.new(0.5, 0)
 sackCorner.Parent = sackButton
 addStroke(sackButton, NAVY, 1.5, 0.25)
 sackButton.Activated:Connect(function()
-	if not sackRemote then
-		return
-	end
 	-- myDragPartRef is the global accessor (defined later in
 	-- this file, like the grab button uses) -- myDragPart
 	-- itself is a local declared after this button.
 	if myDragPartRef and myDragPartRef() then
-		sackRemote:FireServer("Store")
+		Net:SendToServer("SackAction", { Action = "Store" })
 	else
-		sackRemote:FireServer("Take")
+		Net:SendToServer("SackAction", { Action = "Take" })
 	end
 end)
 

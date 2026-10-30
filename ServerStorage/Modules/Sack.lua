@@ -33,6 +33,16 @@ end
 
 function Sack:_publish(player)
 	player:SetAttribute("SackCount", self:Count(player))
+	-- Net example: the client listens for UpdateInventory
+	-- and can refresh its HUD from this, instead of a
+	-- second remote per inventory change.
+	if self.Gameplay.Net then
+		local survival = self.Gameplay._survivals[player]
+		self.Gameplay.Net:SendToClient(player, "UpdateInventory", {
+			Sack = self:Count(player),
+			Coins = survival and survival.Coins or 0,
+		})
+	end
 end
 
 function Sack:Store(player)
