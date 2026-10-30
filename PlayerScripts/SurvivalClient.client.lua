@@ -1763,8 +1763,15 @@ whistleButton.InputBegan:Connect(function(input)
 		radialOpen()
 	end
 end)
-whistleButton.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+-- Do NOT close on the whistle button's own InputEnded:
+-- on mobile, sliding a finger off the button fires that
+-- even though the finger is still down, which closed the
+-- wheel the moment you tried to drag to a wedge.
+-- Close only on the GLOBAL input ending (finger lifted
+-- / mouse released anywhere), so dragging off the button
+-- keeps the wheel open until you actually let go.
+UserInputService.InputEnded:Connect(function(input)
+	if radialHolding and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 		radialClose(true)
 	end
 end)
