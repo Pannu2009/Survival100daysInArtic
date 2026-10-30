@@ -100,6 +100,32 @@ local eatRemote = remotes:WaitForChild("EatFish")
 local eatMeatRemote = remotes:WaitForChild("EatMeat", 10)
 local Net = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"))
 Net:InitClient()
+-- Frozen Lake sign: per-player visibility. The sign
+-- lives in workspace, but Enabled toggled here only
+-- affects this client, so each player sees it only
+-- when THEY are far from the lake.
+task.spawn(function()
+	local sign = workspace:WaitForChild("LakeSignAnchor", 10)
+	if not sign then
+		return
+	end
+	local gui = sign:WaitForChild("FrozenLakeSign", 5)
+	if not gui then
+		return
+	end
+	while true do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if root then
+			local radius = sign:GetAttribute("LakeRadius") or 0
+			local dx = root.Position.X - sign.Position.X
+			local dz = root.Position.Z - sign.Position.Z
+			local edgeDist = math.sqrt(dx * dx + dz * dz) - radius
+			gui.Enabled = edgeDist > 100
+		end
+		task.wait(0.5)
+	end
+end)
 Net:ListenToServer("UpdateInventory", function(itemData)
 	if itemData and typeof(itemData.Sack) == "number" then
 		player:SetAttribute("SackCount", itemData.Sack)

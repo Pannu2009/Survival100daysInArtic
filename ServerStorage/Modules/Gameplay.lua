@@ -717,6 +717,7 @@ function Gameplay:_igniteLog(player, log)
 		return false
 	end
 	self:_setBurning(log)
+	self:Notify(player, "Log is burning -- stay within 16 studs to feel its warmth.")
 	return true
 end
 
@@ -749,7 +750,7 @@ function Gameplay:_setBurning(log)
 	local light = Instance.new("PointLight")
 	light.Name = "BurnLight"
 	light.Color = Color3.fromRGB(255, 176, 66)
-	light.Range = 12
+	light.Range = 16
 	light.Brightness = 1.5
 	light.Parent = logPart
 
@@ -1141,9 +1142,15 @@ function Gameplay:Update(dt)
 		if root and not context.FireRate then
 			for log in pairs(self._burning) do
 				local lp = getLogPart(log)
-				if lp and (lp.Position - root.Position).Magnitude <= Config.Campfire.BurningLogRadius then
+				-- XZ only, like campfires: a log in a dip
+				-- should not lose warmth to a height gap.
+				if lp then
+					local dx = lp.Position.X - root.Position.X
+					local dz = lp.Position.Z - root.Position.Z
+					if dx * dx + dz * dz <= Config.Campfire.BurningLogRadius * Config.Campfire.BurningLogRadius then
 					context.FireRate = Config.Campfire.BurningLogWarmRate
 					break
+					end
 				end
 			end
 		end

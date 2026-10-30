@@ -239,6 +239,7 @@ function WorldBuilder:Build()
 	self:_plantTrees()
 	self:_plantTufts()
 	self:_placeHorizon()
+	self:_placeLakeSign()
 	-- No fixed campfire anymore: players build their own from
 	-- blueprints (open-world direction, 2026-10-22).
 end
@@ -303,6 +304,51 @@ function WorldBuilder:_plantTufts()
 	end
 		task.wait()
 	end
+end
+
+-- Frozen Lake sign: a BillboardGui in the air over the
+-- lake, so a player who cannot find the lake in the
+-- whole map can follow it. Size 25x15 as asked.
+-- Visibility is NOT server-side: the client toggles
+-- this sign's Enabled per player, only when they are
+-- more than 100 studs from the lake's edge (see
+-- SurvivalClient). Close to the lake it hides, so
+-- it never blocks the view while you fish.
+function WorldBuilder:_placeLakeSign()
+	local lake = self.Layout.Lake
+	if not lake then
+		return
+	end
+	local anchor = Instance.new("Part")
+	anchor.Name = "LakeSignAnchor"
+	anchor.Size = Vector3.new(1, 1, 1)
+	anchor.CFrame = CFrame.new(lake.X, 30, lake.Z)
+	anchor.Anchored = true
+	anchor.Transparency = 1
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor:SetAttribute("LakeRadius", lake.Radius or 0)
+	anchor.Parent = workspace
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "FrozenLakeSign"
+	gui.Adornee = anchor
+	gui.Size = UDim2.new(25, 0, 15, 0)
+	gui.AlwaysOnTop = true
+	gui.MaxDistance = 2000
+	gui.LightInfluence = 0
+	gui.Enabled = false
+	gui.Parent = anchor
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = "Frozen Lake"
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBold
+	label.TextColor3 = Color3.fromHex("DDE3E7")
+	label.TextStrokeTransparency = 0
+	label.TextStrokeColor3 = Color3.fromHex("0B1E2E")
+	label.Parent = gui
 end
 
 function WorldBuilder:_plantTrees()
