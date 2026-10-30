@@ -731,11 +731,8 @@ function Gameplay:_feedFires()
 						local half = fire.AddBox.Size / 2 + Vector3.new(0.3, 0.3, 0.3)
 						inBox = math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
 					end
-					if logPart and inBox then
+					if logPart and inBox and logPart:GetAttribute("DraggedBy") == nil then
 						local units = logBurnUnits(logPart)
-						if logPart:GetAttribute("DraggedBy") then
-							DragSystem.ForceStop(logPart)
-						end
 						self._burning[log] = nil
 						log:Destroy()
 						if units > 0 then

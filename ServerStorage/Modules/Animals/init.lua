@@ -353,6 +353,9 @@ function Animals:_spawnPack()
 	for i = 1, count do
 		local record = self:_buildWolf()
 		if not record then
+			if spawned == 0 then
+				self._packs[packId] = nil
+			end
 			return spawned
 		end
 		spawned += 1
@@ -469,6 +472,9 @@ function Animals:_killWolf(wolf, attacker)
 			self.Gameplay.Meat:OnWolfKilled(wolf, attacker)
 		end)
 	end
+	if wolf.EatTarget and wolf.EatTarget.Parent then
+		wolf.EatTarget:SetAttribute("WolfEating", nil)
+	end
 	wolf.Health = 0
 	if wolf.Owner then
 		self:_removeFromOwner(wolf)
@@ -558,7 +564,7 @@ function Animals:Feed(player)
 		if part then
 			local model = part.Parent
 			local isFish = model and model.Parent == self.Gameplay.Fish.Folder
-			local isMeat = part.Name == "Meat"
+			local isMeat = part.Name == "Meat" and self.Gameplay.Meat and self.Gameplay.Meat.Folder and part.Parent == self.Gameplay.Meat.Folder
 			if isFish or isMeat then
 				if isFish then
 					foodType = model:GetAttribute("Cooked") == true and "CookedFish" or "RawFish"
@@ -598,7 +604,7 @@ function Animals:_tryTame(wolf)
 	if fishFolder then
 		for _, fish in ipairs(fishFolder:GetChildren()) do
 			local lastDragger = fish:GetAttribute("LastDragger")
-			if lastDragger then
+			if lastDragger and fish:GetAttribute("WolfEating") ~= true then
 				local primary = fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true)
 				if primary and primary:GetAttribute("DraggedBy") == nil then
 					local d = (primary.Position - pos).Magnitude
@@ -613,7 +619,7 @@ function Animals:_tryTame(wolf)
 	local meatFolder = self.Gameplay.Meat and self.Gameplay.Meat.Folder
 	if meatFolder then
 		for _, meat in ipairs(meatFolder:GetChildren()) do
-			if meat:GetAttribute("LastDragger") and meat:GetAttribute("DraggedBy") == nil then
+			if meat:GetAttribute("LastDragger") and meat:GetAttribute("DraggedBy") == nil and meat:GetAttribute("WolfEating") ~= true then
 				local d = (meat.Position - pos).Magnitude
 				if d < bestDist then
 					best, bestDist = meat, d
@@ -652,6 +658,18 @@ function Animals:_stepGoEat(wolf, dt, now)
 		return
 	end
 	if wolf.EatingUntil then
+		if not primary or primary:GetAttribute("DraggedBy") ~= nil or fish:GetAttribute("WolfEating") ~= true then
+			if fish and fish.Parent then
+				fish:SetAttribute("WolfEating", nil)
+			end
+			if primary and primary.Parent then
+				primary:SetAttribute("WolfEating", nil)
+			end
+			wolf.EatingUntil = nil
+			wolf.EatTarget = nil
+			wolf.State = wolf.TargetPlayer and "Aggro" or "Roam"
+			return
+		end
 		self:_moveToward(wolf, wolf.Root.Position, 0, dt)
 		if now >= wolf.EatingUntil then
 			wolf.EatingUntil = nil
@@ -662,6 +680,10 @@ function Animals:_stepGoEat(wolf, dt, now)
 	end
 	local d = self:_moveSmart(wolf, primary.Position, 6, dt)
 	if d <= 2.2 then
+		fish:SetAttribute("WolfEating", true)
+		if primary ~= fish then
+			primary:SetAttribute("WolfEating", true)
+		end
 		wolf.EatingUntil = now + W.EatSeconds
 		if wolf.BiteSound then
 			wolf.BiteSound:Play()

@@ -76,6 +76,9 @@ function Meat:Eat(player, meat)
 	if (meat.Position - root.Position).Magnitude > 11 then
 		return
 	end
+	if meat:GetAttribute("WolfEating") == true then
+		return
+	end
 	local cooked = meat:GetAttribute("Cooked") == true
 	if cooked then
 		survival.Hunger:Eat(Config.Food.CookedMeat)

@@ -574,6 +574,7 @@ function SledService:_unloadLast(player)
 	self._cargoOwners[piece] = nil
 	self._cargoDims[piece] = nil
 	self._slots[piece] = nil
+	self._cargoOwners[piece] = nil
 	piece:SetAttribute("OnSled", nil)
 	local origSize = self._origSize[piece]
 	if origSize then

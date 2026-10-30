@@ -75,6 +75,15 @@ function Sack:Store(player)
 	self:_publish(player)
 	self.Gameplay:Notify(player, ("Sacked (%d/5)."):format(#list))
 end
+function Sack:PopTop(player)
+	local list = self.Items[player]
+	if not list or #list == 0 then
+		return nil
+	end
+	local desc = table.remove(list)
+	self:_publish(player)
+	return desc
+end
 function Sack:Take(player)
 	local list = self.Items[player]
 	if not list or #list == 0 then

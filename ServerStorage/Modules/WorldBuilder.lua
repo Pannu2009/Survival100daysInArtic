@@ -609,9 +609,7 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 			end
 		end
 		model.Parent = workspace
-		if model:IsA("Model") then
-			self:SnapToGround(model, x, z)
-		end
+		self:SnapToGround(model, x, z)
 	else
 		model = Instance.new("Model")
 		model.Name = structureId .. "Blueprint"

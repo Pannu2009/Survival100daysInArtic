@@ -82,6 +82,13 @@ local function showBlackScreen(player)
 	gui.Parent = playerGui
 	return gui
 end
+local function hideBlackScreen(player)
+	local playerGui = player:FindFirstChild("PlayerGui")
+	local loading = playerGui and playerGui:FindFirstChild("TeleportLoading")
+	if loading then
+		loading:Destroy()
+	end
+end
 local function makeHostGui(player, remote)
 	local playerGui = player:FindFirstChild("PlayerGui")
 	if not playerGui then
@@ -265,6 +272,9 @@ function Queue.Start()
 		end)
 		if not (ok and code) then
 			warn("[Queue] ReserveServer failed:", code)
+			for _, player in ipairs(party) do
+				hideBlackScreen(player)
+			end
 			return
 		end
 		local seedLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -287,6 +297,9 @@ function Queue.Start()
 		end)
 		if not teleportOk then
 			warn("[Queue] Teleport failed:", teleportErr)
+			for _, player in ipairs(party) do
+				hideBlackScreen(player)
+			end
 		end
 	end
 	local function startCountdown()

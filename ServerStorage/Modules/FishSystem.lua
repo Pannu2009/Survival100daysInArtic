@@ -107,6 +107,9 @@ function FishSystem:Eat(player, fish)
 	if not survival or survival.Dead or not root or not part then
 		return
 	end
+	if fish:GetAttribute("WolfEating") == true then
+		return
+	end
 	local draggedBy = part:GetAttribute("DraggedBy")
 	if draggedBy ~= nil and draggedBy ~= player.UserId then
 		return
