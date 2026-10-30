@@ -281,6 +281,11 @@ function Gameplay:Start()
 	end)
 	-- Batch 1 sack, now on Net: client sends { Action = "Store"|"Take" },
 	-- server re-checks the dragged item and the 5-item cap in Sack.
+	-- Direct feed: FEED button -> Animals:Feed, no
+	-- drop-and-hope needed. Rate-limited like Sack.
+	Network:ListenToClient("FeedWolf", function(player, data)
+		self.Animals:Feed(player)
+	end, { RateLimit = 5 })
 	Network:ListenToClient("SackAction", function(player, data)
 		local action = typeof(data) == "table" and data.Action or nil
 		if action == "Store" then
@@ -697,6 +702,9 @@ function Gameplay:_lightFire(player, fire)
 		return false
 	end
 	fire.Lit = true
+	if self.Net then
+		self.Net:SendToClient(player, "PlaySound", { Sound = "FireIgnite" })
+	end
 	-- Lighting the campfire is the Day 1 finale: the tutorial
 	-- ends here, whatever order the steps happened in.
 	for _, key in ipairs(TUTORIAL_ORDER) do
@@ -717,6 +725,9 @@ function Gameplay:_igniteLog(player, log)
 		return false
 	end
 	self:_setBurning(log)
+	if self.Net then
+		self.Net:SendToClient(player, "PlaySound", { Sound = "FireIgnite" })
+	end
 	self:Notify(player, "Log is burning -- stay within 16 studs to feel its warmth.")
 	return true
 end

@@ -606,6 +606,94 @@ function Animals:_publishOwner(player)
 	player:SetAttribute("WolfCommand", self._commands[player] or "Follow")
 end
 
+-- Direct feed: instead of dropping food and hoping
+-- the wolf notices it, feed a tameable wolf in front
+-- of you. Food comes from the sack first, then from
+-- whatever you are dragging. Points work exactly
+-- like dropped food (cooked meat 3, cooked fish /
+-- raw meat 1.5, raw fish 1).
+function Animals:Feed(player)
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
+	local best, bestDist = nil, 14
+	for _, wolf in ipairs(self.Wolves) do
+		if not wolf.Owner and wolf.Health > 0 and wolf.Health <= W.TameHealth and not wolf.Removed then
+			local d = (wolf.Root.Position - root.Position).Magnitude
+			if d < bestDist then
+				best, bestDist = wolf, d
+			end
+		end
+	end
+	if not best then
+		self.Gameplay:Notify(player, "No weak wolf nearby to feed.")
+		return
+	end
+	if self:Count(player) >= W.TeamLimit then
+		self.Gameplay:Notify(player, "Your wolf team is full.")
+		return
+	end
+	if best.TameTarget == nil then
+		best.TameTarget = best.Leader and (W.TamePoints * W.LeaderTameMult) or W.TamePoints
+		best.TamePoints = 0
+		best.TameableSince = os.clock()
+	end
+	-- Food source 1: sack (top item, fish or meat only).
+	local foodType, desc = nil, nil
+	local sack = self.Gameplay.Sack
+	if sack then
+		local list = sack.Items[player]
+		if list and #list > 0 then
+			local top = list[#list]
+			if top.Kind == "Fish" then
+				foodType = top.Cooked and "CookedFish" or "RawFish"
+				desc = sack:PopTop(player)
+			elseif top.Kind == "Meat" then
+				foodType = top.Cooked and "CookedMeat" or "RawMeat"
+				desc = sack:PopTop(player)
+			end
+		end
+	end
+	-- Food source 2: the item you are dragging.
+	if not foodType then
+		local DragSystem = require(Modules:WaitForChild("DragSystem"))
+		local part = DragSystem.GetPlayerItem(player)
+		if part then
+			local model = part.Parent
+			local isFish = model and model.Parent == self.Gameplay.Fish.Folder
+			local isMeat = part.Name == "Meat"
+			if isFish or isMeat then
+				if isFish then
+					foodType = model:GetAttribute("Cooked") == true and "CookedFish" or "RawFish"
+				else
+					foodType = part:GetAttribute("FoodType") or "RawMeat"
+				end
+				DragSystem.Stop(player, part)
+				if model and model:IsA("Model") then
+					model:Destroy()
+				else
+					part:Destroy()
+				end
+			end
+		end
+	end
+	if not foodType then
+		self.Gameplay:Notify(player, "No food to feed -- sack a fish or meat first, or drag one.")
+		return
+	end
+	local points = (W.TameFoodPoints or {})[foodType] or 1
+	best.TamePoints = (best.TamePoints or 0) + points
+	local target = best.TameTarget or W.TamePoints
+	if best.TamePoints < target then
+		self.Gameplay:Notify(player, ("It wants more food! (%.1f/%.1f)"):format(best.TamePoints, target))
+		best.State = "Roam"
+		return
+	end
+	self:_claimWolf(best, player.UserId)
+end
+
 -- ---------- taming ----------
 
 function Animals:_tryTame(wolf)
@@ -1290,6 +1378,17 @@ function Animals:_step(dt)
 	end
 	local clock = self.Gameplay.Clock
 	local isNight = clock and clock:GetPhase() == "Night"
+	-- Night howls: wild wolves howl every 90-150s at
+	-- night, heard by everyone (ambient, via Net).
+	if isNight then
+		self._nightHowlTick = (self._nightHowlTick or 30) - dt
+		if self._nightHowlTick <= 0 then
+			self._nightHowlTick = 90 + math.random() * 60
+			if self.Gameplay.Net then
+				self.Gameplay.Net:SendToAll("PlaySound", { Sound = "WolfHowl" })
+			end
+		end
+	end
 
 	-- Population top-up: the world refills toward the day's
 	-- target (checked on a slow tick; spawns land far away, so
@@ -1335,8 +1434,16 @@ function Animals:_step(dt)
 			if think then
 				self:_tryTame(wolf)
 			end
+			-- Heal fix: a wolf that already ate food (points
+			-- > 0) NEVER loses that progress to healing --
+			-- he waits for more food instead. A wolf with
+			-- no food yet only starts healing after 60s
+			-- (was 20s, too short to fetch sack food), and
+			-- never while a player is within 25 studs.
 			if (wolf.State == "Roam" or wolf.State == "Wary")
-				and wolf.TameableSince and now - wolf.TameableSince > 20
+				and (wolf.TamePoints or 0) == 0
+				and wolf.TameableSince and now - wolf.TameableSince > 60
+				and self:_nearestPlayer(wolf.Root.Position, 25) == nil
 			then
 				wolf.Health += 7.5 * dt
 				if wolf.Health > W.TameHealth then
@@ -1620,6 +1727,9 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 			if now >= wolf.NextHowl then
 				wolf.NextHowl = now + 6
 				wolf.HowlUntil = now + 1.6
+				if self.Gameplay.Net and wolf.Owner then
+					self.Gameplay.Net:SendToClient(wolf.Owner, "PlaySound", { Sound = "WolfHowl" })
+				end
 				self:_refreshTag(wolf)
 			end
 			if self._behaviours[owner] ~= "Passive" and wolf.AttackWolf ~= threat then

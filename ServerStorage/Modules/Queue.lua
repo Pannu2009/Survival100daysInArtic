@@ -88,6 +88,8 @@ local function showBlackScreen(player)
 	end
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "TeleportLoading"
+	gui.DisplayOrder = 200
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.IgnoreGuiInset = true
 	gui.ResetOnSpawn = false
 	local frame = Instance.new("Frame")
@@ -124,6 +126,8 @@ local function makeHostGui(player, remote)
 	end
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "HostQueueGui"
+	gui.DisplayOrder = 100
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.ResetOnSpawn = false
 	-- Mobile-compatible: everything in Scale, not Offset, so
 	-- the GUI adapts to phone screens instead of overflowing

@@ -126,6 +126,17 @@ task.spawn(function()
 		task.wait(0.5)
 	end
 end)
+-- Server-triggered sounds (FireIgnite, CookFish,
+-- WolfHowl at night / Alert): one Net packet, no
+-- new remote per sound. Names match SoundService
+-- Folder exactly: AxeSwing, CookFish, EatFish, Equip,
+-- FireGoing, FireIgnite, WolfHowl, Heart, UI_Click,
+-- UI_Hover (screenshot, 2026-10-29).
+Net:ListenToServer("PlaySound", function(itemData)
+	if itemData and typeof(itemData.Sound) == "string" then
+		SoundModule.PlayService(itemData.Sound)
+	end
+end)
 Net:ListenToServer("UpdateInventory", function(itemData)
 	if itemData and typeof(itemData.Sack) == "number" then
 		player:SetAttribute("SackCount", itemData.Sack)
@@ -142,6 +153,37 @@ local MARIGOLD = Color3.fromHex("EAA000")
 local gui = Instance.new("ScreenGui")
 gui.Name = "SurvivalHUD"
 gui.ResetOnSpawn = false
+-- ZIndex layering: every GUI in one stack, so
+-- buttons never hide under panels and the wheel
+-- never hides under the HUD. Sibling mode means
+-- ZIndex is compared only within this ScreenGui.
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 10
+-- Ajay's Studio GUIs (RadialGui, DeathGui, ColdGui)
+-- are not code-created, so their order is set here
+-- when they appear in PlayerGui, and for any that
+-- already exist at script start.
+local function orderAjayGui(child)
+	if child.Name == "RadialGui" then
+		child.DisplayOrder = 50
+		child.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+		local wheel = child:FindFirstChild("WolfRadial", true)
+		if wheel then
+			wheel.ZIndex = 50
+		end
+	elseif child.Name == "DeathGui" then
+		child.DisplayOrder = 200
+	elseif child.Name == "ColdGui" then
+		child.DisplayOrder = 15
+	end
+end
+local playerGuiEarly = player:FindFirstChild("PlayerGui")
+if playerGuiEarly then
+	for _, child in ipairs(playerGuiEarly:GetChildren()) do
+		orderAjayGui(child)
+	end
+	playerGuiEarly.ChildAdded:Connect(orderAjayGui)
+end
 gui.Parent = player:WaitForChild("PlayerGui")
 
 -- Freezing overlay: fades in over the screen as this player's
@@ -629,6 +671,29 @@ end)
 -- are empty; while carrying it shows DROP (and only DROP -- you
 -- can't grab a second thing). Replaces the per-item prompts.
 local dragActionRemote = remotes:WaitForChild("DragAction")
+-- FEED button: direct wolf feeding, no drop-and-hope.
+-- Server (Animals:Feed) takes food from the sack
+-- first, then from what you are dragging.
+local feedButton = Instance.new("TextButton")
+feedButton.Name = "FeedButton"
+feedButton.Size = UDim2.fromOffset(72, 72)
+feedButton.Position = UDim2.new(1, -88, 1, -484)
+feedButton.BackgroundColor3 = MARIGOLD
+feedButton.Text = "FEED"
+feedButton.TextColor3 = NAVY
+feedButton.TextSize = 16
+feedButton.Font = Enum.Font.GothamBold
+feedButton.BorderSizePixel = 0
+feedButton.Visible = false
+feedButton.Parent = gui
+local feedCorner = Instance.new("UICorner")
+feedCorner.CornerRadius = UDim.new(0.5, 0)
+feedCorner.Parent = feedButton
+addStroke(feedButton, NAVY, 1.5, 0.25)
+feedButton.Activated:Connect(function()
+	SoundModule.PlayService("UI_Click")
+	Net:SendToServer("FeedWolf", {})
+end)
 local grabButton = Instance.new("TextButton")
 grabButton.Name = "GrabButton"
 grabButton.Size = UDim2.fromOffset(72, 72)
@@ -689,6 +754,7 @@ local function tryEat()
 	if eatTarget:IsA("BasePart") and eatTarget.Name == "Meat" and eatMeatRemote then
 		eatMeatRemote:FireServer(eatTarget)
 	else
+		SoundModule.PlayService("EatFish")
 		eatRemote:FireServer(eatTarget)
 	end
 end
@@ -1433,6 +1499,7 @@ dangerStroke2.Thickness = 1.2
 dangerStroke2.Parent = dangerLabel
 
 local heartSound = nil
+local fireGoingSound = nil
 local lastColdWarn = 0
 local lastFoodWarn = 0
 
@@ -1445,24 +1512,40 @@ local function refreshPlayer()
 	else
 		frost.BackgroundTransparency = 1
 	end
-	-- Heart: below 30% health, UI_Heart loops, faster as
-	-- health falls. Speed slider 1 to 3 (3 = max, near death):
-	-- 30% -> 1, 15% -> 2, 0% -> 3.
+	-- Heart: below 40% health, Heart loops, faster as
+	-- health falls, LINEAR as asked: 40% -> speed 1,
+	-- 20% -> speed 2, 0% -> speed 3. Sound is
+	-- SoundService.Folder.Heart (screenshot), not
+	-- UI_Heart -- the old name found nothing, so the
+	-- heart never played.
 	local healthNow = player:GetAttribute("Health") or Config.Survival.MaxHealth
 	local playerGui = player:FindFirstChild("PlayerGui")
 	if playerGui then
-		if healthNow < 30 and healthNow > 0 then
+		if healthNow < 40 and healthNow > 0 then
 			if not heartSound or not heartSound.Parent then
-				heartSound = SoundModule.PlayService("UI_Heart", true)
+				heartSound = SoundModule.PlayService("Heart", true)
 			end
 			if heartSound then
-				heartSound.PlaybackSpeed = math.clamp(1 + (1 - healthNow / 30) * 2, 1, 3)
+				heartSound.PlaybackSpeed = math.clamp(1 + (1 - healthNow / 40) * 2, 1, 3)
 				if not heartSound.IsPlaying then
 					heartSound:Play()
 				end
 			end
 		elseif heartSound and heartSound.IsPlaying then
 			heartSound:Stop()
+		end
+		-- FireGoing: loop while you are by a fire
+		-- (server WarmState), stop when you leave it.
+		local warmStateNow = player:GetAttribute("WarmState")
+		if warmStateNow == "By the fire" then
+			if not fireGoingSound or not fireGoingSound.Parent then
+				fireGoingSound = SoundModule.PlayService("FireGoing", true)
+			end
+			if fireGoingSound and not fireGoingSound.IsPlaying then
+				fireGoingSound:Play()
+			end
+		elseif fireGoingSound and fireGoingSound.IsPlaying then
+			fireGoingSound:Stop()
 		end
 		-- DeathGui: Enabled on death, button wiring lands later.
 		local deathGui = playerGui:FindFirstChild("DeathGui")
@@ -1638,6 +1721,18 @@ local repeatCorner = Instance.new("UICorner")
 repeatCorner.CornerRadius = UDim.new(0.5, 0)
 repeatCorner.Parent = repeatButton
 addStroke(repeatButton, NAVY, 1.5, 0.5)
+-- ZIndex within SurvivalHUD: action buttons above
+-- stat frames, wolf buttons above action buttons,
+-- so nothing clickable hides under a panel.
+for _, name in ipairs({ "SprintButton", "StoreButton", "EatButton", "SackButton", "GrabButton", "DropButton", "FeedButton" }) do
+	local b = gui:FindFirstChild(name)
+	if b then
+		b.ZIndex = 20
+	end
+end
+whistleButton.ZIndex = 30
+repeatButton.ZIndex = 30
+frost.ZIndex = 1
 repeatButton.Activated:Connect(function()
 	if not radialLastAction then
 		toast("No last wolf command yet")
@@ -2349,6 +2444,9 @@ local function watchAimTool(tool)
 	end
 	wiredAimTools[tool] = true
 	tool.Activated:Connect(function()
+		if tool.Name == "Axe" then
+			SoundModule.PlayService("AxeSwing")
+		end
 		local camera = workspace.CurrentCamera
 		if not camera then
 			return
@@ -2457,6 +2555,7 @@ RunService.RenderStepped:Connect(function(dt)
 	eatButton.Visible = eatTarget ~= nil
 	eatHint.Visible = eatButton.Visible
 	sackButton.Visible = myPart ~= nil or (player:GetAttribute("SackCount") or 0) > 0
+	feedButton.Visible = sackButton.Visible
 	sackButton.Text = myPart and "SACK" or ("SACK (" .. tostring(player:GetAttribute("SackCount") or 0) .. ")")
 
 	if not myPart then

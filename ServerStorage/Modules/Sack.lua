@@ -133,6 +133,19 @@ function Sack:Take(player)
 			end
 		end
 		if best then
+			-- Taming fix: a sack fish used to respawn with
+			-- NO LastDragger, so Animals:_tryTame ignored it
+			-- completely -- the wolf never ate sack food.
+			-- Stamp it like a dropped item, and hand its
+			-- physics back to auto ownership (the server
+			-- owned it at spawn; the wolf does not need a
+			-- player network owner to eat a static fish).
+			best:SetAttribute("LastDragger", player.UserId)
+			for _, part in ipairs(best:GetDescendants()) do
+				if part:IsA("BasePart") then
+					pcall(function() part:SetNetworkOwnershipAuto() end)
+				end
+			end
 			best:SetAttribute("Cooked", desc.Cooked)
 			best:SetAttribute("Pieces", desc.Pieces)
 			if desc.Cooked then
@@ -144,10 +157,27 @@ function Sack:Take(player)
 			end
 		end
 	elseif desc.Kind == "Meat" then
-		self.Gameplay.Meat:Spawn(pos.X, pos.Z, desc.Cooked)
+		local meat = self.Gameplay.Meat:Spawn(pos.X, pos.Z, desc.Cooked)
+		if meat then
+			meat:SetAttribute("LastDragger", player.UserId)
+			pcall(function() meat:SetNetworkOwnershipAuto() end)
+		end
 	end
 	self:_publish(player)
 	self.Gameplay:Notify(player, ("Took from sack (%d/5 left)."):format(#list))
+end
+
+-- Feed support: peek at / pop the top sack item
+-- WITHOUT respawning it, so Animals:Feed can eat
+-- straight from the sack. Returns the descriptor.
+function Sack:PopTop(player)
+	local list = self.Items[player]
+	if not list or #list == 0 then
+		return nil
+	end
+	local desc = table.remove(list)
+	self:_publish(player)
+	return desc
 end
 
 function Sack:CleanupPlayer(player)

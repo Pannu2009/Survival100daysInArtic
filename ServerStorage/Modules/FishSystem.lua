@@ -203,6 +203,20 @@ function FishSystem:Cook(dt)
 					local t = (fish:GetAttribute("CookTime") or 0) + dt
 					if t >= Config.Food.CookSeconds then
 						fish:SetAttribute("Cooked", true)
+						-- Sound: players near the fire hear it
+						-- finish cooking, once.
+						if self.Gameplay.Net then
+							local part = getFishPart(fish)
+							if part then
+								for _, pl in ipairs(Players:GetPlayers()) do
+									local ch = pl.Character
+									local rt = ch and ch:FindFirstChild("HumanoidRootPart")
+									if rt and (rt.Position - part.Position).Magnitude <= 25 then
+										self.Gameplay.Net:SendToClient(pl, "PlaySound", { Sound = "CookFish" })
+									end
+								end
+							end
+						end
 						for _, p in ipairs(fish:GetDescendants()) do
 							if p:IsA("BasePart") then
 								p.Color = Color3.fromRGB(198, 124, 56)
