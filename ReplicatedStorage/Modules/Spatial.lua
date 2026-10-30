@@ -3,14 +3,24 @@ local Workspace = game:GetService("Workspace")
 local Spatial = {}
 function Spatial.PartsInRadius(position, radius, filterDescendants)
 	local params = OverlapParams.new()
-	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = filterDescendants or {}
+	if filterDescendants and #filterDescendants > 0 then
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = filterDescendants
+	else
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {}
+	end
 	return Workspace:GetPartBoundsInRadius(position, radius, params)
 end
 function Spatial.PartsInBox(cframe, size, filterDescendants)
 	local params = OverlapParams.new()
-	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = filterDescendants or {}
+	if filterDescendants and #filterDescendants > 0 then
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = filterDescendants
+	else
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {}
+	end
 	return Workspace:GetPartBoundsInBox(cframe, size, params)
 end
 function Spatial.TaggedNear(tag, position, radius)
@@ -31,7 +41,7 @@ end
 function Spatial.NearestTagged(tag, position, maxDistance)
 	local best, bestDist = nil, maxDistance or math.huge
 	for _, instance in ipairs(Spatial.TaggedNear(tag, position, maxDistance or math.huge)) do
-		local part = instance:IsA("BasePart") and instance or instance:FindFirstChildWhichIsA("BasePart", true)
+		local part = instance:IsA("BasePart") and instance or instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart", true)
 		if part then
 			local dist = (part.Position - position).Magnitude
 			if dist < bestDist then

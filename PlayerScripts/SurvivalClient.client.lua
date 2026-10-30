@@ -154,6 +154,15 @@ if playerGuiEarly then
 	playerGuiEarly.ChildAdded:Connect(orderAjayGui)
 end
 gui.Parent = player:WaitForChild("PlayerGui")
+if not playerGuiEarly then
+	local playerGui = player:FindFirstChild("PlayerGui")
+	if playerGui then
+		for _, child in ipairs(playerGui:GetChildren()) do
+			orderAjayGui(child)
+		end
+		playerGui.ChildAdded:Connect(orderAjayGui)
+	end
+end
 local frost = Instance.new("Frame")
 frost.Name = "Frost"
 frost.Size = UDim2.fromScale(1, 1)
@@ -259,7 +268,8 @@ task.spawn(function()
 		end
 	end
 end)
-local sickLabel = makeLabel(gui, "SICK", UDim2.fromOffset(80, 22), UDim2.new(1, -96, 0, 46), MARIGOLD, 16)
+local sickLabel = makeLabel(gui, "SICK", UDim2.fromOffset(80, 22), UDim2.new(1, -96, 0, 72), MARIGOLD, 16)
+sickLabel.ZIndex = 20
 sickLabel.TextXAlignment = Enum.TextXAlignment.Right
 sickLabel.Visible = false
 local objectivePanel = Instance.new("Frame")
@@ -515,6 +525,9 @@ local storeHint = makeLabel(storeButton, "", UDim2.fromOffset(100, 14), UDim2.ne
 storeHint.TextXAlignment = Enum.TextXAlignment.Center
 local canStore = false
 local function tryStore()
+	if not storeRemote then
+		storeRemote = remotes:FindFirstChild("StoreDraggedItem")
+	end
 	if canStore and storeRemote then
 		storeRemote:FireServer()
 	end
@@ -636,12 +649,17 @@ local function tryEat()
 	if not eatTarget then
 		return
 	end
-	if eatTarget:IsA("BasePart") and eatTarget.Name == "Meat" and eatMeatRemote then
-		eatMeatRemote:FireServer(eatTarget)
-	else
-		SoundModule.PlayService("EatFish")
-		eatRemote:FireServer(eatTarget)
+	if eatTarget:IsA("BasePart") and eatTarget.Name == "Meat" then
+		if not eatMeatRemote then
+			eatMeatRemote = remotes:FindFirstChild("EatMeat")
+		end
+		if eatMeatRemote then
+			eatMeatRemote:FireServer(eatTarget)
+		end
+		return
 	end
+	SoundModule.PlayService("EatFish")
+	eatRemote:FireServer(eatTarget)
 end
 eatButton.Activated:Connect(tryEat)
 local buildMenu = Instance.new("Frame")
@@ -1887,7 +1905,13 @@ local function clientFishPos(elapsed, seed)
 	return math.clamp(p, 0.08, 0.92)
 end
 local reelHolding = false
-UserInputService.InputBegan:Connect(function(input)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then
+		return
+	end
+	if not fishingPanel.Visible then
+		return
+	end
 	if input.UserInputType == Enum.UserInputType.MouseButton1
 		or input.UserInputType == Enum.UserInputType.Touch
 		or input.KeyCode == Enum.KeyCode.Space
@@ -2072,7 +2096,8 @@ RunService.RenderStepped:Connect(function()
 		local dir = camera.CFrame.LookVector
 		local bestT = math.huge
 		local fishFolderNow = workspace:FindFirstChild("Fish")
-		for _, folder in ipairs({ logsFolder, fishFolderNow }) do
+			local meatFolderNow = workspace:FindFirstChild("Meat")
+		for _, folder in ipairs({ logsFolder, fishFolderNow, meatFolderNow }) do
 			if folder then
 				for _, model in ipairs(folder:GetChildren()) do
 					local anyPart = model:IsA("BasePart") and model or model:FindFirstChildWhichIsA("BasePart", true)
@@ -2109,6 +2134,11 @@ for _, fish in ipairs(fishFolder:GetChildren()) do
 	trackLog(fish)
 end
 fishFolder.ChildAdded:Connect(trackLog)
+local meatFolder = workspace:WaitForChild("Meat")
+for _, meat in ipairs(meatFolder:GetChildren()) do
+	trackLog(meat)
+end
+meatFolder.ChildAdded:Connect(trackLog)
 local dragDot = Instance.new("Frame")
 dragDot.Name = "DragDot"
 dragDot.Size = UDim2.fromOffset(8, 8)
@@ -2135,6 +2165,9 @@ local function watchAimTool(tool)
 		return
 	end
 	wiredAimTools[tool] = true
+	tool.Destroying:Connect(function()
+		wiredAimTools[tool] = nil
+	end)
 	tool.Activated:Connect(function()
 		if tool.Name == "Axe" then
 			SoundModule.PlayService("AxeSwing")

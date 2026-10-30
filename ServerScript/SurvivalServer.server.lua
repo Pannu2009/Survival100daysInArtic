@@ -119,9 +119,14 @@ gameplay.Sleds = sleds
 world:UpdateState(clock, temperature)
 while true do
 	local dt = task.wait(0.25)
-	clock:Update(dt)
-	world:TickFire(dt)
-	gameplay:Update(dt)
-	sleds:Update(dt)
-	world:UpdateState(clock, temperature)
+	local ok, err = pcall(function()
+		clock:Update(dt)
+		world:TickFire(dt)
+		gameplay:Update(dt)
+		sleds:Update(dt)
+		world:UpdateState(clock, temperature)
+	end)
+	if not ok then
+		warn("[Arctic] Main loop error, continuing:", err)
+	end
 end

@@ -274,6 +274,25 @@ function Net:InitClient()
 	if self._fromServerFast then
 		self._fromServerFast.OnClientEvent:Connect(handle)
 	end
+	if not self._toServer or not self._toServerFast or not self._fromServer or not self._fromServerFast then
+		task.spawn(function()
+			local remotes = ReplicatedStorage:WaitForChild("Remotes")
+			if not self._toServer then
+				self._toServer = remotes:WaitForChild("NetClientToServer")
+			end
+			if not self._toServerFast then
+				self._toServerFast = remotes:WaitForChild("NetClientToServerFast")
+			end
+			if not self._fromServer then
+				self._fromServer = remotes:WaitForChild("NetServerToClient")
+				self._fromServer.OnClientEvent:Connect(handle)
+			end
+			if not self._fromServerFast then
+				self._fromServerFast = remotes:WaitForChild("NetServerToClientFast")
+				self._fromServerFast.OnClientEvent:Connect(handle)
+			end
+		end)
+	end
 	return self
 end
 function Net:ListenToServer(event, fn)

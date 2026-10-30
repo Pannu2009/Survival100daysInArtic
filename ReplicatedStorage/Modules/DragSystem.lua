@@ -246,7 +246,20 @@ function DragSystem.InitServer()
 		remote.Name = CONFIG.RemoteName
 		remote.Parent = ReplicatedStorage
 	end
+	local packetCounts = {}
 	remote.OnServerEvent:Connect(function(player, action, item, position)
+		if action == "Update" then
+			local now = os.clock()
+			local entry = packetCounts[player]
+			if not entry or now - entry.WindowStart >= 1 then
+				entry = { WindowStart = now, Count = 0 }
+				packetCounts[player] = entry
+			end
+			entry.Count += 1
+			if entry.Count > 60 then
+				return
+			end
+		end
 		if action == "Start" then
 			DragSystem.Start(player, item)
 		elseif action == "Update" then
