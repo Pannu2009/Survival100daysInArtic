@@ -1522,7 +1522,10 @@ local radialWedges = {}
 local radialCenterLabel = nil
 local radialFound = false
 local radialHolding = false
+local radialPressing = false
+local radialPressToken = 0
 local radialTouchHolding = false
+local radialLastAction = nil
 local radialSelected = nil
 local radialSubmenu = false
 local radialHoverSince = 0
@@ -1546,6 +1549,53 @@ local whistleCorner = Instance.new("UICorner")
 whistleCorner.CornerRadius = UDim.new(0.5, 0)
 whistleCorner.Parent = whistleButton
 addStroke(whistleButton, NAVY, 1.5, 0.5)
+
+-- Ark Mobile's Last Function button, adapted: re-issues the
+-- last wolf command/behaviour with one tap, so you rarely
+-- need the wheel twice in a row.
+local repeatButton = Instance.new("TextButton")
+repeatButton.Name = "WolfRepeat"
+repeatButton.Size = UDim2.fromOffset(56, 56)
+repeatButton.Position = UDim2.new(0, 78, 1, -76)
+repeatButton.BackgroundColor3 = SILVER
+repeatButton.BackgroundTransparency = 0.25
+repeatButton.TextColor3 = NAVY
+repeatButton.Font = Enum.Font.GothamBold
+repeatButton.TextSize = 10
+repeatButton.Text = "LAST"
+repeatButton.AutoButtonColor = true
+repeatButton.Visible = false
+repeatButton.Parent = gui
+local repeatCorner = Instance.new("UICorner")
+repeatCorner.CornerRadius = UDim.new(0.5, 0)
+repeatCorner.Parent = repeatButton
+addStroke(repeatButton, NAVY, 1.5, 0.5)
+repeatButton.Activated:Connect(function()
+	if not radialLastAction then
+		toast("No last wolf command yet")
+		return
+	end
+	SoundModule.PlayService("UI_Click")
+	if radialLastAction.kind == "behaviour" then
+		local behaviourRemote = remotes:FindFirstChild("WolfBehaviour")
+		if behaviourRemote then
+			behaviourRemote:FireServer(radialLastAction.name)
+		end
+	elseif radialLastAction.mode == "Attack" then
+		local targetPos
+		local cam = workspace.CurrentCamera
+		if cam then
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			params.FilterDescendantsInstances = { player.Character }
+			local hit = workspace:Raycast(cam.CFrame.Position, cam.CFrame.LookVector * 60, params)
+			targetPos = hit and hit.Position or (cam.CFrame.Position + cam.CFrame.LookVector * 35)
+		end
+		wolfCommandRemote:FireServer("Attack", targetPos)
+	else
+		wolfCommandRemote:FireServer(radialLastAction.mode, nil)
+	end
+end)
 
 local function radialTryWire()
 	if radialFound or not wolfRadial then
@@ -1733,11 +1783,13 @@ local function radialClose(fire)
 	if fire and sel then
 		SoundModule.PlayService("UI_Click")
 		if wasSubmenu and sel.subName then
+			radialLastAction = { kind = "behaviour", name = sel.subName }
 			local behaviourRemote = remotes:FindFirstChild("WolfBehaviour")
 			if behaviourRemote then
 				behaviourRemote:FireServer(sel.subName)
 			end
 		elseif sel.mainCommand == "Follow" or sel.mainCommand == "Alert" or sel.mainCommand == "Stop" or sel.mainCommand == "Wander" then
+			radialLastAction = { kind = "command", mode = sel.mainCommand }
 			wolfCommandRemote:FireServer(sel.mainCommand, nil)
 		elseif sel.mainCommand == "Attack" then
 			local targetPos
@@ -1749,6 +1801,7 @@ local function radialClose(fire)
 				local hit = workspace:Raycast(cam.CFrame.Position, cam.CFrame.LookVector * 60, params)
 				targetPos = hit and hit.Position or (cam.CFrame.Position + cam.CFrame.LookVector * 35)
 			end
+			radialLastAction = { kind = "command", mode = "Attack" }
 			wolfCommandRemote:FireServer("Attack", targetPos)
 		end
 	end
@@ -1760,7 +1813,17 @@ whistleButton.InputBegan:Connect(function(input)
 		radialTouchHolding = input.UserInputType == Enum.UserInputType.Touch
 		-- Input.Position is a Vector3; the wheel math is Vector2.
 		radialPointer = Vector2.new(input.Position.X, input.Position.Y)
-		radialOpen()
+		-- Ark tap-vs-hold: a quick tap must not flash the
+		-- wheel open and closed. Only open after 0.25s held;
+		-- a release before that is just a tap, no wheel.
+		radialPressing = true
+		radialPressToken = radialPressToken + 1
+		local token = radialPressToken
+		task.delay(0.25, function()
+			if radialPressing and token == radialPressToken then
+				radialOpen()
+			end
+		end)
 	end
 end)
 -- Do NOT close on the whistle button's own InputEnded:
@@ -1771,17 +1834,20 @@ end)
 -- / mouse released anywhere), so dragging off the button
 -- keeps the wheel open until you actually let go.
 UserInputService.InputEnded:Connect(function(input)
-	if radialHolding and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-		radialClose(true)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		radialPressing = false
+		if radialHolding then
+			radialClose(true)
+		end
 	end
 end)
 UserInputService.InputChanged:Connect(function(input)
-	if radialHolding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+	if (radialHolding or radialPressing) and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 		radialPointer = Vector2.new(input.Position.X, input.Position.Y)
 	end
 end)
 radialRunService.RenderStepped:Connect(function()
-	if radialHolding and not radialTouchHolding then
+	if (radialHolding or radialPressing) and not radialTouchHolding then
 		radialPointer = UserInputService:GetMouseLocation()
 	end
 	radialUpdateSelection()
@@ -1794,6 +1860,7 @@ if not radialFound and radialPlayerGui then
 			wolfRadial = child:FindFirstChild("WolfRadial")
 			if radialTryWire() then
 				whistleButton.Visible = true -- test mode: show without a tamed wolf
+				repeatButton.Visible = true
 				for _, b in pairs(wolfButtons) do
 					b.Visible = false
 				end
@@ -1813,9 +1880,11 @@ local function refreshWolfButtons()
 		-- so the wheel can be tested without taming first.
 		-- Firing a command with no wolves just does nothing.
 		whistleButton.Visible = true
+		repeatButton.Visible = true
 		return
 	end
 	whistleButton.Visible = false
+	repeatButton.Visible = false
 	for m, b in pairs(wolfButtons) do
 		b.Visible = count > 0
 		b.BackgroundColor3 = m == active and CYAN or SILVER
