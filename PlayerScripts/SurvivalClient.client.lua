@@ -231,6 +231,7 @@ local function addGloss(parent)
 	shine.Position = UDim2.fromOffset(8, 4)
 	shine.BackgroundColor3 = Color3.new(1, 1, 1)
 	shine.BackgroundTransparency = 0.78
+	shine.ZIndex = 0
 	shine.BorderSizePixel = 0
 	shine.Parent = parent
 	local corner = Instance.new("UICorner")
@@ -365,7 +366,8 @@ end
 
 local function makeBar(parent, name)
 	local frameH = parent.Size.Y.Offset
-	makeLabel(parent, name, UDim2.fromOffset(58, 16), UDim2.fromOffset(8, (frameH - 16) / 2), SILVER, 12)
+	local statLabel = makeLabel(parent, name, UDim2.fromOffset(58, 16), UDim2.fromOffset(8, (frameH - 16) / 2), SILVER, 12)
+	statLabel.ZIndex = 2
 	local track = Instance.new("Frame")
 	track.Size = UDim2.new(1, -76, 0, 12)
 	track.Position = UDim2.fromOffset(68, (frameH - 12) / 2)
@@ -392,9 +394,10 @@ local healthFill = makeBar(healthFrame, "Health")
 local warmthFrame = makeStatFrame("WarmthFrame", UDim2.new(0.18, 40, 0, 28), UDim2.new(0, 8, 0.42, 0), Vector2.new(0, 0))
 -- Why warmth is moving, in words, right under the bar.
 local warmthWhy = makeLabel(gui, "", UDim2.new(0.18, 40, 0, 14), UDim2.new(0, 14, 0.42, 31), SILVER, 11)
+warmthWhy.ZIndex = 20
 warmthWhy.TextXAlignment = Enum.TextXAlignment.Left
 local warmthFill = makeBar(warmthFrame, "Warmth")
-local hungerFrame = makeStatFrame("HungerFrame", UDim2.new(0.18, 40, 0, 28), UDim2.new(0, 8, 0.42, 34), Vector2.new(0, 0))
+local hungerFrame = makeStatFrame("HungerFrame", UDim2.new(0.18, 40, 0, 28), UDim2.new(0, 8, 0.42, 48), Vector2.new(0, 0))
 local hungerFill = makeBar(hungerFrame, "Hunger")
 
 
@@ -414,7 +417,7 @@ walletLine1.TextXAlignment = Enum.TextXAlignment.Center
 -- Stay at Campfire / Idle. Kid index in panel order = kid Id
 -- (Arzh=1, Noor=2, Veer=3, spawn order on the server).
 local kidAssignRemote = remotes:WaitForChild("KidAssignTask")
-local kidsPanel = makeStatFrame("KidsPanel", UDim2.new(0.30, 40, 0, 30), UDim2.new(0, 8, 0.42, 100), Vector2.new(0, 0))
+local kidsPanel = makeStatFrame("KidsPanel", UDim2.new(0.30, 40, 0, 30), UDim2.new(0, 8, 0.42, 114), Vector2.new(0, 0))
 kidsPanel.Visible = false
 local kidsTitle = makeLabel(kidsPanel, "KIDS", UDim2.new(1, -12, 0, 20), UDim2.fromOffset(6, 4), SILVER, 13)
 kidsTitle.TextXAlignment = Enum.TextXAlignment.Center
@@ -541,7 +544,7 @@ rebuildKidsPanel()
 -- the server already publishes on ReplicatedStorage (WindDir /
 -- WindStrength, used by the blowing-snow dressing). Compass is an
 -- approximation from that published angle, not a new simulation.
-local windFrame = makeStatFrame("WindFrame", UDim2.new(0.18, 40, 0, 26), UDim2.new(0, 8, 0.42, 68), Vector2.new(0, 0))
+local windFrame = makeStatFrame("WindFrame", UDim2.new(0.18, 40, 0, 26), UDim2.new(0, 8, 0.42, 82), Vector2.new(0, 0))
 local windLabel = makeLabel(windFrame, "Wind --", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 4), CYAN, 12)
 windLabel.TextXAlignment = Enum.TextXAlignment.Center
 local function refreshWind()
