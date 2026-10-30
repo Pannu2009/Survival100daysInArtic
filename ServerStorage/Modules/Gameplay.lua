@@ -15,6 +15,8 @@ local Kids = require(script.Parent:WaitForChild("Animals"):WaitForChild("Kids"))
 local Sleep = require(script.Parent:WaitForChild("Sleep"))
 local Shelters = require(script.Parent:WaitForChild("Shelters"))
 local Pelts = require(script.Parent:WaitForChild("Pelts"))
+local Meat = require(script.Parent:WaitForChild("Meat"))
+local Sack = require(script.Parent:WaitForChild("Sack"))
 local Merchant = require(script.Parent:WaitForChild("Merchant"))
 local Coal = require(script.Parent:WaitForChild("Coal"))
 local Weapons = require(script.Parent:WaitForChild("Weapons"))
@@ -68,6 +70,8 @@ function Gameplay.new(world, clock, temperature)
 	self.Sleep = Sleep.new(self)
 	self.Shelters = Shelters.new(self)
 	self.Pelts = Pelts.new(self)
+	self.Meat = Meat.new(self)
+	self.Sack = Sack.new(self)
 	self.Merchant = Merchant.new(self)
 	self.Coal = Coal.new(self)
 	self._sleepBagMultiplierGranted = false
@@ -101,6 +105,7 @@ function Gameplay:Start()
 	self.Sleep:Start()
 	self.Shelters:Start()
 	self.Pelts:Start()
+	self.Meat:Start()
 	self.Merchant:Start()
 	self.Coal:Start()
 	self.Kids:Start()
@@ -259,6 +264,24 @@ function Gameplay:Start()
 		self.Fish:Eat(player, fish)
 	end)
 
+	-- Batch 1: eat meat, and sack store/take.
+	local eatMeat = Instance.new("RemoteEvent")
+	eatMeat.Name = "EatMeat"
+	eatMeat.Parent = remotes
+	Aegis.secure(eatMeat, { args = { "Instance" } }, function(player, meat)
+		self.Meat:Eat(player, meat)
+	end)
+	local sackAction = Instance.new("RemoteEvent")
+	sackAction.Name = "SackAction"
+	sackAction.Parent = remotes
+	Aegis.secure(sackAction, { args = { "string" } }, function(player, action)
+		if action == "Store" then
+			self.Sack:Store(player)
+		elseif action == "Take" then
+			self.Sack:Take(player)
+		end
+	end)
+
 	local toolAim = Instance.new("RemoteEvent")
 	toolAim.Name = "ToolAim"
 	toolAim.Parent = remotes
@@ -386,6 +409,9 @@ function Gameplay:Start()
 		end
 		if self.Sleep then
 			self.Sleep:CleanupPlayer(player)
+		end
+		if self.Sack then
+			self.Sack:CleanupPlayer(player)
 		end
 		if self.Pelts then
 			self.Pelts:CleanupPlayer(player)
@@ -1014,6 +1040,7 @@ end
 function Gameplay:Update(dt)
 	local world = self.World
 	self.Fish:Cook(dt)
+	self.Meat:Cook(dt)
 	self.Fish:TickFishing(dt)
 	-- Phase 3 ticks: sleep hunger/wake, kid follow/work/
 	-- eat, coal deposit regrowth. Merchant restock is

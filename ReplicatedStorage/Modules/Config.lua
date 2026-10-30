@@ -23,7 +23,7 @@ Config.Survival = {
 	HealthRegenPerSecond = 0.05,
 	FreezingHealthDrain = 1.5,
 	StarvingHealthDrain = 1.0,
-	HungerDrainPerSecond = 0.11,
+	HungerDrainPerSecond = 0.10, -- Batch 1: tiny hunger relief for long walks from base
 	Day2HungerMultiplier = 1.4,
 	SprintHungerMultiplier = 2,
 	WalkSpeed = 16,
@@ -281,6 +281,33 @@ Config.Wolves = {
 	AttackSeconds = 12,
 	AttackDamage = 10,
 	ModelYawOffset = 0,
+	-- Batch 1 wolf variants: Ajay builds these models in
+	-- ReplicatedStorage/Assets/Animals under these exact names.
+	-- Missing variants fall back to WolfModel. Level is the
+	-- variant's starting level; stronger stats = stronger wolf.
+	Variants = {
+		White_Wolf = { Health = 90, Bite = 7, SpeedMult = 1.08, Level = 1 },
+		Brown_Wolf = { Health = 110, Bite = 9, SpeedMult = 0.95, Level = 2 },
+		black_wolf = { Health = 100, Bite = 10, SpeedMult = 1.0, Level = 2 },
+		["Black&White_wolf"] = { Health = 105, Bite = 8, SpeedMult = 1.02, Level = 2 },
+		Grey_wolf = { Health = 95, Bite = 8, SpeedMult = 1.12, Level = 1 },
+	},
+	VariantOrder = { "White_Wolf", "Brown_Wolf", "black_wolf", "Black&White_wolf", "Grey_wolf" },
+	-- Batch 1 taming points: regular wolf needs 3 points.
+	-- CookedMeat 3 (1 item), CookedFish 1.5 (2 items),
+	-- RawMeat 1.5 (2 items), RawFish 1 (3 items).
+	-- Leader target is 1.5x, rounded up in items: 3 cooked
+	-- fish, 5 raw fish, 3 meat, 2 cooked meat.
+	TamePoints = 3,
+	TameFoodPoints = { CookedMeat = 3, CookedFish = 1.5, RawMeat = 1.5, RawFish = 1 },
+	LeaderTameMult = 1.5,
+	MeatDropRegular = 1,
+	MeatDropLeader = 2,
+	PackBonusPerMate = 0.05,
+	PackBonusCap = 0.20,
+	PackBonusRange = 25,
+	FleeHealthFrac = 0.25,
+	WolfFightRange = 20,
 }
 
 -- Day 2 ice fishing. The rod arrives at Day 2 start (Weapons list,
@@ -388,6 +415,13 @@ Config.Coal = {
 	MineCooldown = 2,
 	RespawnSeconds = 600,
 	Weight = 10,
+}
+
+-- Batch 1 sack: Dead Rails style carry bag, 5 items max.
+-- Stores logs, fish and meat as descriptors, not models,
+-- so a full sack costs nothing while it is carried.
+Config.Sack = {
+	MaxItems = 5,
 }
 
 Config.Food = {

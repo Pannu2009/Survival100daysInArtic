@@ -87,6 +87,17 @@ function Animals:Start()
 	local animalsFolder = assets and assets:FindFirstChild("Animals")
 	self.Template = (animalsFolder and animalsFolder:FindFirstChild("WolfModel"))
 		or (assets and assets:FindFirstChild("WolfModel", true))
+	-- Batch 1 variants: Ajay's models, exact names, same folder.
+	-- Any variant he has not built yet falls back to WolfModel.
+	self.VariantTemplates = {}
+	if animalsFolder then
+		for _, name in ipairs(W.VariantOrder or {}) do
+			local v = animalsFolder:FindFirstChild(name)
+			if v then
+				self.VariantTemplates[name] = v
+			end
+		end
+	end
 	if not self.Template then
 		warn("[Arctic] Animals: no Assets.Animals.WolfModel - no wolves will spawn")
 		return
@@ -133,7 +144,12 @@ function Animals:_buildWolf()
 	local attackTrack = nil
 	local idleTrack = nil
 	local biteSoundFound = nil
-	local wolf = self.Template:Clone()
+	-- Batch 1 variant: random coat, each with its own stats
+	-- and starting level. Stronger stats = stronger wolf.
+	local variantName = (W.VariantOrder or {})[math.random(#(W.VariantOrder or { "WolfModel" }))]
+	local variant = (W.Variants or {})[variantName] or { Health = W.MaxHealth, Bite = W.BiteDamage, SpeedMult = 1, Level = 1 }
+	local template = (self.VariantTemplates and self.VariantTemplates[variantName]) or self.Template
+	local wolf = template:Clone()
 	for _, d in ipairs(wolf:GetDescendants()) do
 		if d:IsA("Script") or d:IsA("LocalScript") then
 			d:Destroy()
@@ -277,16 +293,21 @@ function Animals:_buildWolf()
 		Think = math.random() * 0.2,
 		BiteCd = 0,
 		State = "Roam",
-		Health = W.MaxHealth,
-		MaxHealth = W.MaxHealth,
+		Health = variant.Health or W.MaxHealth,
+		MaxHealth = variant.Health or W.MaxHealth,
 		Leader = false,
+		Variant = variantName,
+		Level = variant.Level or 1,
+		SpeedMult = variant.SpeedMult or 1,
+		BiteDamage = variant.Bite or W.BiteDamage,
+		PackIndex = 0,
+		TamePoints = 0,
+		TameTarget = nil,
 		Owner = nil,
 		PackId = nil,
 		Home = Vector3.zero,
 		RoamTarget = nil,
 		TargetPlayer = nil,
-		FishNeeded = nil,
-		FishEaten = 0,
 		RefuseUntil = 0,
 		EatingUntil = nil,
 		SledService = nil,
@@ -391,12 +412,15 @@ function Animals:_spawnPack()
 		spawned += 1
 		record.PackId = packId
 		record.Home = home
+		record.PackIndex = i
 		if i == 1 and count >= 2 then
-			-- The pack leader: bigger pool, harder bite. (A lone
-			-- wolf is just a wolf -- no leader buff solo.)
+			-- The pack leader: bigger pool, harder bite, +1 level.
+			-- (A lone wolf is just a wolf -- no leader buff solo.)
 			record.Leader = true
-			record.MaxHealth = W.LeaderMaxHealth
-			record.Health = W.LeaderMaxHealth
+			record.Level = (record.Level or 1) + 1
+			record.MaxHealth = math.floor((record.MaxHealth or W.MaxHealth) * 1.6)
+			record.Health = record.MaxHealth
+			record.BiteDamage = math.floor((record.BiteDamage or W.BiteDamage) * W.LeaderDamageMult)
 		end
 		record.Model:SetAttribute("Leader", record.Leader)
 		local angle = (i / count) * math.pi * 2
@@ -488,12 +512,13 @@ function Animals:DamageWolf(wolf, amount, attacker)
 	-- damage source (fire included) -- otherwise a wolf burned
 	-- down to tameable range never got a price rolled and the
 	-- tame fallback charged him 1 fish, leader or not.
-	if not wolf.Owner and wolf.Health <= W.TameHealth and wolf.FishNeeded == nil then
-		wolf.FishNeeded = (wolf.Leader or math.random() < W.TwoFishChance) and 2 or 1
-		wolf.FishEaten = 0
+	if not wolf.Owner and wolf.Health <= W.TameHealth and wolf.TameTarget == nil then
+		-- Batch 1 taming points: 3 regular, 4.5 leader (1.5x).
+		wolf.TameTarget = wolf.Leader and (W.TamePoints * W.LeaderTameMult) or W.TamePoints
+		wolf.TamePoints = 0
 		wolf.TameableSince = os.clock()
 		if attacker then
-			self.Gameplay:Notify(attacker, "It's weak -- drop a fish to tame it!")
+			self.Gameplay:Notify(attacker, "It's weak -- drop food to tame it!")
 		end
 	end
 	if not wolf.Owner and attacker then
@@ -521,6 +546,12 @@ function Animals:_killWolf(wolf, attacker)
 	if self.Gameplay and self.Gameplay.Pelts then
 		pcall(function()
 			self.Gameplay.Pelts:OnWolfKilled(wolf, attacker)
+		end)
+	end
+	-- Batch 1: wild kills also drop raw meat.
+	if self.Gameplay and self.Gameplay.Meat then
+		pcall(function()
+			self.Gameplay.Meat:OnWolfKilled(wolf, attacker)
 		end)
 	end
 	wolf.Health = 0
@@ -575,26 +606,38 @@ end
 -- ---------- taming ----------
 
 function Animals:_tryTame(wolf)
-	-- A hurt wolf scans for a fish somebody dropped: a loose
-	-- fish whose LastDragger is set. Unless he was betrayed
-	-- recently -- a snatched fish means no trust for a while.
+	-- A hurt wolf scans for dropped food: a loose fish or a
+	-- loose meat chunk whose LastDragger is set. Unless he was
+	-- betrayed recently -- a snatched meal means no trust.
 	if os.clock() < (wolf.RefuseUntil or 0) then
 		return false
 	end
-	local fishFolder = self.Gameplay.Fish and self.Gameplay.Fish.Folder
-	if not fishFolder then
-		return false
-	end
 	local pos = wolf.Root.Position
-	local best, bestDist = nil, 14
-	for _, fish in ipairs(fishFolder:GetChildren()) do
-		local lastDragger = fish:GetAttribute("LastDragger")
-		if lastDragger then
-			local primary = fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true)
-			if primary and primary:GetAttribute("DraggedBy") == nil then
-				local d = (primary.Position - pos).Magnitude
+	local best, bestDist, bestFood = nil, 14, nil
+	local fishFolder = self.Gameplay.Fish and self.Gameplay.Fish.Folder
+	if fishFolder then
+		for _, fish in ipairs(fishFolder:GetChildren()) do
+			local lastDragger = fish:GetAttribute("LastDragger")
+			if lastDragger then
+				local primary = fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true)
+				if primary and primary:GetAttribute("DraggedBy") == nil then
+					local d = (primary.Position - pos).Magnitude
+					if d < bestDist then
+						best, bestDist = fish, d
+						bestFood = fish:GetAttribute("Cooked") == true and "CookedFish" or "RawFish"
+					end
+				end
+			end
+		end
+	end
+	local meatFolder = self.Gameplay.Meat and self.Gameplay.Meat.Folder
+	if meatFolder then
+		for _, meat in ipairs(meatFolder:GetChildren()) do
+			if meat:GetAttribute("LastDragger") and meat:GetAttribute("DraggedBy") == nil then
+				local d = (meat.Position - pos).Magnitude
 				if d < bestDist then
-					best, bestDist = fish, d
+					best, bestDist = meat, d
+					bestFood = meat:GetAttribute("FoodType") or "RawMeat"
 				end
 			end
 		end
@@ -603,6 +646,7 @@ function Animals:_tryTame(wolf)
 		return false
 	end
 	wolf.EatTarget = best
+	wolf.EatFood = bestFood
 	wolf.State = "GoEat"
 	return true
 end
@@ -612,7 +656,14 @@ end
 -- a while). A full fish is eaten whole; some wolves need two.
 function Animals:_stepGoEat(wolf, dt, now)
 	local fish = wolf.EatTarget
-	local primary = fish and fish.Parent and (fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true))
+	local primary = nil
+	if fish and fish.Parent then
+		if fish:IsA("BasePart") then
+			primary = fish
+		else
+			primary = fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true)
+		end
+	end
 	if not primary then
 		wolf.EatTarget = nil
 		wolf.EatingUntil = nil
@@ -629,7 +680,7 @@ function Animals:_stepGoEat(wolf, dt, now)
 		if now >= wolf.EatingUntil then
 			wolf.EatingUntil = nil
 			wolf.EatTarget = nil
-			self:_consumeFish(wolf, fish)
+			self:_consumeFood(wolf, fish)
 		end
 		return
 	end
@@ -654,15 +705,18 @@ function Animals:_failTame(wolf, draggedBy)
 	end
 end
 
-function Animals:_consumeFish(wolf, fish)
-	local lastDragger = fish:GetAttribute("LastDragger")
-	fish:Destroy()
-	wolf.FishEaten = (wolf.FishEaten or 0) + 1
-	local needed = wolf.FishNeeded or 1
-	if wolf.FishEaten < needed then
+function Animals:_consumeFood(wolf, food)
+	local lastDragger = food:GetAttribute("LastDragger")
+	local foodType = wolf.EatFood or "RawFish"
+	food:Destroy()
+	wolf.EatFood = nil
+	local points = (W.TameFoodPoints or {})[foodType] or 1
+	wolf.TamePoints = (wolf.TamePoints or 0) + points
+	local target = wolf.TameTarget or W.TamePoints
+	if wolf.TamePoints < target then
 		local owner = lastDragger and Players:GetPlayerByUserId(lastDragger)
 		if owner then
-			self.Gameplay:Notify(owner, ("It wants another fish! (%d/%d)"):format(wolf.FishEaten, needed))
+			self.Gameplay:Notify(owner, ("It wants more food! (%.1f/%.1f)"):format(wolf.TamePoints, target))
 		end
 		wolf.State = "Roam"
 		return
@@ -672,8 +726,8 @@ end
 
 function Animals:_claimWolf(wolf, lastDragger)
 	local owner = lastDragger and Players:GetPlayerByUserId(lastDragger)
-	wolf.FishNeeded = nil
-	wolf.FishEaten = 0
+	wolf.TameTarget = nil
+	wolf.TamePoints = 0
 	wolf.TameableSince = nil
 	if not owner or self:Count(owner) >= W.TeamLimit then
 		-- Fed but not claimed (nobody there, or their team is
@@ -842,7 +896,7 @@ function Animals:_refreshTag(wolf)
 		wolf.TagLabel.Text = star .. wolf.Owner.DisplayName .. "'s wolf"
 		wolf.Tag.Enabled = true
 	elseif wolf.Health <= W.TameHealth then
-		wolf.TagLabel.Text = "Tameable -- drop a fish"
+		wolf.TagLabel.Text = "Tameable -- drop food"
 		wolf.Tag.Enabled = true
 	elseif wolf.Health < wolf.MaxHealth then
 		wolf.TagLabel.Text = ("HP %d"):format(math.ceil(wolf.Health))
@@ -1105,6 +1159,55 @@ function Animals:_moveToward(wolf, targetPos, speed, dt)
 	return dist
 end
 
+-- Batch 1 pack bonus: +5% damage per pack mate within 25
+-- studs, capped at +20%. Counts wild pack mates for wild
+-- wolves and tamed pack mates for owned wolves.
+function Animals:_packBonusMult(wolf)
+	local mates = 0
+	for _, other in ipairs(self.Wolves) do
+		if other ~= wolf and other.Health > 0 then
+			local same = false
+			if wolf.Owner then
+				same = other.Owner == wolf.Owner
+			elseif other.PackId and wolf.PackId then
+				same = other.PackId == wolf.PackId
+			end
+			if same and (other.Root.Position - wolf.Root.Position).Magnitude <= W.PackBonusRange then
+				mates += 1
+			end
+		end
+	end
+	return 1 + math.min(W.PackBonusCap, mates * W.PackBonusPerMate)
+end
+
+-- Batch 1 wolf-vs-wolf bite: no player attacker, so a pack
+-- fight never triggers the player-aggro pack response.
+function Animals:_biteWolf(attackerWolf, prey)
+	if attackerWolf.BiteSound then
+		attackerWolf.BiteSound:Play()
+	end
+	if attackerWolf.AttackTrack and not attackerWolf.AttackTrack.IsPlaying then
+		attackerWolf.AttackTrack:Play(0.05)
+	end
+	attackerWolf.BiteCd = W.BiteCooldown
+	self:DamageWolf(prey, (attackerWolf.BiteDamage or W.BiteDamage) * self:_packBonusMult(attackerWolf), nil)
+end
+
+function Animals:_nearestEnemyWolf(wolf, maxDist)
+	local best, bestDist = nil, maxDist
+	for _, other in ipairs(self.Wolves) do
+		if other ~= wolf and not other.Owner and other.Health > 0
+			and other.PackId ~= wolf.PackId and not other.Removed
+		then
+			local d = (other.Root.Position - wolf.Root.Position).Magnitude
+			if d < bestDist then
+				best, bestDist = other, d
+			end
+		end
+	end
+	return best
+end
+
 function Animals:_bitePlayer(wolf, player)
 	local survival = self.Gameplay._survivals[player]
 	if not survival then
@@ -1116,7 +1219,7 @@ function Animals:_bitePlayer(wolf, player)
 	if wolf.AttackTrack and not wolf.AttackTrack.IsPlaying then
 		wolf.AttackTrack:Play(0.05)
 	end
-	local damage = W.BiteDamage * (wolf.Leader and W.LeaderDamageMult or 1)
+	local damage = (wolf.BiteDamage or W.BiteDamage) * self:_packBonusMult(wolf)
 	survival:Damage(damage)
 	wolf.BiteCd = W.BiteCooldown
 end
@@ -1225,11 +1328,34 @@ function Animals:_step(dt)
 			then
 				wolf.Health += 7.5 * dt
 				if wolf.Health > W.TameHealth then
-					wolf.FishNeeded = nil
-					wolf.FishEaten = 0
+					wolf.TameTarget = nil
+					wolf.TamePoints = 0
 					wolf.TameableSince = nil
 					self:_refreshTag(wolf)
 				end
+			end
+		end
+
+		-- Batch 1 AI, before dispatch: a badly hurt wild wolf
+		-- flees to its home (leaders stand), and wild packs
+		-- fight each other on sight.
+		if not wolf.Owner and wolf.Health > 0 and wolf.Health < (wolf.MaxHealth * W.FleeHealthFrac)
+			and not wolf.Leader and (wolf.State == "Aggro" or wolf.State == "WolfFight")
+			and not (wolf.FleeUntil and now < wolf.FleeUntil)
+		then
+			wolf.State = "Roam"
+			wolf.TargetPlayer = nil
+			wolf.TargetWolf = nil
+			wolf.RoamTarget = wolf.Home
+			wolf.FleeUntil = now + 5
+		end
+		if not wolf.Owner and think and (wolf.State == "Roam" or wolf.State == "Wary")
+			and not (wolf.FleeUntil and now < wolf.FleeUntil)
+		then
+			local enemy = self:_nearestEnemyWolf(wolf, W.WolfFightRange)
+			if enemy then
+				wolf.State = "WolfFight"
+				wolf.TargetWolf = enemy
 			end
 		end
 
@@ -1376,6 +1502,28 @@ function Animals:_step(dt)
 					wolf.TargetPlayer = nil
 				end
 			end
+		elseif wolf.State == "WolfFight" then
+			local prey = wolf.TargetWolf
+			if not prey or prey.Health <= 0 or prey.Removed then
+				wolf.State = "Roam"
+				wolf.TargetWolf = nil
+			else
+				-- Flank: pack mates do not all charge straight in.
+				local flank = Vector3.new(0, 0, 0)
+				if (wolf.PackIndex or 0) % 3 == 2 then
+					flank = Vector3.new(3, 0, 0)
+				elseif (wolf.PackIndex or 0) % 3 == 0 then
+					flank = Vector3.new(-3, 0, 0)
+				end
+				local d = self:_moveSmart(wolf, prey.Root.Position + flank, W.ChaseSpeed * (wolf.SpeedMult or 1), dt)
+				if d <= W.BiteRange and wolf.BiteCd <= 0 then
+					self:_biteWolf(wolf, prey)
+				end
+				if think and d > 90 then
+					wolf.State = "Roam"
+					wolf.TargetWolf = nil
+				end
+			end
 		elseif wolf.State == "GoEat" then
 			self:_stepGoEat(wolf, dt, now)
 		elseif wolf.State == "Tamed" then
@@ -1424,7 +1572,7 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 				if wolf.BiteSound then
 					wolf.BiteSound:Play()
 				end
-				self:DamageWolf(prey, W.AttackDamage, owner)
+				self:DamageWolf(prey, W.AttackDamage * ((wolf.BiteDamage or W.BiteDamage) / W.BiteDamage) * self:_packBonusMult(wolf), owner)
 			end
 			return
 		end

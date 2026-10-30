@@ -97,6 +97,8 @@ local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local setSprinting = remotes:WaitForChild("SetSprinting")
 local storeRemote = remotes:WaitForChild("StoreDraggedItem", 10)
 local eatRemote = remotes:WaitForChild("EatFish")
+local eatMeatRemote = remotes:WaitForChild("EatMeat", 10)
+local sackRemote = remotes:WaitForChild("SackAction", 10)
 local openBuildMenuRemote = remotes:WaitForChild("OpenBuildMenu")
 local placeBlueprintRemote = remotes:WaitForChild("PlaceBlueprint")
 
@@ -561,6 +563,38 @@ local eatHint = makeLabel(eatButton, "tap", UDim2.fromOffset(100, 14), UDim2.new
 eatHint.TextXAlignment = Enum.TextXAlignment.Center
 eatHint.Visible = false
 
+-- Batch 1 sack button: stores the dragged item (max 5) or
+-- takes the last sacked item back out.
+local sackButton = Instance.new("TextButton")
+sackButton.Name = "SackButton"
+sackButton.Size = UDim2.fromOffset(72, 72)
+sackButton.Position = UDim2.new(1, -88, 1, -404)
+sackButton.BackgroundColor3 = CYAN
+sackButton.Text = "SACK"
+sackButton.TextColor3 = NAVY
+sackButton.TextSize = 16
+sackButton.Font = Enum.Font.GothamBold
+sackButton.BorderSizePixel = 0
+sackButton.Visible = false
+sackButton.Parent = gui
+local sackCorner = Instance.new("UICorner")
+sackCorner.CornerRadius = UDim.new(0.5, 0)
+sackCorner.Parent = sackButton
+addStroke(sackButton, NAVY, 1.5, 0.25)
+sackButton.Activated:Connect(function()
+	if not sackRemote then
+		return
+	end
+	-- myDragPartRef is the global accessor (defined later in
+	-- this file, like the grab button uses) -- myDragPart
+	-- itself is a local declared after this button.
+	if myDragPartRef and myDragPartRef() then
+		sackRemote:FireServer("Store")
+	else
+		sackRemote:FireServer("Take")
+	end
+end)
+
 -- Grab / Drop button: ONE context button for dragging. It shows
 -- GRAB while the center dot is on a draggable item and the hands
 -- are empty; while carrying it shows DROP (and only DROP -- you
@@ -620,7 +654,12 @@ end)
 
 local eatTarget = nil
 local function tryEat()
-	if eatTarget then
+	if not eatTarget then
+		return
+	end
+	if eatTarget:IsA("BasePart") and eatTarget.Name == "Meat" and eatMeatRemote then
+		eatMeatRemote:FireServer(eatTarget)
+	else
 		eatRemote:FireServer(eatTarget)
 	end
 end
@@ -2334,6 +2373,23 @@ local function nearestFish()
 	return best
 end
 
+local function nearestMeat()
+	local meatFolder = workspace:FindFirstChild("Meat")
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not meatFolder or not root then
+		return nil
+	end
+	local best, bestDistance = nil, 8
+	for _, meat in ipairs(meatFolder:GetChildren()) do
+		local d = (meat.Position - root.Position).Magnitude
+		if d < bestDistance then
+			best, bestDistance = meat, d
+		end
+	end
+	return best
+end
+
 RunService.RenderStepped:Connect(function(dt)
 	local myPart = myDragPart
 	local characterNow = player.Character
@@ -2364,11 +2420,15 @@ RunService.RenderStepped:Connect(function(dt)
 	local draggedModel = myPart and myPart.Parent
 	if draggedModel and draggedModel.Name == "Fish" then
 		eatTarget = draggedModel
+	elseif myPart and myPart.Name == "Meat" then
+		eatTarget = myPart
 	else
-		eatTarget = nearestFish()
+		eatTarget = nearestFish() or nearestMeat()
 	end
 	eatButton.Visible = eatTarget ~= nil
 	eatHint.Visible = eatButton.Visible
+	sackButton.Visible = myPart ~= nil or (player:GetAttribute("SackCount") or 0) > 0
+	sackButton.Text = myPart and "SACK" or ("SACK (" .. tostring(player:GetAttribute("SackCount") or 0) .. ")")
 
 	if not myPart then
 		return
