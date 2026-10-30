@@ -7,6 +7,7 @@ local AnimationModule = {}
 
 AnimationModule.Wolf = {
 	Walk = "WalkAnim",
+	Howl = "HowlAnim", -- Ajay added this to WolfModel, 2026-10-29
 	Attack = "AttackAnim",
 	-- Idle is a ROTATION, not one clip: every Idle* animation
 	-- in the model joins the play set (see Animals).

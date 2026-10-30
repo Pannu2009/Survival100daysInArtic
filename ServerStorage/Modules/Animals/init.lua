@@ -226,6 +226,7 @@ function Animals:_buildWolf()
 		wolf:SetAttribute("WalkTrackReady", true)
 	end
 	attackTrack = loadAnim(AnimationModule.Wolf.Attack)
+	howlTrack = loadAnim(AnimationModule.Wolf.Howl)
 	-- Idle is a ROTATION, not one clip: every Idle* animation in
 	-- the model joins the wolf's play set and he cycles them.
 	local idleTracks = {}
@@ -282,6 +283,7 @@ function Animals:_buildWolf()
 		Root = root,
 		WalkTrack = walkTrack,
 		AttackTrack = attackTrack,
+		HowlTrack = howlTrack,
 		IdleTrack = idleTrack,
 		IdleTracks = idleTracks,
 		Mood = "Wandering",
@@ -1218,18 +1220,34 @@ function Animals:_moveToward(wolf, targetPos, speed, dt)
 		moving = true
 		wolf.WalkCycle += dt * speed * 0.9
 	end
-	if wolf.WalkTrack then
-		if moving and not wolf.WalkTrack.IsPlaying then
-			wolf.WalkTrack:Play(0.15)
-		elseif not moving and wolf.WalkTrack.IsPlaying then
-			wolf.WalkTrack:Stop(0.2)
+	-- Howl overrides walk/idle while HowlUntil is
+	-- active (Alert howl, and night howls once a wolf
+	-- is picked for them -- see _step night howl).
+	local howling = os.clock() < wolf.HowlUntil  -- _moveToward has no now param, use the clock directly
+	if howling then
+		if wolf.WalkTrack and wolf.WalkTrack.IsPlaying then
+			wolf.WalkTrack:Stop(0.15)
 		end
-	end
-	if wolf.IdleTrack then
-		if not moving and not wolf.IdleTrack.IsPlaying then
-			wolf.IdleTrack:Play(0.25)
-		elseif moving and wolf.IdleTrack.IsPlaying then
+		if wolf.IdleTrack and wolf.IdleTrack.IsPlaying then
 			wolf.IdleTrack:Stop(0.15)
+		end
+		if wolf.HowlTrack and not wolf.HowlTrack.IsPlaying then
+			wolf.HowlTrack:Play(0.1)
+		end
+	else
+		if wolf.WalkTrack then
+			if moving and not wolf.WalkTrack.IsPlaying then
+				wolf.WalkTrack:Play(0.15)
+			elseif not moving and wolf.WalkTrack.IsPlaying then
+				wolf.WalkTrack:Stop(0.2)
+			end
+		end
+		if wolf.IdleTrack then
+			if not moving and not wolf.IdleTrack.IsPlaying then
+				wolf.IdleTrack:Play(0.25)
+			elseif moving and wolf.IdleTrack.IsPlaying then
+				wolf.IdleTrack:Stop(0.15)
+			end
 		end
 	end
 	-- Paw prints: a pressed mark every stride while moving.
@@ -1386,6 +1404,14 @@ function Animals:_step(dt)
 			self._nightHowlTick = 90 + math.random() * 60
 			if self.Gameplay.Net then
 				self.Gameplay.Net:SendToAll("PlaySound", { Sound = "WolfHowl" })
+			end
+			-- Pick one wild wolf to actually perform the
+			-- howl animation, so the sound has a source.
+			for _, wolf in ipairs(self.Wolves) do
+				if not wolf.Owner and wolf.Health > 0 then
+					wolf.HowlUntil = now + 1.6
+					break
+				end
 			end
 		end
 	end
