@@ -1758,7 +1758,8 @@ end
 whistleButton.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		radialTouchHolding = input.UserInputType == Enum.UserInputType.Touch
-		radialPointer = input.Position
+		-- Input.Position is a Vector3; the wheel math is Vector2.
+		radialPointer = Vector2.new(input.Position.X, input.Position.Y)
 		radialOpen()
 	end
 end)
@@ -1769,7 +1770,7 @@ whistleButton.InputEnded:Connect(function(input)
 end)
 UserInputService.InputChanged:Connect(function(input)
 	if radialHolding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		radialPointer = input.Position
+		radialPointer = Vector2.new(input.Position.X, input.Position.Y)
 	end
 end)
 radialRunService.RenderStepped:Connect(function()
