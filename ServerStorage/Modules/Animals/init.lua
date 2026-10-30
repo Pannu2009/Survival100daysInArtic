@@ -9,6 +9,8 @@ local SoundModule = require(Modules:WaitForChild("SoundModule"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 
 local PathfindingService = game:GetService("PathfindingService")
+local CollectionService = game:GetService("CollectionService")
+local Spatial = require(Modules:WaitForChild("Spatial"))
 
 -- Animals: the parent system for every creature. Today it drives
 -- Ajay's WolfModel -- wild packs with a leader, day/night hunting
@@ -150,6 +152,7 @@ function Animals:_buildWolf()
 	local variant = (W.Variants or {})[variantName] or { Health = W.MaxHealth, Bite = W.BiteDamage, SpeedMult = 1, Level = 1 }
 	local template = (self.VariantTemplates and self.VariantTemplates[variantName]) or self.Template
 	local wolf = template:Clone()
+	CollectionService:AddTag(wolf, "ArcticWolf")
 	for _, d in ipairs(wolf:GetDescendants()) do
 		if d:IsA("Script") or d:IsA("LocalScript") then
 			d:Destroy()
@@ -1194,9 +1197,18 @@ function Animals:_biteWolf(attackerWolf, prey)
 end
 
 function Animals:_nearestEnemyWolf(wolf, maxDist)
-	local best, bestDist = nil, maxDist
+	-- Spatial: only wolves tagged near this wolf are
+	-- checked, instead of looping all 24 wolves every
+	-- think tick. PackId/Owner/Health are still checked
+	-- from server state, not from the query.
+	local byModel = {}
 	for _, other in ipairs(self.Wolves) do
-		if other ~= wolf and not other.Owner and other.Health > 0
+		byModel[other.Model] = other
+	end
+	local best, bestDist = nil, maxDist
+	for _, model in ipairs(Spatial.TaggedNear("ArcticWolf", wolf.Root.Position, maxDist)) do
+		local other = byModel[model]
+		if other and other ~= wolf and not other.Owner and other.Health > 0
 			and other.PackId ~= wolf.PackId and not other.Removed
 		then
 			local d = (other.Root.Position - wolf.Root.Position).Magnitude

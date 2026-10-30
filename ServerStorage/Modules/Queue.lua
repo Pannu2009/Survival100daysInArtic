@@ -27,6 +27,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
+local CrossServer = require(script.Parent:WaitForChild("CrossServer"))
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -316,10 +317,26 @@ function Queue.Start()
 			warn("[Queue] ReserveServer failed:", code)
 			return
 		end
+		-- MemoryStore handoff: the game server reads this
+		-- party back and generates from this seed, instead
+		-- of rolling its own. TeleportData carries the same
+		-- seed as a fallback if MemoryStore is unavailable.
+		local seedLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		local seedParts = {}
+		for i = 1, 6 do
+			local n = math.random(1, #seedLetters)
+			seedParts[i] = seedLetters:sub(n, n)
+		end
+		local partyKey = code .. "-" .. tostring(os.time())
+		local memberIds = {}
+		for _, member in ipairs(party) do
+			table.insert(memberIds, member.UserId)
+		end
+		CrossServer.SaveParty(partyKey, { Seed = table.concat(seedParts), Members = memberIds })
 		local teleportOk, teleportErr = pcall(function()
 			TeleportService:TeleportToPrivateServer(
 				game.PlaceId, code, party, nil,
-				{ mode = "game" }
+				{ mode = "game", partyKey = partyKey, seed = table.concat(seedParts) }
 			)
 		end)
 		if not teleportOk then

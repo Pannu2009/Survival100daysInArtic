@@ -24,6 +24,7 @@ local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 local Economy = require(script.Parent:WaitForChild("Economy"))
 local Aegis = require(script.Parent:WaitForChild("Aegis"))
 local Network = require(Modules:WaitForChild("Network"))
+local Leaderboards = require(script.Parent:WaitForChild("Leaderboards"))
 
 local Gameplay = {}
 
@@ -133,6 +134,7 @@ function Gameplay:Start()
 	-- Net, old remotes stay until they migrate one by one.
 	Network:InitServer()
 	self.Net = Network
+	self._runStart = os.clock()
 
 	local setSprinting = Instance.new("RemoteEvent")
 	setSprinting.Name = "SetSprinting"
@@ -489,6 +491,8 @@ function Gameplay:_makeSurvival(player)
 		end
 	end)
 	survival.OnDied:Connect(function()
+		-- OrderedDataStore: best day reached, best-only.
+		Leaderboards.RecordDays(player, self.Clock:GetDay())
 		-- Death is final, and a dead owner loses their kids:
 		-- they wait where they stand, rescuable by anyone.
 		if self.Kids then
@@ -1045,6 +1049,20 @@ end
 
 function Gameplay:Update(dt)
 	local world = self.World
+	-- Day 100: first time the clock reaches it, record
+	-- fastest-100 for every alive player (server uptime
+	-- to Day 100, in seconds). The rescue itself is
+	-- still to be built; the board is ready for it.
+	if not self._fastestRecorded and self.Clock:GetDay() >= 100 then
+		self._fastestRecorded = true
+		if not self._runStart then self._runStart = os.clock() end
+		local elapsed = os.clock() - self._runStart
+		for player, survival in pairs(self._survivals) do
+			if survival and not survival.Dead then
+				Leaderboards.RecordFastest100(player, elapsed)
+			end
+		end
+	end
 	self.Fish:Cook(dt)
 	self.Meat:Cook(dt)
 	self.Fish:TickFishing(dt)

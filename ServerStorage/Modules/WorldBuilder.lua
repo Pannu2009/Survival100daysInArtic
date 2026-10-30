@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
 local Lighting = game:GetService("Lighting")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
@@ -257,7 +258,15 @@ function WorldBuilder:_plantTufts()
 		seedNum = (seedNum * 31 + string.byte(seedText, i)) % 100000
 	end
 	local rng = Random.new(seedNum + 41)
-	for _, spot in ipairs(self.Layout.Tufts or {}) do
+	-- Chunked planting: 420 tufts with terrain snaps
+	-- used to run in one long synchronous loop. In
+	-- chunks of 32 with a yield between, server start
+	-- no longer freezes on grass. Order and RNG
+	-- sequence are unchanged.
+	local tuftSpots = self.Layout.Tufts or {}
+	for chunkStart = 1, #tuftSpots, 32 do
+	for chunkIdx = chunkStart, math.min(chunkStart + 31, #tuftSpots) do
+		local spot = tuftSpots[chunkIdx]
 		if self.GrassTemplate and self.GrassTemplate:IsA("BasePart") then
 			-- Ajay's grass: one white MeshPart, cloned at varied
 			-- sizes. It sways in the wind from the client.
@@ -292,6 +301,8 @@ function WorldBuilder:_plantTufts()
 			self:SnapToGround(model, spot.X, spot.Z)
 		end
 	end
+		task.wait()
+	end
 end
 
 function WorldBuilder:_plantTrees()
@@ -313,6 +324,7 @@ function WorldBuilder:_plantTrees()
 			end
 		end
 		model.Parent = treesFolder
+		CollectionService:AddTag(model, "ArcticTree")
 		scaleModel(model, spot.T or 1, spot.H or 1, spot.T or 1)
 		model:SetAttribute("Health", Config.Tree.Health)
 		model:PivotTo(model:GetPivot() * CFrame.Angles(0, math.random() * math.pi * 2, 0))
@@ -374,6 +386,14 @@ function WorldBuilder:_createFire(x, z)
 			end
 		end
 		campfire.Parent = workspace
+		CollectionService:AddTag(campfire, "ArcticFire")
+		-- Streaming: a campfire must never stream out
+		-- while a player is warming by it.
+		if campfire:IsA("Model") then
+			pcall(function()
+				campfire.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+			end)
+		end
 		if campfire:IsA("Model") then
 			self:SnapToGround(campfire, x, z)
 		end

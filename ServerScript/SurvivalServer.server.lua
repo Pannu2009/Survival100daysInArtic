@@ -45,6 +45,11 @@ game:GetService("Players").PlayerAdded:Connect(setCameraMode)
 for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
 	setCameraMode(player)
 end
+-- Lobby: streaming off, so the whole lobby build
+-- (queue, tags, GUI parts) is always loaded.
+pcall(function()
+	workspace.StreamingEnabled = false
+end)
 if serverMode == "Lobby" then
 	-- Lobby server: players spawn normally (CharacterAutoLoads
 	-- stays true, Gameplay never turns it off here) into the
@@ -64,6 +69,14 @@ end
 -- world at all -- no Reserved box to touch, no labels,
 -- no In part. Destroy the whole QueueFolder here, before
 -- world generation, so a game server never sees it.
+-- Game: streaming on, so phones only load the map
+-- around the player instead of the whole 950-stud
+-- world at once. Target 384 studs, minimum 64.
+pcall(function()
+	workspace.StreamingEnabled = true
+	workspace.StreamingTargetRadius = 384
+	workspace.StreamingMinRadius = 64
+end)
 local queueFolder = workspace:FindFirstChild("QueueFolder")
 if queueFolder then
 	queueFolder:Destroy()
@@ -96,7 +109,37 @@ local temperature = Temperature.new()
 
 local seedString = Config.World.DevSeed
 if seedString == "" then
-	seedString = randomSeed()
+	-- Wait briefly for the first teleported player, so
+	-- we can read its party seed (MemoryStore first,
+	-- TeleportData as fallback). Studio has no join
+	-- data, so it falls through to a random seed.
+	local PlayersService = game:GetService("Players")
+	local firstPlayer = PlayersService:GetPlayers()[1]
+	for _ = 1, 12 do
+		if firstPlayer then break end
+		task.wait(0.25)
+		firstPlayer = PlayersService:GetPlayers()[1]
+	end
+	if firstPlayer then
+		local ok, joinData = pcall(function()
+			return firstPlayer:GetJoinData()
+		end)
+		local teleportData = ok and joinData and joinData.TeleportData or nil
+		if teleportData and teleportData.seed then
+			seedString = teleportData.seed
+			print("[Arctic] Party seed from TeleportData: " .. seedString)
+		elseif teleportData and teleportData.partyKey then
+			local CrossServer = require(ServerModules:WaitForChild("CrossServer"))
+			local party = CrossServer.GetParty(teleportData.partyKey)
+			if party and party.Seed then
+				seedString = party.Seed
+				print("[Arctic] Party seed from MemoryStore: " .. seedString)
+			end
+		end
+	end
+	if seedString == "" then
+		seedString = randomSeed()
+	end
 end
 local layout = WorldGen.Generate(seedString)
 
