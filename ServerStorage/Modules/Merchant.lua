@@ -1,48 +1,21 @@
--- Merchant (Phase 3, setup): the coins loop.
---
--- A merchant stall stands near spawn (setup placement --
--- a camp trader, not a far-map discovery yet). Loot sells
--- into coins (see Shelters), coins buy consumables here:
--- food, lighter fuel, and medkits. Stock is limited and
--- restocks every 40 days, per design -- if medkits sell
--- out, the team waits for the restock.
---
--- Medkits are the revive item: a dead player with a
--- medkit can use it (UseMedkit prompt on the stall, or
--- the merchant's own prompt -- the handler validates
--- death + count, then Gameplay revives them). Death
--- stays final for everyone without one.
---
--- All trade is ProximityPrompts on the stall, so no
--- client UI is needed. Slow-improve: a real shop UI,
--- more stock items (tools, sacks, airdrops), and a
--- far-map merchant location.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
-
 local Merchant = {}
 Merchant.__index = Merchant
-
 function Merchant.new(gameplay)
 	local self = setmetatable({}, Merchant)
 	self.Gameplay = gameplay
 	self.Stock = {}
 	self.LastRestockDay = 1
-	self.MedkitCounts = {} -- player -> medkits held
+	self.MedkitCounts = {}
 	self.Stall = nil
 	self.StallPosition = nil
 	return self
 end
-
 function Merchant:Start()
 	self:_restock()
 	local world = self.Gameplay.World
-	-- Camp trader, near spawn: 20 studs out, so new
-	-- players find it without a trek, and it is not
-	-- inside any fire's dig-safe radius by accident.
 	local x, z = 20, 20
 	local groundY = world:GroundY(x, z)
 	local stall = Instance.new("Model")
@@ -74,14 +47,12 @@ function Merchant:Start()
 	end
 	print("[Arctic] Merchant: stall placed near spawn")
 end
-
 function Merchant:_restock()
 	for name, item in pairs(Config.Merchant.Items) do
 		self.Stock[name] = item.Stock
 	end
 	print("[Arctic] Merchant: stock restocked")
 end
-
 function Merchant:CheckRestock(day)
 	if day - self.LastRestockDay >= Config.Merchant.RestockDays then
 		self.LastRestockDay = day
@@ -91,15 +62,9 @@ function Merchant:CheckRestock(day)
 		end
 	end
 end
-
 function Merchant:GetMedkits(player)
 	return self.MedkitCounts[player] or 0
 end
-
--- Shared trade validation: alive (except UseMedkit, which
--- needs death), near the stall, and -- for buys -- in stock
--- with enough coins. Prompt range is client-side, so every
--- handler re-checks distance here.
 function Merchant:_nearStall(player, allowDead)
 	local survival = self.Gameplay._survivals[player]
 	local character = player.Character
@@ -115,7 +80,6 @@ function Merchant:_nearStall(player, allowDead)
 	end
 	return survival
 end
-
 function Merchant:Buy(player, itemName)
 	local item = Config.Merchant.Items[itemName]
 	if not item then
@@ -152,9 +116,6 @@ function Merchant:Buy(player, itemName)
 	end
 	self.Gameplay:RecordAction(player, "buy_" .. itemName:lower())
 end
-
--- Pelts sell here too: the shelter loot is not the only
--- coins source -- a hunter's pelts are worth coins.
 function Merchant:SellPelt(player)
 	local survival = self:_nearStall(player, false)
 	if not survival or not self.Gameplay.Pelts then
@@ -168,7 +129,6 @@ function Merchant:SellPelt(player)
 	self.Gameplay.Economy.Add(player, Config.Pelts.SellPrice)
 	self.Gameplay:Notify(player, ("Sold a pelt for %d coins."):format(Config.Pelts.SellPrice))
 end
-
 function Merchant:UseMedkit(player)
 	local survival = self.Gameplay._survivals[player]
 	if not survival or not survival.Dead then
@@ -181,7 +141,6 @@ function Merchant:UseMedkit(player)
 	self.MedkitCounts[player] -= 1
 	self.Gameplay:ReviveWithMedkit(player)
 end
-
 function Merchant:_addPrompts(post)
 	local function addPrompt(actionText, objectText, handler)
 		local prompt = Instance.new("ProximityPrompt")
@@ -208,9 +167,7 @@ function Merchant:_addPrompts(post)
 		self:UseMedkit(player)
 	end)
 end
-
 function Merchant:CleanupPlayer(player)
 	self.MedkitCounts[player] = nil
 end
-
 return Merchant

@@ -1,16 +1,9 @@
--- Meat (Batch 1): wild wolf kills drop raw meat, like Ark.
--- A meat chunk is a single draggable part: drag it to a fire
--- to cook it (5s, same as fish), eat it whole, or drop it for
--- a tameable wolf. Raw meat is taming food (1.5 points),
--- cooked meat is the best taming food (3 points, 1 item).
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local DragSystem = require(Modules:WaitForChild("DragSystem"))
-
 local Meat = {}
 Meat.__index = Meat
-
 local function pointInPart(position, part, slack)
 	local p = part.CFrame:PointToObjectSpace(position)
 	local s = part.Size
@@ -18,25 +11,21 @@ local function pointInPart(position, part, slack)
 		and math.abs(p.Y) <= s.Y / 2 + slack
 		and math.abs(p.Z) <= s.Z / 2 + slack
 end
-
 local function getLogPart(log)
 	return log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
 end
-
 function Meat.new(gameplay)
 	local self = setmetatable({}, Meat)
 	self.Gameplay = gameplay
 	self.Folder = nil
 	return self
 end
-
 function Meat:Start()
 	local folder = Instance.new("Folder")
 	folder.Name = "Meat"
 	folder.Parent = workspace
 	self.Folder = folder
 end
-
 function Meat:Spawn(x, z, cooked)
 	if not self.Folder then
 		return nil
@@ -57,7 +46,6 @@ function Meat:Spawn(x, z, cooked)
 	part.Parent = self.Folder
 	return part
 end
-
 function Meat:OnWolfKilled(wolf, attacker)
 	if not wolf or wolf.Owner or not self.Folder then
 		return
@@ -71,7 +59,6 @@ function Meat:OnWolfKilled(wolf, attacker)
 		self:Spawn(pos.X + (i - 1) * 1.5, pos.Z, false)
 	end
 end
-
 function Meat:Eat(player, meat)
 	if typeof(meat) ~= "Instance" or meat.Parent ~= self.Folder then
 		return
@@ -103,7 +90,6 @@ function Meat:Eat(player, meat)
 	end
 	meat:Destroy()
 end
-
 function Meat:Cook(dt)
 	if not self.Folder then
 		return
@@ -143,5 +129,4 @@ function Meat:Cook(dt)
 		end
 	end
 end
-
 return Meat

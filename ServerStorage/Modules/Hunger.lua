@@ -1,10 +1,8 @@
 local Modules = game:GetService("ReplicatedStorage"):WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local Signal = require(Modules:WaitForChild("Signal"))
-
 local Hunger = {}
 Hunger.__index = Hunger
-
 function Hunger.new()
 	local self = setmetatable({}, Hunger)
 	self.Value = Config.Survival.MaxHunger
@@ -12,11 +10,9 @@ function Hunger.new()
 	self._starving = false
 	return self
 end
-
 function Hunger:Get()
 	return self.Value
 end
-
 function Hunger:Set(value)
 	self.Value = math.clamp(value, 0, Config.Survival.MaxHunger)
 	local starving = self.Value <= 0
@@ -25,15 +21,12 @@ function Hunger:Set(value)
 		self.OnStarvingChanged:Fire(starving)
 	end
 end
-
 function Hunger:Eat(amount)
 	self:Set(self.Value + amount)
 end
-
 function Hunger:IsStarving()
 	return self._starving
 end
-
 function Hunger:Update(dt, isSprinting, drainScale)
 	local drain = Config.Survival.HungerDrainPerSecond * (drainScale or 1)
 	if isSprinting then
@@ -41,5 +34,4 @@ function Hunger:Update(dt, isSprinting, drainScale)
 	end
 	self:Set(self.Value - drain * dt)
 end
-
 return Hunger

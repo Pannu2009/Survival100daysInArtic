@@ -1,33 +1,17 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
-
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local AnimationModule = require(Modules:WaitForChild("AnimationModule"))
 local SoundModule = require(Modules:WaitForChild("SoundModule"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
-
 local PathfindingService = game:GetService("PathfindingService")
 local CollectionService = game:GetService("CollectionService")
 local Spatial = require(Modules:WaitForChild("Spatial"))
-
--- Animals: the parent system for every creature. Today it drives
--- Ajay's WolfModel -- wild packs with a leader, day/night hunting
--- behavior, axe combat both ways, fish taming, owner commands
--- (Follow / Wander / Alert / Attack) and the sled harness
--- formation. Kids will live under this same module when they land.
---
--- Wolves are stepped kinematically on Heartbeat (like the sled):
--- ground-snapped, yaw-steered, no physics ownership fights. His
--- model's built-in script is retired at clone time -- this module
--- is the only driver.
-
 local Animals = {}
 Animals.__index = Animals
-
 local W = Config.Wolves
-
 local function horizontalDir(v)
 	local h = Vector3.new(v.X, 0, v.Z)
 	if h.Magnitude < 0.001 then
@@ -35,11 +19,9 @@ local function horizontalDir(v)
 	end
 	return h.Unit
 end
-
 local function yawOf(dir)
 	return math.atan2(-dir.X, -dir.Z)
 end
-
 local function yawLerp(a, b, t)
 	local d = (b - a) % (math.pi * 2)
 	if d > math.pi then
@@ -47,7 +29,6 @@ local function yawLerp(a, b, t)
 	end
 	return a + d * math.clamp(t, 0, 1)
 end
-
 function Animals.new(gameplay)
 	local self = setmetatable({}, Animals)
 	self.Gameplay = gameplay
@@ -56,19 +37,17 @@ function Animals.new(gameplay)
 	self.Wolves = {}
 	self._byOwner = {}
 	self._commands = {}
-	self._behaviours = {} -- per-player: Passive / Neutral / Attack
+	self._behaviours = {}
 	self._packs = {}
 	self._nextPackId = 0
 	self._dangerSet = {}
 	self._dangerTick = 0
 	return self
 end
-
 function Animals:_population()
 	local day = self.Gameplay.Clock and self.Gameplay.Clock:GetDay() or 1
 	return W.Population[math.min(day, #W.Population)]
 end
-
 function Animals:_wildCount()
 	local n = 0
 	for _, wolf in ipairs(self.Wolves) do
@@ -78,19 +57,15 @@ function Animals:_wildCount()
 	end
 	return n
 end
-
 function Animals:Start()
 	local folder = Instance.new("Folder")
 	folder.Name = "Animals"
 	folder.Parent = workspace
 	self.Folder = folder
-
 	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
 	local animalsFolder = assets and assets:FindFirstChild("Animals")
 	self.Template = (animalsFolder and animalsFolder:FindFirstChild("WolfModel"))
 		or (assets and assets:FindFirstChild("WolfModel", true))
-	-- Batch 1 variants: Ajay's models, exact names, same folder.
-	-- Any variant he has not built yet falls back to WolfModel.
 	self.VariantTemplates = {}
 	if animalsFolder then
 		for _, name in ipairs(W.VariantOrder or {}) do
@@ -104,8 +79,6 @@ function Animals:Start()
 		warn("[Arctic] Animals: no Assets.Animals.WolfModel - no wolves will spawn")
 		return
 	end
-
-	-- Fill the world to today's population target.
 	local target = self:_population().Total
 	local guard = 0
 	while self:_wildCount() < target and guard < 12 do
@@ -114,14 +87,10 @@ function Animals:Start()
 			break
 		end
 	end
-
 	RunService.Heartbeat:Connect(function(dt)
 		self:_step(math.min(dt, 0.05))
 	end)
 end
-
--- ---------- model normalization ----------
-
 local function findRootPart(model)
 	local named = model:FindFirstChild("HumanoidRootPart", true)
 		or model:FindFirstChild("Root", true)
@@ -140,14 +109,12 @@ local function findRootPart(model)
 	end
 	return biggest
 end
-
 function Animals:_buildWolf()
 	local walkTrack = nil
 	local attackTrack = nil
 	local idleTrack = nil
+	local howlTrack = nil
 	local biteSoundFound = nil
-	-- Batch 1 variant: random coat, each with its own stats
-	-- and starting level. Stronger stats = stronger wolf.
 	local variantName = (W.VariantOrder or {})[math.random(#(W.VariantOrder or { "WolfModel" }))]
 	local variant = (W.Variants or {})[variantName] or { Health = W.MaxHealth, Bite = W.BiteDamage, SpeedMult = 1, Level = 1 }
 	local template = (self.VariantTemplates and self.VariantTemplates[variantName]) or self.Template
@@ -163,9 +130,6 @@ function Animals:_buildWolf()
 		wolf:Destroy()
 		return nil
 	end
-	-- Which parts does a joint already hold? (His rig animates via
-	-- Motor6Ds -- welding one of those parts would freeze it.
-	-- Only truly loose parts get a WeldConstraint to the root.)
 	local jointed = {}
 	for _, d in ipairs(wolf:GetDescendants()) do
 		if d:IsA("Motor6D") or d:IsA("Weld") or d:IsA("WeldConstraint") then
@@ -195,10 +159,6 @@ function Animals:_buildWolf()
 			end
 		end
 	end
-	-- His WalkAnim + bite sound live in the model: wire both up.
-	-- His animations, all optional and loaded if present:
-	-- WalkAnim loops while moving, IdleAnim while standing,
-	-- AttackAnim fires on a bite.
 	local function loadAnim(name)
 		local anim = wolf:FindFirstChild(name, true)
 		if not (anim and anim:IsA("Animation")) then
@@ -227,8 +187,6 @@ function Animals:_buildWolf()
 	end
 	attackTrack = loadAnim(AnimationModule.Wolf.Attack)
 	howlTrack = loadAnim(AnimationModule.Wolf.Howl)
-	-- Idle is a ROTATION, not one clip: every Idle* animation in
-	-- the model joins the wolf's play set and he cycles them.
 	local idleTracks = {}
 	local function addIdle(name)
 		local track = loadAnim(name)
@@ -253,10 +211,6 @@ function Animals:_buildWolf()
 		biteSoundFound = biteSound
 	end
 	wolf:SetAttribute("IsWolf", true)
-
-	-- Name / status tag: hidden for a healthy wild wolf, shows HP
-	-- once hurt, "Tameable" when weakened, the owner's name once
-	-- tamed, ALERT! when a tamed wolf howls a warning.
 	local head = wolf:FindFirstChild("Head", true)
 	local anchor = (head and head:IsA("BasePart") and head) or root
 	local tag = Instance.new("BillboardGui")
@@ -277,7 +231,6 @@ function Animals:_buildWolf()
 	label.Font = Enum.Font.GothamBold
 	label.TextSize = 14
 	label.Parent = tag
-
 	local record = {
 		Model = wolf,
 		Root = root,
@@ -322,32 +275,24 @@ function Animals:_buildWolf()
 		HowlUntil = 0,
 		NextHowl = 0,
 	}
-	-- Ground offset: how far the pivot rides above the ground so
-	-- the model's feet touch the snow.
 	local pivotY = wolf:GetPivot().Position.Y
 	local _, size = wolf:GetBoundingBox()
 	local cf = wolf:GetBoundingBox()
 	record.GroundOffset = math.max(0.2, pivotY - (cf.Position.Y - size.Y / 2))
 	return record
 end
-
 function Animals:_placeAt(record, position)
 	local groundY = self.Gameplay.World:GroundY(position.X, position.Z)
 	local pos = Vector3.new(position.X, groundY + record.GroundOffset, position.Z)
 	record.Model:PivotTo(CFrame.new(pos) * CFrame.Angles(0, record.Yaw + W.ModelYawOffset, 0))
 	record.Model.Parent = self.Folder
 end
-
--- ---------- packs ----------
-
 function Animals:_packSpawnPosition()
 	local world = self.Gameplay.World
 	local layout = world and world.Layout
 	local radius = (layout and layout.WorldRadius) or 500
 	local lake = layout and layout.Lake
 	local function clearOf(x, z)
-		-- Not in the lake, not on top of another pack, and never
-		-- in sight of a player: packs arrive from far away.
 		if lake then
 			local dx = x - lake.X
 			local dz = z - lake.Z
@@ -386,17 +331,13 @@ function Animals:_packSpawnPosition()
 			return Vector3.new(x, 0, z)
 		end
 	end
-	-- Crowded world: accept a farther-out point unchecked.
 	local angle = math.random() * math.pi * 2
 	return Vector3.new(math.cos(angle) * (radius - 30), 0, math.sin(angle) * (radius - 30))
 end
-
 function Animals:_spawnPack()
 	if not self.Template then
 		return 0
 	end
-	-- World population cap (Ajay): never more than MaxAlive
-	-- wolves in the world at once, wild or tamed.
 	local room = math.min(W.MaxAlive - #self.Wolves, self:_population().Total - self:_wildCount())
 	if room <= 0 then
 		return 0
@@ -419,8 +360,6 @@ function Animals:_spawnPack()
 		record.Home = home
 		record.PackIndex = i
 		if i == 1 and count >= 2 then
-			-- The pack leader: bigger pool, harder bite, +1 level.
-			-- (A lone wolf is just a wolf -- no leader buff solo.)
 			record.Leader = true
 			record.Level = (record.Level or 1) + 1
 			record.MaxHealth = math.floor((record.MaxHealth or W.MaxHealth) * 1.6)
@@ -434,18 +373,13 @@ function Animals:_spawnPack()
 	end
 	return spawned
 end
-
--- ---------- queries used by other systems ----------
-
 function Animals:Count(player)
 	local list = self._byOwner[player]
 	return list and #list or 0
 end
-
 function Animals:TamedWolves(player)
 	return self._byOwner[player] or {}
 end
-
 function Animals:WolfFromInstance(instance)
 	local node = instance
 	for _ = 1, 5 do
@@ -464,13 +398,6 @@ function Animals:WolfFromInstance(instance)
 	end
 	return nil
 end
-
--- A noise in the open (a sick player's cough): wild wolves in
--- earshot turn toward whoever made it, and if he's too far for
--- their eyes they trot over to look. Attention, not instant
--- aggro -- the ordinary Wary/Aggro rules still decide, and
--- firelight still protects him. Wolves mid-tame (GoEat) and
--- wolves already hunting are not distracted.
 function Animals:NoiseAt(position, player, radius)
 	local now = os.clock()
 	for _, wolf in ipairs(self.Wolves) do
@@ -487,7 +414,6 @@ function Animals:NoiseAt(position, player, radius)
 		end
 	end
 end
-
 function Animals:NearestWildWolf(position, maxDist)
 	local best, bestDist = nil, maxDist
 	for _, wolf in ipairs(self.Wolves) do
@@ -500,9 +426,6 @@ function Animals:NearestWildWolf(position, maxDist)
 	end
 	return best
 end
-
--- ---------- combat ----------
-
 function Animals:DamageWolf(wolf, amount, attacker)
 	if not wolf or wolf.Health <= 0 then
 		return
@@ -513,12 +436,7 @@ function Animals:DamageWolf(wolf, amount, attacker)
 		self:_killWolf(wolf, attacker)
 		return
 	end
-	-- Crossing into tameable range rolls the fish price on ANY
-	-- damage source (fire included) -- otherwise a wolf burned
-	-- down to tameable range never got a price rolled and the
-	-- tame fallback charged him 1 fish, leader or not.
 	if not wolf.Owner and wolf.Health <= W.TameHealth and wolf.TameTarget == nil then
-		-- Batch 1 taming points: 3 regular, 4.5 leader (1.5x).
 		wolf.TameTarget = wolf.Leader and (W.TamePoints * W.LeaderTameMult) or W.TamePoints
 		wolf.TamePoints = 0
 		wolf.TameableSince = os.clock()
@@ -527,8 +445,6 @@ function Animals:DamageWolf(wolf, amount, attacker)
 		end
 	end
 	if not wolf.Owner and attacker then
-		-- The whole pack answers an attack -- except a wolf who
-		-- has already noticed a fish: he keeps going for it.
 		if wolf.State ~= "GoEat" then
 			for _, other in ipairs(self.Wolves) do
 				if other.PackId == wolf.PackId and not other.Owner and other.State ~= "GoEat" then
@@ -542,18 +458,12 @@ function Animals:DamageWolf(wolf, amount, attacker)
 	end
 	self:_refreshTag(wolf)
 end
-
 function Animals:_killWolf(wolf, attacker)
-	-- Phase 3 pelts: a wild kill drops pelts where it fell
-	-- (Pelts module, owned by Gameplay). Tamed dogs drop
-	-- nothing -- Pelts checks Owner itself, this is just
-	-- the hook, and it must not break the kill flush below.
 	if self.Gameplay and self.Gameplay.Pelts then
 		pcall(function()
 			self.Gameplay.Pelts:OnWolfKilled(wolf, attacker)
 		end)
 	end
-	-- Batch 1: wild kills also drop raw meat.
 	if self.Gameplay and self.Gameplay.Meat then
 		pcall(function()
 			self.Gameplay.Meat:OnWolfKilled(wolf, attacker)
@@ -564,13 +474,8 @@ function Animals:_killWolf(wolf, attacker)
 		self:_removeFromOwner(wolf)
 	end
 	wolf.Model:Destroy()
-	-- The record leaves self.Wolves at the next _step flush, not
-	-- here: kills land mid-iteration (burn ticks, pack fights),
-	-- and removing from the array there silently skips the next
-	-- wolf's step.
 	wolf.Removed = true
 end
-
 function Animals:_removeFromOwner(wolf)
 	local owner = wolf.Owner
 	if not owner then
@@ -592,9 +497,7 @@ function Animals:_removeFromOwner(wolf)
 	wolf.SledService = nil
 	self:_publishOwner(owner)
 end
-
 function Animals:_releaseWolf(wolf)
-	-- Owner gone (left or died): the wolf goes wild where it is.
 	self:_removeFromOwner(wolf)
 	wolf.State = "Roam"
 	wolf.Home = wolf.Root.Position
@@ -602,18 +505,10 @@ function Animals:_releaseWolf(wolf)
 	wolf.TargetPlayer = nil
 	self:_refreshTag(wolf)
 end
-
 function Animals:_publishOwner(player)
 	player:SetAttribute("WolfCount", self:Count(player))
 	player:SetAttribute("WolfCommand", self._commands[player] or "Follow")
 end
-
--- Direct feed: instead of dropping food and hoping
--- the wolf notices it, feed a tameable wolf in front
--- of you. Food comes from the sack first, then from
--- whatever you are dragging. Points work exactly
--- like dropped food (cooked meat 3, cooked fish /
--- raw meat 1.5, raw fish 1).
 function Animals:Feed(player)
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -642,7 +537,6 @@ function Animals:Feed(player)
 		best.TamePoints = 0
 		best.TameableSince = os.clock()
 	end
-	-- Food source 1: sack (top item, fish or meat only).
 	local foodType, desc = nil, nil
 	local sack = self.Gameplay.Sack
 	if sack then
@@ -658,7 +552,6 @@ function Animals:Feed(player)
 			end
 		end
 	end
-	-- Food source 2: the item you are dragging.
 	if not foodType then
 		local DragSystem = require(Modules:WaitForChild("DragSystem"))
 		local part = DragSystem.GetPlayerItem(player)
@@ -695,13 +588,7 @@ function Animals:Feed(player)
 	end
 	self:_claimWolf(best, player.UserId)
 end
-
--- ---------- taming ----------
-
 function Animals:_tryTame(wolf)
-	-- A hurt wolf scans for dropped food: a loose fish or a
-	-- loose meat chunk whose LastDragger is set. Unless he was
-	-- betrayed recently -- a snatched meal means no trust.
 	if os.clock() < (wolf.RefuseUntil or 0) then
 		return false
 	end
@@ -743,10 +630,6 @@ function Animals:_tryTame(wolf)
 	wolf.State = "GoEat"
 	return true
 end
-
--- Eating is a timed act, and it can be ruined: snatch the fish
--- back mid-tame and the wolf turns on you (and refuses fish for
--- a while). A full fish is eaten whole; some wolves need two.
 function Animals:_stepGoEat(wolf, dt, now)
 	local fish = wolf.EatTarget
 	local primary = nil
@@ -785,7 +668,6 @@ function Animals:_stepGoEat(wolf, dt, now)
 		end
 	end
 end
-
 function Animals:_failTame(wolf, draggedBy)
 	wolf.EatTarget = nil
 	wolf.EatingUntil = nil
@@ -797,7 +679,6 @@ function Animals:_failTame(wolf, draggedBy)
 		self.Gameplay:Notify(grabber, "Tame failed -- the wolf turned on you!")
 	end
 end
-
 function Animals:_consumeFood(wolf, food)
 	local lastDragger = food:GetAttribute("LastDragger")
 	local foodType = wolf.EatFood or "RawFish"
@@ -816,15 +697,12 @@ function Animals:_consumeFood(wolf, food)
 	end
 	self:_claimWolf(wolf, lastDragger)
 end
-
 function Animals:_claimWolf(wolf, lastDragger)
 	local owner = lastDragger and Players:GetPlayerByUserId(lastDragger)
 	wolf.TameTarget = nil
 	wolf.TamePoints = 0
 	wolf.TameableSince = nil
 	if not owner or self:Count(owner) >= W.TeamLimit then
-		-- Fed but not claimed (nobody there, or their team is
-		-- full): the wolf recovers and stays wild.
 		wolf.Health = math.min(wolf.MaxHealth, wolf.Health + 40)
 		wolf.State = "Roam"
 		self:_refreshTag(wolf)
@@ -846,7 +724,6 @@ function Animals:_claimWolf(wolf, lastDragger)
 	self:_refreshTag(wolf)
 	print(("[Arctic] %s tamed a wolf (%d/%d)"):format(owner.Name, #list, W.TeamLimit))
 end
-
 function Animals:SetBehaviour(player, behaviour)
 	if behaviour ~= "Passive" and behaviour ~= "Neutral" and behaviour ~= "Attack" then
 		return
@@ -854,18 +731,14 @@ function Animals:SetBehaviour(player, behaviour)
 	self._behaviours[player] = behaviour
 	player:SetAttribute("WolfBehaviour", behaviour)
 end
-
 function Animals:SetCommand(player, mode, targetPos)
 	if mode == "Attack" and self._behaviours[player] == "Passive" then
-		-- Passive wolves never attack, even on a direct order.
 		self.Gameplay:Notify(player, "Wolf is Passive -- it will not attack.")
 		return
 	end
 	self._commands[player] = mode
 	player:SetAttribute("WolfCommand", mode)
 	if mode == "Attack" and typeof(targetPos) == "Vector3" then
-		-- You command from where you stand: the order point must
-		-- be near YOU, not anywhere on the map.
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if not root or (targetPos - root.Position).Magnitude > 70 then
@@ -887,7 +760,6 @@ function Animals:SetCommand(player, mode, targetPos)
 		end
 	end
 end
-
 function Animals:SetHarnessed(player, on, sledService)
 	for _, wolf in ipairs(self:TamedWolves(player)) do
 		if on then
@@ -899,7 +771,6 @@ function Animals:SetHarnessed(player, on, sledService)
 		end
 	end
 end
-
 function Animals:CleanupPlayer(player)
 	for _, wolf in ipairs(self.Wolves) do
 		if wolf.TargetPlayer == player then
@@ -923,12 +794,6 @@ function Animals:CleanupPlayer(player)
 	self._commands[player] = nil
 	self._behaviours[player] = nil
 end
-
--- ---------- tags ----------
-
--- Play time: the wolf stops wandering, picks a (different)
--- idle animation from his set, and slowly turns while it
--- plays. This is what keeps wild wolves looking alive.
 function Animals:_enterPlaying(wolf, now)
 	wolf.State = "Playing"
 	wolf.PlayUntil = now + 2 + math.random() * 2
@@ -940,11 +805,6 @@ function Animals:_enterPlaying(wolf, now)
 		wolf.IdleTrack = wolf.IdleTracks[math.random(#wolf.IdleTracks)]
 	end
 end
-
--- Ajay's mood table, kept on every wolf and mirrored to model
--- attributes so it is visible/manageable in Studio:
---   Wandering / Watching (target) / Attacking (target) /
---   Eating / Playing / Following / Pulling
 function Animals:_syncMood(wolf)
 	local mood, target = "Wandering", ""
 	local state = wolf.State
@@ -976,7 +836,6 @@ function Animals:_syncMood(wolf)
 		wolf.Model:SetAttribute("MoodTarget", target)
 	end
 end
-
 function Animals:_refreshTag(wolf)
 	local now = os.clock()
 	if now < wolf.HowlUntil then
@@ -998,12 +857,6 @@ function Animals:_refreshTag(wolf)
 		wolf.Tag.Enabled = false
 	end
 end
-
--- ---------- the step ----------
-
--- Wolves fear fire. A player sheltered by a lit campfire (or a
--- burning log) is not a target: the pack will circle the light
--- and stare, but it will not come in.
 function Animals:_shelteredByFire(position)
 	local gameplay = self.Gameplay
 	for _, fire in ipairs(gameplay.World.Fires or {}) do
@@ -1023,9 +876,6 @@ function Animals:_shelteredByFire(position)
 	end
 	return false
 end
-
--- Fire hurts wolves exactly like players: stand in it and you
--- burn (1.5/s for 5-7s, flames included).
 function Animals:_burnCheck(wolf, dt, now)
 	local pos = wolf.Root.Position
 	local inFire = false
@@ -1085,7 +935,6 @@ function Animals:_burnCheck(wolf, dt, now)
 		end
 	end
 end
-
 function Animals:_nearestPlayer(position, maxDist)
 	local best, bestDist = nil, maxDist
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -1103,9 +952,6 @@ function Animals:_nearestPlayer(position, maxDist)
 	end
 	return best, bestDist
 end
-
--- Push a point out of every fire's scare disc (wolves path
--- AROUND fire, never through it).
 function Animals:_pushOutOfFire(position)
 	local x, z = position.X, position.Z
 	for _, fire in ipairs(self.Gameplay.World.Fires or {}) do
@@ -1129,7 +975,6 @@ function Animals:_pushOutOfFire(position)
 	end
 	return Vector3.new(x, position.Y, z)
 end
-
 function Animals:_computePath(from, to)
 	local path = PathfindingService:CreatePath({
 		AgentRadius = 1.2,
@@ -1152,10 +997,6 @@ function Animals:_computePath(from, to)
 	end
 	return points
 end
-
--- Long moves go through real pathfinding (around trees, rocks,
--- and fire); short moves go direct. Returns the true remaining
--- distance to the final target.
 function Animals:_moveSmart(wolf, targetPos, speed, dt)
 	local pos = wolf.Root.Position
 	local targetDist = (Vector3.new(targetPos.X, 0, targetPos.Z) - Vector3.new(pos.X, 0, pos.Z)).Magnitude
@@ -1165,9 +1006,6 @@ function Animals:_moveSmart(wolf, targetPos, speed, dt)
 		return targetDist
 	end
 	local now = os.clock()
-	-- A failed compute used to retry EVERY frame (pathfinding
-	-- is expensive, and a wolf on rough snow would stutter).
-	-- Cache the failure briefly and walk direct meanwhile.
 	if now < (wolf.PathFailUntil or 0) then
 		self:_moveToward(wolf, targetPos, speed, dt)
 		return targetDist
@@ -1206,7 +1044,6 @@ function Animals:_moveSmart(wolf, targetPos, speed, dt)
 	end
 	return targetDist
 end
-
 function Animals:_moveToward(wolf, targetPos, speed, dt)
 	local pos = wolf.Root.Position
 	local to = Vector3.new(targetPos.X - pos.X, 0, targetPos.Z - pos.Z)
@@ -1220,10 +1057,7 @@ function Animals:_moveToward(wolf, targetPos, speed, dt)
 		moving = true
 		wolf.WalkCycle += dt * speed * 0.9
 	end
-	-- Howl overrides walk/idle while HowlUntil is
-	-- active (Alert howl, and night howls once a wolf
-	-- is picked for them -- see _step night howl).
-	local howling = os.clock() < wolf.HowlUntil  -- _moveToward has no now param, use the clock directly
+	local howling = os.clock() < wolf.HowlUntil
 	if howling then
 		if wolf.WalkTrack and wolf.WalkTrack.IsPlaying then
 			wolf.WalkTrack:Stop(0.15)
@@ -1250,7 +1084,6 @@ function Animals:_moveToward(wolf, targetPos, speed, dt)
 			end
 		end
 	end
-	-- Paw prints: a pressed mark every stride while moving.
 	if moving then
 		wolf.MarkAcc = (wolf.MarkAcc or 0) + speed * dt
 		if wolf.MarkAcc >= 2.2 then
@@ -1267,10 +1100,6 @@ function Animals:_moveToward(wolf, targetPos, speed, dt)
 	wolf.Model:PivotTo(CFrame.new(Vector3.new(pos.X, y, pos.Z)) * CFrame.Angles(0, wolf.Yaw + W.ModelYawOffset, 0))
 	return dist
 end
-
--- Batch 1 pack bonus: +5% damage per pack mate within 25
--- studs, capped at +20%. Counts wild pack mates for wild
--- wolves and tamed pack mates for owned wolves.
 function Animals:_packBonusMult(wolf)
 	local mates = 0
 	for _, other in ipairs(self.Wolves) do
@@ -1288,9 +1117,6 @@ function Animals:_packBonusMult(wolf)
 	end
 	return 1 + math.min(W.PackBonusCap, mates * W.PackBonusPerMate)
 end
-
--- Batch 1 wolf-vs-wolf bite: no player attacker, so a pack
--- fight never triggers the player-aggro pack response.
 function Animals:_biteWolf(attackerWolf, prey)
 	if attackerWolf.BiteSound then
 		attackerWolf.BiteSound:Play()
@@ -1301,12 +1127,7 @@ function Animals:_biteWolf(attackerWolf, prey)
 	attackerWolf.BiteCd = W.BiteCooldown
 	self:DamageWolf(prey, (attackerWolf.BiteDamage or W.BiteDamage) * self:_packBonusMult(attackerWolf), nil)
 end
-
 function Animals:_nearestEnemyWolf(wolf, maxDist)
-	-- Spatial: only wolves tagged near this wolf are
-	-- checked, instead of looping all 24 wolves every
-	-- think tick. PackId/Owner/Health are still checked
-	-- from server state, not from the query.
 	local byModel = {}
 	for _, other in ipairs(self.Wolves) do
 		byModel[other.Model] = other
@@ -1325,7 +1146,6 @@ function Animals:_nearestEnemyWolf(wolf, maxDist)
 	end
 	return best
 end
-
 function Animals:_bitePlayer(wolf, player)
 	local survival = self.Gameplay._survivals[player]
 	if not survival then
@@ -1341,13 +1161,8 @@ function Animals:_bitePlayer(wolf, player)
 	survival:Damage(damage)
 	wolf.BiteCd = W.BiteCooldown
 end
-
 function Animals:_step(dt)
 	local now = os.clock()
-	-- Flush deferred wolf removals before iterating, and drop
-	-- pack records whose last wolf is gone -- a dead pack's home
-	-- otherwise blocks its 130-stud separation disc forever and
-	-- spawn placement degrades to the unchecked fallback.
 	do
 		local anyRemoved = false
 		for i = #self.Wolves, 1, -1 do
@@ -1371,7 +1186,6 @@ function Animals:_step(dt)
 			end
 		end
 	end
-	-- Danger flag for the HUD: who is a wolf hunting right now?
 	self._dangerTick -= dt
 	if self._dangerTick <= 0 then
 		self._dangerTick = 0.25
@@ -1396,8 +1210,6 @@ function Animals:_step(dt)
 	end
 	local clock = self.Gameplay.Clock
 	local isNight = clock and clock:GetPhase() == "Night"
-	-- Night howls: wild wolves howl every 90-150s at
-	-- night, heard by everyone (ambient, via Net).
 	if isNight then
 		self._nightHowlTick = (self._nightHowlTick or 30) - dt
 		if self._nightHowlTick <= 0 then
@@ -1405,8 +1217,6 @@ function Animals:_step(dt)
 			if self.Gameplay.Net then
 				self.Gameplay.Net:SendToAll("PlaySound", { Sound = "WolfHowl" })
 			end
-			-- Pick one wild wolf to actually perform the
-			-- howl animation, so the sound has a source.
 			for _, wolf in ipairs(self.Wolves) do
 				if not wolf.Owner and wolf.Health > 0 then
 					wolf.HowlUntil = now + 1.6
@@ -1415,10 +1225,6 @@ function Animals:_step(dt)
 			end
 		end
 	end
-
-	-- Population top-up: the world refills toward the day's
-	-- target (checked on a slow tick; spawns land far away, so
-	-- nothing pops in next to a player).
 	self._topUpTick = (self._topUpTick or 0) - dt
 	if self._topUpTick <= 0 then
 		self._topUpTick = W.TopUpSeconds
@@ -1427,7 +1233,6 @@ function Animals:_step(dt)
 			self:_spawnPack()
 		end
 	end
-
 	for _, wolf in ipairs(self.Wolves) do
 		if wolf.BiteCd > 0 then
 			wolf.BiteCd -= dt
@@ -1438,12 +1243,10 @@ function Animals:_step(dt)
 			wolf.Think = 0.2
 		end
 		local pos = wolf.Root.Position
-
 		self:_burnCheck(wolf, dt, now)
 		if wolf.Health <= 0 then
 			continue
 		end
-
 		if wolf.Owner then
 			local survival = self.Gameplay._survivals[wolf.Owner]
 			if not wolf.Owner.Parent or (survival and survival.Dead) then
@@ -1451,21 +1254,10 @@ function Animals:_step(dt)
 				continue
 			end
 		end
-
-		-- A hurt wild wolf who notices a dropped fish diverts to
-		-- it from ANY state -- even mid-chase. And one left alone
-		-- long enough slowly heals back over the tameable line
-		-- (the offer expires).
 		if not wolf.Owner and wolf.State ~= "GoEat" and wolf.Health <= W.TameHealth then
 			if think then
 				self:_tryTame(wolf)
 			end
-			-- Heal fix: a wolf that already ate food (points
-			-- > 0) NEVER loses that progress to healing --
-			-- he waits for more food instead. A wolf with
-			-- no food yet only starts healing after 60s
-			-- (was 20s, too short to fetch sack food), and
-			-- never while a player is within 25 studs.
 			if (wolf.State == "Roam" or wolf.State == "Wary")
 				and (wolf.TamePoints or 0) == 0
 				and wolf.TameableSince and now - wolf.TameableSince > 60
@@ -1480,10 +1272,6 @@ function Animals:_step(dt)
 				end
 			end
 		end
-
-		-- Batch 1 AI, before dispatch: a badly hurt wild wolf
-		-- flees to its home (leaders stand), and wild packs
-		-- fight each other on sight.
 		if not wolf.Owner and wolf.Health > 0 and wolf.Health < (wolf.MaxHealth * W.FleeHealthFrac)
 			and not wolf.Leader and (wolf.State == "Aggro" or wolf.State == "WolfFight")
 			and not (wolf.FleeUntil and now < wolf.FleeUntil)
@@ -1503,9 +1291,7 @@ function Animals:_step(dt)
 				wolf.TargetWolf = enemy
 			end
 		end
-
 		self:_syncMood(wolf)
-
 		if wolf.State == "Roam" then
 			if think then
 				local near, dist = self:_nearestPlayer(pos, W.WaryRange)
@@ -1523,15 +1309,10 @@ function Animals:_step(dt)
 					end
 				end
 				if not wolf.RoamTarget or (wolf.RoamTarget - pos).Magnitude < 2 then
-					-- Arrived: about a third of the time he stops
-					-- to PLAY (idle animation, slow turn) before
-					-- wandering on -- wolves live, not just patrol.
 					if wolf.RoamTarget and math.random() < 0.34 then
 						wolf.RoamTarget = nil
 						self:_enterPlaying(wolf, now)
 					else
-						-- Wander the pack's 50x50 home range, spread
-						-- evenly over it (sqrt keeps it off-center).
 						local a = math.random() * math.pi * 2
 						local r = math.sqrt(math.random()) * W.RoamRadius
 						wolf.RoamTarget = wolf.Home + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
@@ -1539,12 +1320,9 @@ function Animals:_step(dt)
 				end
 			end
 			if wolf.RoamTarget then
-				-- Long wanders pathfind (around trees/rocks/fire);
-				-- _moveSmart falls back to direct under 8 studs.
 				self:_moveSmart(wolf, wolf.RoamTarget, W.RoamSpeed, dt)
 			end
 		elseif wolf.State == "Playing" then
-			-- Still watching for trouble while he plays.
 			if think then
 				local near, dist = self:_nearestPlayer(pos, W.WaryRange)
 				if near then
@@ -1584,9 +1362,6 @@ function Animals:_step(dt)
 					wolf.NoisePos = nil
 				elseif d > W.WaryRange + 10 then
 					if wolf.NoisePos and now < (wolf.NoiseUntil or 0) then
-						-- Heard something (a cough): trot to the
-						-- spot for a look; his senses take over
-						-- once he's close or the trail goes cold.
 						investigating = true
 						self:_moveToward(wolf, wolf.NoisePos, W.RoamSpeed * 1.6, dt)
 						if (wolf.NoisePos - pos).Magnitude < 5 then
@@ -1599,11 +1374,6 @@ function Animals:_step(dt)
 					end
 				end
 				if not investigating then
-					-- The old code held ground here FOREVER while a
-					-- player watched from wary range: the wolf just
-					-- stood doing his idle animation. Now he paces
-					-- around the player after 3s, and after 8s of
-					-- no aggro he gives up and wanders off.
 					if not wolf.WarySince then
 						wolf.WarySince = now
 					end
@@ -1623,7 +1393,7 @@ function Animals:_step(dt)
 						end
 						self:_moveSmart(wolf, wolf.WaryPaceTarget, W.RoamSpeed, dt)
 					else
-						self:_moveToward(wolf, pos, 0, dt) -- hold ground, keep facing
+						self:_moveToward(wolf, pos, 0, dt)
 					end
 				end
 			end
@@ -1634,8 +1404,6 @@ function Animals:_step(dt)
 				wolf.State = "Roam"
 				wolf.TargetPlayer = nil
 			elseif think and self:_shelteredByFire(root.Position) then
-				-- The prey reached the firelight: break off and
-				-- circle instead. The pack waits you out.
 				wolf.State = "Wary"
 			else
 				local d = self:_moveSmart(wolf, root.Position, W.ChaseSpeed, dt)
@@ -1653,7 +1421,6 @@ function Animals:_step(dt)
 				wolf.State = "Roam"
 				wolf.TargetWolf = nil
 			else
-				-- Flank: pack mates do not all charge straight in.
 				local flank = Vector3.new(0, 0, 0)
 				if (wolf.PackIndex or 0) % 3 == 2 then
 					flank = Vector3.new(3, 0, 0)
@@ -1683,8 +1450,6 @@ function Animals:_step(dt)
 				if slotPos then
 					local d = self:_moveSmart(wolf, slotPos, W.HarnessSpeed, dt)
 					if d > 26 then
-						-- Fell too far behind the moving sled:
-						-- snap back into formation.
 						self:_placeAt(wolf, slotPos)
 					end
 				end
@@ -1695,7 +1460,6 @@ function Animals:_step(dt)
 		end
 	end
 end
-
 function Animals:_stepTamed(wolf, dt, now, isNight)
 	local owner = wolf.Owner
 	local character = owner and owner.Character
@@ -1704,8 +1468,6 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 		return
 	end
 	local pos = wolf.Root.Position
-
-	-- An attack order outranks the standing mode until it ends.
 	if wolf.AttackWolf then
 		local prey = wolf.AttackWolf
 		if prey.Health <= 0 or now > wolf.AttackUntil then
@@ -1722,10 +1484,8 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 			return
 		end
 	end
-
 	local mode = self._commands[owner] or "Follow"
 	if mode == "Stop" then
-		-- Stop: stay exactly where you are, do nothing.
 		self:_moveToward(wolf, pos, 0, dt)
 	elseif mode == "Wander" then
 		local anchor = wolf.Anchor or pos
@@ -1740,9 +1500,6 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 		end
 		self:_moveToward(wolf, wolf.RoamTarget, W.RoamSpeed + 1.5, dt)
 	elseif mode == "Alert" then
-		-- Alert (new rule): stay close, and if a wild wolf
-		-- comes within 25 studs, howl AND go attack it.
-		-- Passive wolves howl only, never attack.
 		local back = root.Position - horizontalDir(root.CFrame.LookVector) * 5
 		if (pos - back).Magnitude > 3 then
 			self:_moveToward(wolf, back, W.FollowSpeed, dt)
@@ -1765,7 +1522,7 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 		else
 			self:_moveToward(wolf, pos, 0, dt)
 		end
-	else -- Follow (and Attack with no live order)
+	else
 		local back = horizontalDir(root.CFrame.LookVector) * -1
 		local right = Vector3.new(-back.Z, 0, back.X)
 		local row = math.floor((wolf.SlotIndex - 1) / 2)
@@ -1780,5 +1537,4 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 		end
 	end
 end
-
 return Animals

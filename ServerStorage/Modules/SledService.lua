@@ -1,34 +1,23 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local DragSystem = require(Modules:WaitForChild("DragSystem"))
 local TrackMarks = require(script.Parent:WaitForChild("TrackMarks"))
 local Aegis = require(script.Parent:WaitForChild("Aegis"))
-
 local SledService = {}
 SledService.__index = SledService
-
--- Handling per terrain surface under the sled: powder snow drags
--- and turns soft, glacier ice glides far and barely grips, rock
--- bites hard. friction multiplies forward drag, grip multiplies
--- lateral (anti-slide) grip.
 local SURFACE_PROFILES = {
 	[Enum.Material.Snow] = { friction = 1.35, grip = 0.75, sink = -0.12 },
 	[Enum.Material.Glacier] = { friction = 0.4, grip = 0.28, sink = 0 },
 	[Enum.Material.Rock] = { friction = 1.1, grip = 1.15, sink = 0 },
 }
 local DEFAULT_PROFILE = { friction = 1, grip = 1, sink = 0 }
--- Snow your own traffic has packed down (TrackMarks remembers):
--- glides faster, corners harder, barely sinks.
 local PACKED_PROFILE = { friction = 0.7, grip = 1.15, sink = -0.02 }
-
 local function getLogPart(log)
 	return log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
 end
-
 local function lengthAxis(size)
 	if size.Y >= size.X and size.Y >= size.Z then
 		return Vector3.yAxis, size.Y
@@ -38,11 +27,7 @@ local function lengthAxis(size)
 		return Vector3.zAxis, size.Z
 	end
 end
-
 local function horizontalDir(v)
-	-- A NaN component makes Magnitude NaN, the < 0.01 guard
-	-- reads false, and .Unit hands back a NaN direction that
-	-- would poison the sled's yaw for everyone. Reject first.
 	if v.X ~= v.X or v.Z ~= v.Z then
 		return Vector3.xAxis
 	end
@@ -52,13 +37,11 @@ local function horizontalDir(v)
 	end
 	return h.Unit
 end
-
 local function yawBetween(fromDir, toDir)
 	local crossY = fromDir.Z * toDir.X - fromDir.X * toDir.Z
 	local dot = fromDir.X * toDir.X + fromDir.Z * toDir.Z
 	return math.atan2(crossY, dot)
 end
-
 function SledService.new(world, gameplay)
 	local self = setmetatable({}, SledService)
 	self.World = world
@@ -91,7 +74,6 @@ function SledService.new(world, gameplay)
 	self._markR = nil
 	return self
 end
-
 local function makeSnowEmitter(part)
 	local emitter = Instance.new("ParticleEmitter")
 	emitter.Name = "SnowKick"
@@ -113,13 +95,9 @@ local function makeSnowEmitter(part)
 	emitter.Parent = part
 	return emitter
 end
-
 local function layoutCargo(box, dimsList)
 	local placements = {}
 	local layers = {}
-	-- Thickest pieces first so they land on the bottom layer and
-	-- the pile reads stable; placements stay keyed to the
-	-- caller's indices.
 	local order = {}
 	for i in ipairs(dimsList) do
 		order[i] = i
@@ -137,8 +115,6 @@ local function layoutCargo(box, dimsList)
 				for j = 1, l - 1 do
 					y += layers[j].height + 0.04
 				end
-				-- Layers may stack past the box height: the pile
-				-- just grows taller on the sled.
 				layer = { used = 0, height = 0, y = y }
 				layers[l] = layer
 			end
@@ -154,8 +130,6 @@ local function layoutCargo(box, dimsList)
 				end
 				break
 			elseif layer.used == 0 then
-				-- One piece wider than the box: centered on its
-				-- own layer, poking out both sides equally.
 				spot = {
 					across = 0,
 					up = -box.height / 2 + layer.y + d.thick / 2,
@@ -174,7 +148,6 @@ local function layoutCargo(box, dimsList)
 	end
 	return placements
 end
-
 function SledService:_pieceDims(logPart)
 	local size = logPart.Size
 	local axisVec, len = lengthAxis(size)
@@ -189,7 +162,6 @@ function SledService:_pieceDims(logPart)
 	end
 	return { len = len, thick = thick, axisVec = axisVec }
 end
-
 function SledService:_cargoBox()
 	local cargo = self._cargoPart
 	if not cargo then
@@ -202,7 +174,6 @@ function SledService:_cargoBox()
 		height = cs.Y,
 	}
 end
-
 function SledService:_relayout()
 	local box = self:_cargoBox()
 	self._slots = {}
@@ -220,27 +191,22 @@ function SledService:_relayout()
 		end
 	end
 end
-
 local function playerRoot(player)
 	local character = player.Character
 	return character and character:FindFirstChild("HumanoidRootPart")
 end
-
 local function withinRange(root, position, range)
 	local dx = root.Position.X - position.X
 	local dz = root.Position.Z - position.Z
 	return (dx * dx + dz * dz) <= range * range
 end
-
 function SledService:GetPullWeight(player)
 	if self._pulling[player] then
-		-- Pulling uphill strains like extra cargo on your legs.
 		local uphill = math.max(0, self._gradeAlong or 0) * 250
 		return Config.Sled.Weight + self._cargoWeight + uphill
 	end
 	return nil
 end
-
 function SledService:Start()
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
 	local template = assets and (assets:FindFirstChild("Sled") or assets:FindFirstChild("sled"))
@@ -248,14 +214,11 @@ function SledService:Start()
 		warn("[Arctic] Assets.Sled not found - no sled will spawn")
 		return
 	end
-
 	local sled = template:Clone()
 	sled.Name = "Sled"
-
 	local cargo = sled:FindFirstChild("CargoZone", true)
 		or sled:FindFirstChild("RedaPart", true)
 		or sled:FindFirstChild("Cargo", true)
-
 	local rootPart = nil
 	local bestVolume = -1
 	for _, part in ipairs(sled:GetDescendants()) do
@@ -275,7 +238,6 @@ function SledService:Start()
 		sled:Destroy()
 		return
 	end
-
 	for _, part in ipairs(sled:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.Anchored = true
@@ -289,7 +251,6 @@ function SledService:Start()
 	sled.PrimaryPart = rootPart
 	sled.Parent = workspace
 	self.World:SnapPartToGround(sled, rootPart, 11, 6)
-
 	self.Sled = sled
 	self._rootPart = rootPart
 	self._cargoPart = cargo
@@ -297,7 +258,6 @@ function SledService:Start()
 	self._halfLength = math.max(extents.X, extents.Z) / 2
 	self._footprint = Vector3.new(extents.X * 0.92, extents.Y, extents.Z * 0.92)
 	sled:SetAttribute("CargoWeight", 0)
-
 	self._vel = Vector3.zero
 	self._yawVel = 0
 	local a0 = Vector3.xAxis
@@ -319,11 +279,6 @@ function SledService:Start()
 	local spawnPivot = sled:GetPivot()
 	self._orientOffset = canon0:Inverse() * (spawnPivot - spawnPivot.Position)
 	self._groundOffset = spawnPivot.Position.Y - self.World:GroundY(spawnPivot.Position.X, spawnPivot.Position.Z)
-
-	-- The sled's feet (Ajay's models): tracks and kicked snow come
-	-- from the LeftSide/RightSide runners when the model has them.
-	-- They are Models (FBX imports), not parts — position comes from
-	-- the pivot, and emitters parent to a real part inside.
 	self._runnerL = sled:FindFirstChild("LeftSide", true)
 	self._runnerR = sled:FindFirstChild("RightSide", true)
 	for _, runner in ipairs({ self._runnerL, self._runnerR }) do
@@ -338,9 +293,7 @@ function SledService:Start()
 	if #self._snowEmitters == 0 then
 		table.insert(self._snowEmitters, makeSnowEmitter(rootPart))
 	end
-
 	self:_makePrompts()
-
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	local storeRemote = remotes:FindFirstChild("StoreDraggedItem")
 	if not storeRemote then
@@ -351,23 +304,17 @@ function SledService:Start()
 	Aegis.secure(storeRemote, { args = {}, rateLimit = { 6, 1 } }, function(player)
 		self:StoreDragged(player)
 	end)
-
 	Players.PlayerRemoving:Connect(function(player)
 		self:_releasePull(player)
 		if self._team and self._team.Owner == player then
 			self:_unhitch()
 		end
 	end)
-
 	local function watchPlayer(player)
 		player.CharacterRemoving:Connect(function()
 			if self._pulling[player] then
 				self:_releasePull(player)
 			end
-			-- A rider whose character goes (death is final here)
-			-- must not leave the sled believing it's still being
-			-- ridden: stop riding AND unhitch, so the team state
-			-- never outlives the character it was steering.
 			if self._team and self._team.Owner == player then
 				self:_unhitch()
 			end
@@ -377,19 +324,15 @@ function SledService:Start()
 		watchPlayer(player)
 	end
 	Players.PlayerAdded:Connect(watchPlayer)
-
 	RunService.Heartbeat:Connect(function(dt)
 		self:_stepSled(dt)
 	end)
-
 	print("[Arctic] Sled spawned near camp")
 end
-
 function SledService:_makePrompts()
 	local sled = self.Sled
 	local cargo = self._cargoPart
 	local rootPart = self._rootPart
-
 	local function makeAnchor(name, offset)
 		local anchor = Instance.new("Part")
 		anchor.Name = name
@@ -402,11 +345,9 @@ function SledService:_makePrompts()
 		anchor.Parent = sled
 		return anchor
 	end
-
 	local cs = cargo and cargo.Size or Vector3.new(4, 2, 7)
 	local alongIsX = cs.X >= cs.Z
 	local halfAlong = (alongIsX and cs.X or cs.Z) / 2 + 0.6
-
 	local frontOffset = alongIsX and Vector3.new(halfAlong, 0.5, 0) or Vector3.new(0, 0.5, halfAlong)
 	local pullAnchor = makeAnchor("PullAnchor", frontOffset)
 	local pullPrompt = Instance.new("ProximityPrompt")
@@ -420,7 +361,6 @@ function SledService:_makePrompts()
 		self:_togglePull(player)
 	end)
 	self._pullPrompt = pullPrompt
-
 	local backOffset = alongIsX and Vector3.new(-halfAlong, 1.7, 0) or Vector3.new(0, 1.7, -halfAlong)
 	local unloadAnchor = makeAnchor("UnloadAnchor", backOffset)
 	local unloadPrompt = Instance.new("ProximityPrompt")
@@ -435,7 +375,6 @@ function SledService:_makePrompts()
 		self:_unloadLast(player)
 	end)
 	self._unloadPrompt = unloadPrompt
-
 	local rideAnchorPos = backOffset + Vector3.new(0, 1.1, 0)
 	local rideAnchor = makeAnchor("RideAnchor", rideAnchorPos)
 	local ridePrompt = Instance.new("ProximityPrompt")
@@ -451,7 +390,6 @@ function SledService:_makePrompts()
 	end)
 	self._ridePrompt = ridePrompt
 end
-
 function SledService:_refreshPrompts()
 	if self._unloadPrompt then
 		self._unloadPrompt.Enabled = #self._cargo > 0
@@ -472,7 +410,6 @@ function SledService:_refreshPrompts()
 		self._ridePrompt.ActionText = (self._team and self._team.Riding) and "Stop riding" or "Ride sled"
 	end
 end
-
 function SledService:_recalcCargoWeight()
 	local total = 0
 	for _, piece in ipairs(self._cargo) do
@@ -484,14 +421,12 @@ function SledService:_recalcCargoWeight()
 	end
 	self:_refreshPrompts()
 end
-
 function SledService:_placePiece(piece)
 	local cargo = self._cargoPart
 	local logPart = getLogPart(piece)
 	if not cargo or not logPart then
 		return
 	end
-
 	local size = logPart.Size
 	local axisVec, length = lengthAxis(size)
 	local thick = 0
@@ -503,7 +438,6 @@ function SledService:_placePiece(piece)
 	if thick == 0 then
 		thick = math.min(size.X, size.Y, size.Z)
 	end
-
 	local cs = cargo.Size
 	local alongIsX = cs.X >= cs.Z
 	local slot = self._slots[piece]
@@ -511,7 +445,6 @@ function SledService:_placePiece(piece)
 	local up = slot and slot.up or (-cs.Y / 2 + thick / 2)
 	local localPos = alongIsX and Vector3.new(0, up, across) or Vector3.new(across, up, 0)
 	local center = cargo.CFrame:PointToWorldSpace(localPos)
-
 	local alongWorld = horizontalDir(cargo.CFrame:VectorToWorldSpace(alongIsX and Vector3.xAxis or Vector3.zAxis))
 	local axisWorld = logPart.CFrame:VectorToWorldSpace(axisVec)
 	if axisWorld:Dot(alongWorld) < 0 then
@@ -522,15 +455,11 @@ function SledService:_placePiece(piece)
 	if cross.Magnitude > 0.001 then
 		rot = CFrame.fromAxisAngle(cross.Unit, math.acos(math.clamp(axisWorld:Dot(alongWorld), -1, 1)))
 	end
-
 	local partCF = logPart.CFrame
 	local desired = CFrame.new(center) * rot * (partCF - partCF.Position)
 	local delta = desired * partCF:Inverse()
 	piece:PivotTo(delta * piece:GetPivot())
 end
-
--- True while a world position sits over the cargo zone (with
--- slack) — the same test the client uses to show its Store button.
 function SledService:_overCargo(position)
 	local cargo = self._cargoPart
 	if not cargo then
@@ -540,9 +469,6 @@ function SledService:_overCargo(position)
 	local half = cargo.Size / 2 + Vector3.new(1.5, 2.5, 1.5)
 	return math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
 end
-
--- Store button path: store the piece the player is dragging when it
--- hovers over the cargo zone. Every check re-runs on the server.
 function SledService:StoreDragged(player)
 	local sled = self.Sled
 	if not sled or not self._cargoPart then
@@ -568,20 +494,14 @@ function SledService:StoreDragged(player)
 	end
 	self:_loadPiece(player, piece)
 end
-
 function SledService:_loadPiece(player, best)
 	local logPart = getLogPart(best)
 	if not logPart then
 		return
 	end
-
-	-- Validate everything before changing anything. The only hard
-	-- limit now is the piece count — any size, any weight; the
-	-- weight is paid for in pull speed instead.
 	if #self._cargo >= Config.Sled.MaxCargoPieces then
 		return
 	end
-
 	local box = self:_cargoBox()
 	if not box then
 		return
@@ -596,8 +516,6 @@ function SledService:_loadPiece(player, best)
 	if not layoutCargo(box, trialDims) then
 		return
 	end
-
-	-- All checks passed: mutate.
 	if logPart:GetAttribute("DraggedBy") then
 		DragSystem.ForceStop(logPart)
 	end
@@ -612,31 +530,22 @@ function SledService:_loadPiece(player, best)
 			logPart.Size = Vector3.new(sz.X, sz.Y, effLen)
 		end
 	end
-
 	best:SetAttribute("OnSled", true)
 	table.insert(self._cargo, best)
 	self._cargoOwners[best] = player
 	self._cargoDims[best] = { len = effLen, thick = dims.thick }
-
 	local prompt = logPart:FindFirstChildOfClass("ProximityPrompt")
 	if prompt then
 		prompt:Destroy()
 	end
 	logPart:SetAttribute("Draggable", nil)
-
 	self:_relayout()
 	for _, piece in ipairs(self._cargo) do
 		self:_placePiece(piece)
 	end
 	self:_recalcCargoWeight()
 end
-
 function SledService:_unloadLast(player)
-	-- Cargo has an owner: the player who stored the top piece
-	-- unloads it -- or the sled's puller / team owner can, or
-	-- anyone once the storer has left the run. (Field added in
-	-- new(): self._cargoOwners.)
-
 	local sled = self.Sled
 	if not sled then
 		return
@@ -649,7 +558,6 @@ function SledService:_unloadLast(player)
 		print(("[Arctic] Unload blocked: player too far from the sled (range %d)"):format(Config.Sled.InteractRange))
 		return
 	end
-
 	local topPiece = self._cargo[#self._cargo]
 	if not topPiece then
 		return
@@ -662,13 +570,11 @@ function SledService:_unloadLast(player)
 		print("[Arctic] Unload blocked: not your cargo")
 		return
 	end
-
 	local piece = table.remove(self._cargo)
 	self._cargoOwners[piece] = nil
 	self._cargoDims[piece] = nil
 	self._slots[piece] = nil
 	piece:SetAttribute("OnSled", nil)
-
 	local origSize = self._origSize[piece]
 	if origSize then
 		self._origSize[piece] = nil
@@ -677,9 +583,6 @@ function SledService:_unloadLast(player)
 			part.Size = origSize
 		end
 	end
-
-	-- The piece lands beside the player who unloaded it --
-	-- always reachable, never under the sled or the pile.
 	local pivot = sled:GetPivot()
 	local away = horizontalDir(root.Position - pivot.Position)
 	local dropAt = root.Position + away * 2.2
@@ -687,14 +590,10 @@ function SledService:_unloadLast(player)
 	if logPart then
 		self.World:SnapPartToGround(piece, logPart, dropAt.X, dropAt.Z)
 	end
-
 	self.Gameplay:AttachDragPrompt(piece)
 	self:_relayout()
 	self:_recalcCargoWeight()
 end
-
--- A brutal impact knocks the top cargo piece loose: it comes off
--- the pile and lands behind the sled as a normal loose log again.
 function SledService:_throwTopPiece(vel)
 	local piece = self._cargo[#self._cargo]
 	if not piece then
@@ -714,10 +613,6 @@ function SledService:_throwTopPiece(vel)
 	part.AssemblyLinearVelocity = (vel or Vector3.zero) * 0.4 + Vector3.new(0, 4, 0)
 	part.AssemblyAngularVelocity = Vector3.new(0, 1.5, 0)
 end
-
--- External removal (fire claimed a cargo log): the unload
--- bookkeeping, without the drop placement or a new drag prompt.
--- The piece stays where it lies and burns where it lies.
 function SledService:RemovePiece(piece)
 	local found = false
 	for i, p in ipairs(self._cargo) do
@@ -733,7 +628,6 @@ function SledService:RemovePiece(piece)
 	self._cargoDims[piece] = nil
 	self._slots[piece] = nil
 	piece:SetAttribute("OnSled", nil)
-
 	local origSize = self._origSize[piece]
 	local part = getLogPart(piece)
 	if origSize then
@@ -745,25 +639,20 @@ function SledService:RemovePiece(piece)
 	if part then
 		part.Anchored = false
 	end
-
 	self:_relayout()
 	self:_recalcCargoWeight()
 end
-
 function SledService:_togglePull(player)
 	local sled = self.Sled
 	if not sled then
 		return
 	end
-	-- Wolf team hitched: the front prompt unhitches (owner only).
 	if self._team then
 		if self._team.Owner == player then
 			self:_unhitch()
 		end
 		return
 	end
-	-- A player with tamed wolves hitches the team instead of
-	-- hand-pulling: the dogs become the engine.
 	if sled:GetAttribute("PulledBy") == nil and self.Gameplay.Animals:Count(player) > 0 then
 		local rootP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 		if rootP and withinRange(rootP, sled:GetPivot().Position, Config.Sled.PullRange) then
@@ -786,10 +675,6 @@ function SledService:_togglePull(player)
 		self._pulling[player] = sled
 		if rootP then
 			local fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
-			-- Grade along the sled's nose (positive = uphill ahead);
-			-- the puller's legs feel it through GetPullWeight. Sampled
-			-- here at grab time (the _stepSled copies are local to
-			-- that function -- using them here crashed with nil).
 			local world = self.Gameplay.World
 			local sledPos = sled:GetPivot().Position
 			local gs = 3
@@ -805,12 +690,8 @@ function SledService:_togglePull(player)
 	end
 	self:_refreshPrompts()
 end
-
 function SledService:_hitch(player)
 	local sled = self.Sled
-	-- Same courtesy as the manual pull: hands empty before the
-	-- team takes over, so a dragged item never stays live while
-	-- riding or steering.
 	self.Gameplay:ReleaseDraggedLogs(player)
 	sled:SetAttribute("PulledBy", player.UserId)
 	self._team = { Owner = player, Riding = false, HasInput = false }
@@ -819,7 +700,6 @@ function SledService:_hitch(player)
 	self:_refreshPrompts()
 	print(("[Arctic] %s hitched a wolf team (%d)"):format(player.Name, self.Gameplay.Animals:Count(player)))
 end
-
 function SledService:_unhitch()
 	local team = self._team
 	if not team then
@@ -836,14 +716,11 @@ function SledService:_unhitch()
 	end
 	self:_refreshPrompts()
 end
-
 function SledService:_toggleRide(player)
 	local team = self._team
 	if not team or team.Owner ~= player then
 		return
 	end
-	-- Every other sled prompt re-checks range server-side; this
-	-- one only had the prompt's client-side distance.
 	local root = playerRoot(player)
 	if not root or not self.Sled or not withinRange(root, self.Sled:GetPivot().Position, Config.Sled.InteractRange + 2) then
 		return
@@ -866,7 +743,6 @@ function SledService:_toggleRide(player)
 	end
 	self:_refreshPrompts()
 end
-
 function SledService:_stopRiding()
 	local team = self._team
 	if not team then
@@ -878,10 +754,6 @@ function SledService:_stopRiding()
 		team.JumpConn = nil
 	end
 end
-
--- Formation slot (world position) for the index-th team wolf:
--- ladder ahead of the nose -- lead, swing pair, wheel pair, and
--- a sixth wolf steps up beside the lead.
 function SledService:GetHarnessSlot(index, count)
 	local sled = self.Sled
 	if not sled then
@@ -905,17 +777,12 @@ function SledService:GetHarnessSlot(index, count)
 	local slot = slots[index] or slots[1]
 	return pos + fwdH * (self._halfLength + slot[2]) + rightH * slot[1]
 end
-
 function SledService:_makeRopes(player)
 	local character = player.Character
 	if not character then
 		return
 	end
 	local rootPart = self._rootPart
-
-	-- Hitches start at the sled's front corners, not the centre:
-	-- a rope drawn to the centre point looks attached to nothing
-	-- for the first frames, and sags through the sled body.
 	local hitches = {}
 	local sledCF = rootPart.CFrame
 	local cornerFwd = self._halfLength * 0.85
@@ -932,7 +799,6 @@ function SledService:_makeRopes(player)
 		hitch.Parent = rootPart
 		table.insert(hitches, hitch)
 	end
-
 	local ropes = { hitches = hitches, beams = {}, atts = {} }
 	local handNames = { "LeftHand", "RightHand" }
 	local armNames = { "Left Arm", "Right Arm" }
@@ -957,7 +823,6 @@ function SledService:_makeRopes(player)
 	end
 	self._ropes[player] = ropes
 end
-
 function SledService:_releasePull(player)
 	local sled = self.Sled
 	if sled and sled:GetAttribute("PulledBy") == player.UserId then
@@ -985,13 +850,11 @@ function SledService:_releasePull(player)
 	end
 	self:_refreshPrompts()
 end
-
 function SledService:Update(dt)
 	local sled = self.Sled
 	if not sled then
 		return
 	end
-
 	for i = #self._cargo, 1, -1 do
 		local piece = self._cargo[i]
 		if not piece.Parent then
@@ -1003,7 +866,6 @@ function SledService:Update(dt)
 			self:_recalcCargoWeight()
 		end
 	end
-
 	local pullers = {}
 	for player in pairs(self._pulling) do
 		table.insert(pullers, player)
@@ -1012,7 +874,6 @@ function SledService:Update(dt)
 		self:_updatePull(player)
 	end
 end
-
 function SledService:_updatePull(player)
 	local sled = self.Sled
 	local character = player.Character
@@ -1030,24 +891,16 @@ function SledService:_updatePull(player)
 			end
 		end
 	end
-
 end
-
 function SledService:_stepSled(dt)
 	local sled = self.Sled
 	if not sled then
 		return
 	end
 	dt = math.min(dt, 0.05)
-
 	local world = self.World
 	local pos = sled:GetPivot().Position
-
-	-- Mass factor relative to a 25kg reference (Weight is 0 now, so
-	-- never divide by it): empty = 1, 100kg of cargo = 5.
 	local massFactor = 1 + self._cargoWeight / 25
-
-	-- Surface under the sled, smoothed so borders do not pop.
 	local surfHit = world:TerrainRaycastDown(pos.X, pos.Z)
 	local prof = (surfHit and SURFACE_PROFILES[surfHit.Material]) or DEFAULT_PROFILE
 	if surfHit and surfHit.Material == Enum.Material.Snow
@@ -1062,9 +915,6 @@ function SledService:_stepSled(dt)
 	self._surfF += (prof.friction - self._surfF) * blend
 	self._surfG += (prof.grip - self._surfG) * blend
 	self._surfSink += ((prof.sink or 0) - self._surfSink) * blend
-
-	-- Cargo balance: a pile stacked to one side (mean lateral
-	-- offset of the load) tips the sled and upsets its turns.
 	local comAcross = 0
 	if self._cargoWeight > 0 then
 		local moment = 0
@@ -1077,11 +927,7 @@ function SledService:_stepSled(dt)
 		comAcross = moment / self._cargoWeight
 	end
 	self._comAcross = comAcross
-
-	-- Runner load from last tick's suspension: unloaded runners
-	-- (airborne over a crest) cannot grip or steer.
 	local gripState = self._gripState or 1
-
 	local s = 3
 	local hx1 = world:GroundY(pos.X + s, pos.Z)
 	local hx0 = world:GroundY(pos.X - s, pos.Z)
@@ -1089,24 +935,16 @@ function SledService:_stepSled(dt)
 	local hz0 = world:GroundY(pos.X, pos.Z - s)
 	local gradX = (hx1 - hx0) / (2 * s)
 	local gradZ = (hz1 - hz0) / (2 * s)
-
 	local fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
-
 	local puller = nil
 	for player in pairs(self._pulling) do
 		puller = player
 		break
 	end
 	local root = puller and puller.Character and puller.Character:FindFirstChild("HumanoidRootPart")
-
 	local accel = Vector3.zero
 	local tension01 = 0
 	if root then
-		-- Two ropes, two front corners. Each corner pulls on its own
-		-- rope length, and the pull acts AT the corner -- so in a
-		-- turn the outer rope hauls the nose around and the body
-		-- trails behind it like a real trailer, instead of the whole
-		-- sled pivoting tight toward the player.
 		local rightH0 = Vector3.new(-fwdH.Z, 0, fwdH.X)
 		local cornerFwd = self._halfLength * 0.85
 		local cornerSide = self._footprint.X / 2 - 0.4
@@ -1126,7 +964,6 @@ function SledService:_stepSled(dt)
 					local force = stretch * Config.Sled.RopeSpring - along * Config.Sled.RopeDamp
 					if force > 0 then
 						local pull = dir * force
-						-- Two ropes share the load.
 						accel += pull / (massFactor * 2)
 						torque += (offset.Z * pull.X - offset.X * pull.Z) / massFactor
 					end
@@ -1134,8 +971,6 @@ function SledService:_stepSled(dt)
 			end
 		end
 		if totalStretch > 0 and (self._prevStretch or 0) <= 0 then
-			-- A rope just snapped taut: a visible jolt through the
-			-- sled body, stronger the faster you were moving.
 			local relSpeed = root.AssemblyLinearVelocity.Magnitude
 			if relSpeed > 5 then
 				self._jolt = math.min(0.15, relSpeed * 0.012)
@@ -1144,21 +979,12 @@ function SledService:_stepSled(dt)
 		self._prevStretch = totalStretch
 		tension01 = math.clamp(totalStretch / 2.5, 0, 1)
 		self._yawVel += torque * Config.Sled.TowTorque * dt
-		-- Weak facing assist only -- the trailer mostly aligns
-		-- itself through the corner pulls now; this settles it.
-		-- The target aims from the sled's REAR to the player, which
-		-- is what makes the nose swing wide instead of cutting in.
 		local rearPos = pos - fwdH * (self._halfLength * 0.5)
 		local desired = horizontalDir(root.Position - rearPos)
 		local err = yawBetween(fwdH, desired)
-		-- Steering softens with speed: less twitchy flat-out.
 		local softening = 1 + self._vel.Magnitude * 0.03
 		self._yawVel += err * Config.Sled.YawResponse * 0.3 * gripState / softening * dt
 	elseif self._team then
-		-- The team is the engine: the rider steers with movement
-		-- input, the dogs supply steady power up to a top speed
-		-- that grows with team size (cargo still weighs through
-		-- massFactor).
 		local team = self._team
 		local character = team.Owner.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -1172,7 +998,6 @@ function SledService:_stepSled(dt)
 			self._yawVel += err * Config.Sled.YawResponse * 1.6 * gripState / softening * dt
 			local count = self.Gameplay.Animals:Count(team.Owner)
 			if count <= 0 then
-				-- The whole team died hitched: nobody is pulling.
 				self:_unhitch()
 				return
 			end
@@ -1191,22 +1016,15 @@ function SledService:_stepSled(dt)
 		local err = yawBetween(fwdH, desired)
 		self._yawVel += err * Config.Sled.YawResponse * 0.5 * gripState * dt
 	end
-
 	local slopeAccel = Vector3.new(-gradX, 0, -gradZ) * Config.Sled.SlopeGravity
 	if root or self._team or slopeAccel.Magnitude > Config.Sled.StaticHold then
 		accel += slopeAccel
 	end
-
 	self._vel += accel * dt
-	-- Grip is directional: the sled rolls freely along its runners
-	-- but resists sliding sideways -- with give, so hard turns and
-	-- side slopes swing the back end out before the grip catches.
 	local invMass = 1 / math.sqrt(massFactor)
 	local rightNow = Vector3.new(-fwdH.Z, 0, fwdH.X)
 	local fwdV = self._vel:Dot(fwdH)
 	local sideV = self._vel:Dot(rightNow)
-	-- Brake: while the puller holds the rope standing still, the
-	-- brake ramps up over ~0.7s -- a slide to a stop, not a wall.
 	if root then
 		if root.AssemblyLinearVelocity.Magnitude > 1 then
 			self._brake = 0
@@ -1225,8 +1043,6 @@ function SledService:_stepSled(dt)
 	local turnDrag = math.abs(self._yawVel) * 0.35
 	local fwdRate = Config.Sled.Friction * self._surfF + self._brake * 2.2 + turnDrag
 	fwdV *= math.exp(-dt * fwdRate * invMass)
-	-- Runner bite: the harder and faster the turn, the wider the
-	-- drift before grip catches; a lopsided pile upsets it further.
 	local turnDemand = 1 + math.abs(self._yawVel) * math.abs(fwdV) * 0.05
 	local gripRate = Config.Sled.LateralGrip * self._surfG * gripState / turnDemand
 	gripRate *= 1 - math.min(0.3, math.abs(comAcross) * 0.05)
@@ -1240,14 +1056,11 @@ function SledService:_stepSled(dt)
 	if self._vel.Magnitude < 0.04 and not root then
 		self._vel = Vector3.zero
 	end
-
 	self._yawVel *= math.exp(-dt * Config.Sled.YawDamp / math.sqrt(massFactor))
 	local maxYaw = 2.2 / math.sqrt(massFactor)
 	self._yawVel = math.clamp(self._yawVel, -maxYaw, maxYaw)
 	self._yaw += self._yawVel * dt
-
 	local newPos = pos + self._vel * dt
-
 	if root then
 		local dx = newPos.X - root.Position.X
 		local dz = newPos.Z - root.Position.Z
@@ -1257,7 +1070,6 @@ function SledService:_stepSled(dt)
 			newPos = Vector3.new(root.Position.X + dx / d * minD, newPos.Y, root.Position.Z + dz / d * minD)
 		end
 	end
-
 	fwdH = Vector3.new(-math.sin(self._yaw), 0, -math.cos(self._yaw))
 	local rightH = Vector3.new(-fwdH.Z, 0, fwdH.X)
 	local fwd3 = Vector3.new(fwdH.X, gradX * fwdH.X + gradZ * fwdH.Z, fwdH.Z).Unit
@@ -1271,9 +1083,6 @@ function SledService:_stepSled(dt)
 	end
 	local xAxis = yAxis:Cross(zAxis).Unit
 	local canon = CFrame.fromMatrix(Vector3.zero, xAxis, yAxis, zAxis)
-
-	-- Collision: the sled is kinematic, so test its footprint before
-	-- moving. Slide along obstacles; stop when boxed in on both axes.
 	local function blockedAt(cframe)
 		local params = OverlapParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
@@ -1310,11 +1119,7 @@ function SledService:_stepSled(dt)
 			end
 		end
 	end
-
 	local targetY = world:GroundY(newPos.X, newPos.Z) + self._groundOffset + (self._surfSink or 0)
-	-- Height rides an underdamped spring: the sled floats over
-	-- crests and settles with a bounce instead of gliding flat.
-	-- Snaps when far off (spawn/teleport) so it never dives.
 	if self._yPos == nil or math.abs(targetY - self._yPos) > 3 then
 		self._yPos = targetY
 		self._yVel = 0
@@ -1322,10 +1127,6 @@ function SledService:_stepSled(dt)
 	local yAccel = (targetY - self._yPos) * 110 - (self._yVel or 0) * 12
 	self._yVel = (self._yVel or 0) + yAccel * dt
 	self._yPos += self._yVel * dt
-
-	-- Runner load from the spring extension: airborne sleds cannot
-	-- grip or steer; landing from a crest wobbles the sled sideways,
-	-- and a brutal landing at speed throws the top cargo piece loose.
 	local ext = self._yPos - targetY
 	self._gripState = math.clamp(1 - math.max(0, ext) * 1.6, 0.2, 1)
 	local airborne = ext > 0.35
@@ -1341,11 +1142,6 @@ function SledService:_stepSled(dt)
 		end
 	end
 	self._wasAirborne = airborne
-
-	-- Body language: pitch from acceleration (nose dives under
-	-- braking, tail squats under a hard pull), roll from turns with
-	-- the weight shifting toward the OUTSIDE runners, plus a steady
-	-- tip toward a lopsided cargo pile.
 	local accelF = ((self._fwdV or 0) - (self._prevFwdV or self._fwdV or 0)) / math.max(dt, 0.001)
 	self._prevFwdV = self._fwdV or 0
 	self._jolt = (self._jolt or 0) * math.exp(-dt * 6)
@@ -1353,7 +1149,6 @@ function SledService:_stepSled(dt)
 	local lean = math.clamp(-self._yawVel * self._vel.Magnitude * 0.035, -0.3, 0.3)
 	lean += math.clamp((self._comAcross or 0) * 0.02, -0.12, 0.12)
 	sled:PivotTo(CFrame.new(newPos.X, self._yPos, newPos.Z) * canon * CFrame.Angles(pitch, 0, lean) * self._orientOffset)
-
 	local ropes = puller and self._ropes[puller]
 	if ropes and ropes.hitches then
 		local center = sled:GetPivot().Position
@@ -1363,8 +1158,6 @@ function SledService:_stepSled(dt)
 			local side = i == 1 and -1 or 1
 			local cornerWorld = center + fwdH * cornerFwd + rightH * (side * cornerSide) + Vector3.new(0, 1, 0)
 			hitch.CFrame = self._rootPart.CFrame:ToObjectSpace(CFrame.new(cornerWorld))
-			-- Each rope sags by its OWN slack: in a turn the inner
-			-- rope hangs loose while the outer one stays bar-taut.
 			local beam = ropes.beams[i]
 			if beam and root then
 				local dist = (root.Position - cornerWorld).Magnitude
@@ -1375,15 +1168,11 @@ function SledService:_stepSled(dt)
 			end
 		end
 	end
-
 	for _, piece in ipairs(self._cargo) do
 		if piece.Parent then
 			self:_placePiece(piece)
 		end
 	end
-
-	-- Snow: runners kick particles while moving and press a track
-	-- line into the snow; heavier cargo presses deeper marks.
 	local speed = self._vel.Magnitude
 	local spray = 10 + speed * 2 + math.abs(self._sideV or 0) * 4
 	for _, emitter in ipairs(self._snowEmitters) do
@@ -1416,10 +1205,6 @@ function SledService:_stepSled(dt)
 		self._markL = nil
 		self._markR = nil
 	end
-
-	-- The rider stands on the back of a team sled (his
-	-- IdleSledWolfPulling spot): pinned to the rear platform,
-	-- facing the nose. Jump or the prompt steps off.
 	local teamNow = self._team
 	if teamNow and teamNow.Riding and teamNow.Owner then
 		local character = teamNow.Owner.Character
@@ -1433,5 +1218,4 @@ function SledService:_stepSled(dt)
 		end
 	end
 end
-
 return SledService

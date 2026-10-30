@@ -1,35 +1,9 @@
--- Kids (Phase 3, setup): the 3 rescuable kids.
---
--- This is a CHILD module of Animals: it lives under the
--- Animals ModuleScript (Animals/init.lua is the parent
--- system, this file is its Kids child), and it follows
--- Animals' patterns -- a table of records stepped on the
--- server tick, ground-snapped kinematic movement, tags
--- for state, and server-validated prompts.
---
--- Setup scope, stated plainly: rescue + follow + a basic
--- work loop + eating. Kids are placeholder models (a
--- single part with a tag) until Ajay drops a real kid
--- model -- the code looks Assets.Kid up by name first
--- and uses it if present, exactly like the shed does.
--- Work yields are concrete where the game already has
--- the item (wood logs, fish) and abstract where it does
--- not yet (sled routes grant a few coins for supplies
--- found on the route -- a real route haul is the
--- slow-improve item). Eating is a shared camp-food
--- abstraction: kids take hunger from their owner's
--- hunger bar on a timer; a hungry kid stops working
--- until fed. Real food items for kids are slow-improve.
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
-
 local Kids = {}
 Kids.__index = Kids
-
 function Kids.new(gameplay)
 	local self = setmetatable({}, Kids)
 	self.Gameplay = gameplay
@@ -37,7 +11,6 @@ function Kids.new(gameplay)
 	self.Folder = nil
 	return self
 end
-
 function Kids:Start()
 	local folder = Instance.new("Folder")
 	folder.Name = "Kids"
@@ -52,7 +25,6 @@ function Kids:Start()
 	end
 	print(("[Arctic] Kids: %d kids placed for rescue"):format(#self.Kids))
 end
-
 function Kids:_rescuePosition(layout)
 	local lake = layout and layout.Lake
 	local mountain = layout and layout.Mountain
@@ -73,7 +45,6 @@ function Kids:_rescuePosition(layout)
 	end
 	return Vector3.new(250, 0, 250)
 end
-
 function Kids:_spawnKid(id, position)
 	local world = self.Gameplay.World
 	local groundY = world:GroundY(position.X, position.Z)
@@ -96,8 +67,6 @@ function Kids:_spawnKid(id, position)
 			world:SnapToGround(model, position.X, position.Z)
 		end
 	else
-		-- Placeholder kid: one part + a tag. Ajay's kid
-		-- model, dropped in as Assets.Kid, replaces it.
 		model = Instance.new("Model")
 		model.Name = "Kid" .. id .. "PLACEHOLDER"
 		local body = Instance.new("Part")
@@ -125,8 +94,6 @@ function Kids:_spawnKid(id, position)
 	label.TextSize = 15
 	label.Font = Enum.Font.GothamBold
 	label.Parent = tag
-	-- Kid names for the panel (first kid is Arzh, per Ajay's panel
-	-- sketch). Rename here if Ajay renames a kid.
 	local kidNames = { "Arzh", "Noor", "Veer" }
 	local kid = {
 		Id = id,
@@ -148,7 +115,6 @@ function Kids:_spawnKid(id, position)
 	table.insert(self.Kids, kid)
 	return kid
 end
-
 function Kids:_addPrompts(kid)
 	local anchor = kid.Anchor
 	if not anchor then
@@ -173,7 +139,6 @@ function Kids:_addPrompts(kid)
 	assign.MaxActivationDistance = 12
 	assign.Enabled = false
 	assign.Parent = anchor
-	-- Panel is the assign path now: the prompt just points there.
 	assign.Triggered:Connect(function(player)
 		if kid.Owner == player then
 			self.Gameplay:Notify(player, "Open the Kids panel to assign " .. kid.Name .. " a task.")
@@ -193,7 +158,6 @@ function Kids:_addPrompts(kid)
 	end)
 	kid.FeedPrompt = feed
 end
-
 function Kids:Rescue(player, kid)
 	if kid.State ~= "Lost" then
 		return
@@ -207,9 +171,6 @@ function Kids:Rescue(player, kid)
 	if (root.Position - kid.Anchor.Position).Magnitude > Config.Kids.RescueRange then
 		return
 	end
-	-- Stay at base: rescued kids do NOT follow the player.
-	-- Home is where they were rescued; a Stay task moves them
-	-- to the campfire instead (see AssignTask).
 	kid.State = "AtBase"
 	kid.Owner = player
 	kid.Hungry = false
@@ -221,17 +182,14 @@ function Kids:Rescue(player, kid)
 	if kid.RescuePrompt then
 		kid.RescuePrompt.Enabled = false
 	end
-	-- AssignPrompt stays disabled: the Kids panel assigns tasks.
 	kid.Tag.Text = kid.Name .. " -- at base, assign a task"
 	self.Gameplay:GrantKidMultiplier(player, kid.Id)
 	self.Gameplay:Notify(player, "Kid rescued! Open the Kids panel to assign a task -- and remember, kids eat too.")
 end
-
 function Kids:AssignTask(player, kid, task)
 	if kid.Owner ~= player or kid.State ~= "AtBase" then
 		return false
 	end
-	-- Panel tasks only: Get Wood, Go Fishing, Stay at Campfire, Idle.
 	local allowed = { Wood = true, Fish = true, Stay = true, Idle = true }
 	if not allowed[task] then
 		return false
@@ -241,8 +199,6 @@ function Kids:AssignTask(player, kid, task)
 	kid.TaskTimer = 0
 	kid.RouteTarget = nil
 	if task == "Stay" then
-		-- Stay at campfire: move to the first built fire, if any,
-		-- otherwise stay at home base.
 		local fires = self.Gameplay.World and self.Gameplay.World.Fires
 		local fire = fires and fires[1]
 		if fire and fire.Core and kid.Model then
@@ -256,9 +212,6 @@ function Kids:AssignTask(player, kid, task)
 	self.Gameplay:Notify(player, ("%s's task: %s"):format(kid.Name, task))
 	return true
 end
-
--- Panel data for one player, as "Name|Task|AssignedBy;..." so the
--- client panel needs no new remote: it reads KidPanel attribute.
 function Kids:PanelStringFor(player)
 	local rows = {}
 	for _, kid in ipairs(self.Kids) do
@@ -269,7 +222,6 @@ function Kids:PanelStringFor(player)
 	end
 	return table.concat(rows, ";")
 end
-
 function Kids:Feed(player, kid)
 	if kid.Owner ~= player then
 		return
@@ -292,9 +244,6 @@ function Kids:Feed(player, kid)
 	kid.Tag.Text = ("Kid -- working: %s"):format(kid.Task)
 	self.Gameplay:Notify(player, "Kid fed -- back to work.")
 end
-
--- Owner gone (left or died): the kid waits where they
--- stand and can be rescued again by anyone alive.
 function Kids:OnOwnerGone(player)
 	for _, kid in ipairs(self.Kids) do
 		if kid.Owner == player then
@@ -316,7 +265,6 @@ function Kids:OnOwnerGone(player)
 		end
 	end
 end
-
 function Kids:CountFor(player)
 	local n = 0
 	for _, kid in ipairs(self.Kids) do
@@ -326,14 +274,9 @@ function Kids:CountFor(player)
 	end
 	return n
 end
-
 function Kids:CleanupPlayer(player)
 	self:OnOwnerGone(player)
 end
-
--- One physical log, delivered by a working kid: the same
--- shape as a felled-tree log (WoodLog template, or a
--- plain part fallback), so feeding and building accept it.
 function Kids:_spawnLog(position)
 	local gameplay = self.Gameplay
 	local template = gameplay.World.WoodLogTemplate
@@ -363,7 +306,6 @@ function Kids:_spawnLog(position)
 		gameplay:AttachDragPrompt(log)
 	end
 end
-
 function Kids:_doWork(kid)
 	local owner = kid.Owner
 	if not owner then
@@ -383,10 +325,8 @@ function Kids:_doWork(kid)
 			self.Gameplay.Fish:Spawn(root.Position.X + 3, root.Position.Z)
 			self.Gameplay:Notify(owner, "Your kid caught a fish!")
 		end
-	-- Stay / Idle: no work yield, kid just stays at base.
 	end
 end
-
 function Kids:Update(dt)
 	for _, kid in ipairs(self.Kids) do
 		if kid.State ~= "AtBase" or not kid.Owner then
@@ -400,8 +340,6 @@ function Kids:Update(dt)
 			self:OnOwnerGone(owner)
 			continue
 		end
-		-- At base: NO following. The kid stays where HomePosition
-		-- says (rescue spot, or the campfire after a Stay task).
 		if kid.HomePosition and kid.Model then
 			local hp = kid.HomePosition
 			local kp = kid.Anchor.Position
@@ -432,8 +370,5 @@ function Kids:Update(dt)
 			end
 		end
 	end
-	-- Hungry is a flag, not a state: hungry kids stay at base,
-	-- they just stop working until fed.
 end
-
 return Kids

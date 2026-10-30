@@ -1,21 +1,16 @@
 local Config = {}
-
 Config.DayCycle = {
 	DayLength = 180,
 	NightLength = 120,
 	StartPhase = "Day",
-	-- Nights are properly dark; brightness follows the sun so dusk
-	-- and dawn fade instead of snapping at the phase change.
 	DayBrightness = 2,
 	NightBrightness = 0.6,
 }
-
 Config.Multiplier = {
 	Base = 1,
 	MaxBaseGame = 10,
 	MaxAbsolute = 20,
 }
-
 Config.Survival = {
 	MaxHealth = 100,
 	MaxWarmth = 100,
@@ -23,13 +18,12 @@ Config.Survival = {
 	HealthRegenPerSecond = 0.05,
 	FreezingHealthDrain = 1.5,
 	StarvingHealthDrain = 1.0,
-	HungerDrainPerSecond = 0.10, -- Batch 1: tiny hunger relief for long walks from base
+	HungerDrainPerSecond = 0.10,
 	Day2HungerMultiplier = 1.4,
 	SprintHungerMultiplier = 2,
 	WalkSpeed = 16,
 	SprintSpeed = 22,
 }
-
 Config.Temperature = {
 	DayAmbientC = -12,
 	NightAmbientC = -24,
@@ -42,21 +36,16 @@ Config.Temperature = {
 		Night = { Clear = 1.6, Storm = 2.55, Blizzard = 4.4 },
 	},
 }
-
 Config.Sickness = {
 	ColdWarmthThreshold = 25,
 	ExposureSeconds = 90,
 	CureWarmth = 60,
 	CureSeconds = 20,
-	-- Coughing: while sick you cough every few seconds, and a
-	-- cough is NOISE -- wild wolves within CoughRadius hear it
-	-- and come to look (the design's real sickness danger).
 	CoughMinSeconds = 4,
 	CoughMaxSeconds = 8,
 	CoughRadius = 55,
 	CoughInvestigateSeconds = 12,
 }
-
 Config.World = {
 	Radius = 950,
 	MinSeedLength = 5,
@@ -91,7 +80,6 @@ Config.World = {
 	CabinsMin = 5,
 	CabinsMax = 10,
 }
-
 Config.Campfire = {
 	BurnRadius = 2.6,
 	BurnDamagePerSecond = 1.5,
@@ -104,18 +92,12 @@ Config.Campfire = {
 	BurningLogCookRange = 4,
 	BuildFuelSeconds = 45,
 	FuelPerBurnUnit = 20,
-	-- A log burning loose in the open dies faster than the same
-	-- log feeding a campfire: wind and snow eat it.
 	OpenBurnSecondsPerUnit = 12,
-	-- Fire spread: a burnable log whose surface sits within
-	-- SpreadGap of burning wood catches after SpreadSeconds of
-	-- exposure. Wood piles chain; sled cargo is not exempt.
 	SpreadGap = 1.5,
 	SpreadSeconds = 2.5,
 	FuelDisplayMax = 600,
 	FeedRange = 10,
 }
-
 Config.Sled = {
 	MaxCargoPieces = 10,
 	TeamSpeedBase = 8,
@@ -139,62 +121,48 @@ Config.Sled = {
 	TowTorque = 0.03,
 	YawDamp = 5,
 }
-
 Config.Tracks = {
 	SledLife = 12,
 	FootLife = 12,
 	SledStep = 2.2,
 	FootStep = 1.9,
 }
-
 Config.Blueprint = {
 	PlaceRange = 25,
 	MinSpacing = 6,
 }
-
--- Buildable structures: the blueprint flow (ghost, feed
--- prompt, labels, completion) reads THIS table, so a new
--- structure is one entry here + a completion branch in
--- Gameplay -- not surgery in five files. Phase 3 adds the
--- sleeping bag and the shed as entries.
 Config.Structures = {
 	Campfire = {
 		DisplayName = "CAMPFIRE",
 		ButtonText = "Campfire - 40kg of logs",
 		CostKg = 40,
-		AssetName = "BonFire", -- model in ReplicatedStorage/Assets
-		FrameName = "Campfire", -- PointFrames icon
+		AssetName = "BonFire",
+		FrameName = "Campfire",
 		PromptText = "Campfire blueprint",
 	},
-	-- Phase 3: the sleeping bag is a warmth anchor you can
-	-- carry in blueprint form; the shed is a storage shelter.
-	-- Both complete through Gameplay.OnBlueprintBuilt, exactly
-	-- like the campfire -- no blueprint-flow surgery.
 	SleepingBag = {
 		DisplayName = "SLEEPING BAG",
 		ButtonText = "Sleeping bag - 15kg of logs",
 		CostKg = 15,
-		AssetName = "SleepingBag", -- model in ReplicatedStorage/Assets, if present
-		FrameName = "SleepingBag", -- PointFrames icon, if present
+		AssetName = "SleepingBag",
+		FrameName = "SleepingBag",
 		PromptText = "Sleeping bag blueprint",
 	},
 	Shed = {
 		DisplayName = "SHED",
 		ButtonText = "Shed - 60kg of logs",
 		CostKg = 60,
-		AssetName = "Shed", -- Ajay's shed model, if present in Assets
-		FrameName = "Shed", -- PointFrames icon, if present
+		AssetName = "Shed",
+		FrameName = "Shed",
 		PromptText = "Shed blueprint",
 	},
 }
 Config.StructureOrder = { "Campfire", "SleepingBag", "Shed" }
-
 Config.Lighter = {
 	StartFuel = 100,
 	LightCost = 5,
 	AimRange = 12,
 }
-
 Config.Digging = {
 	Radius = 2.6,
 	Reach = 4,
@@ -202,21 +170,17 @@ Config.Digging = {
 	Cooldown = 0.35,
 	SafeRadius = 5,
 }
-
 Config.Tree = {
 	Health = 3,
 	ChopRange = 10,
 	ChopCooldown = 0.35,
 }
-
 Config.Log = {
 	PieceTargetLength = 7.5,
 	MaxPieces = 3,
 	BigTreeLength = 14,
 	BigPieceTargetLength = 5,
 	BigTreeMaxPieces = 5,
-	-- Burn value derives from weight, so thickness and length both
-	-- count: a fat log is more kilos and burns longer everywhere.
 	KgPerBurnUnit = 12.5,
 	WeightPerVolume = 2.5,
 	MaxWeight = 50,
@@ -226,20 +190,12 @@ Config.Log = {
 	DragMaxRise = 6,
 	DragHover = 1.1,
 }
-
--- Hotbar / build-menu ViewportFrame icons. The camera auto-frames
--- each model from its bounding box; these are the knobs if a model
--- sits wrong. Per-tool overrides: ViewportIcons.PerTool = {
---   Axe = { Yaw = -0.9, Pitch = 0.2, Zoom = 1.3 } } (angles radians;
---   Zoom > 1 = farther away).
 Config.ViewportIcons = {
 	Yaw = -0.65,
 	Pitch = 0.38,
 	Zoom = 1,
 	PerTool = {},
 }
-
--- Wolves: wild packs, taming, commands, the sled team.
 Config.Wolves = {
 	MaxHealth = 100,
 	LeaderMaxHealth = 160,
@@ -267,9 +223,6 @@ Config.Wolves = {
 	PacksToSpawn = 4,
 	PackMin = 2,
 	PackMax = 5,
-	-- Population scales with the day (Ajay): Day 1 is the
-	-- tutorial -- six wolves in pairs or alone. Day 2 the map
-	-- holds 16 in packs of 2-3. Day 3+ is the full world.
 	Population = {
 		{ Total = 6, PackMin = 1, PackMax = 2 },
 		{ Total = 16, PackMin = 2, PackMax = 3 },
@@ -281,10 +234,6 @@ Config.Wolves = {
 	AttackSeconds = 12,
 	AttackDamage = 10,
 	ModelYawOffset = 0,
-	-- Batch 1 wolf variants: Ajay builds these models in
-	-- ReplicatedStorage/Assets/Animals under these exact names.
-	-- Missing variants fall back to WolfModel. Level is the
-	-- variant's starting level; stronger stats = stronger wolf.
 	Variants = {
 		White_Wolf = { Health = 90, Bite = 7, SpeedMult = 1.08, Level = 1 },
 		Brown_Wolf = { Health = 110, Bite = 9, SpeedMult = 0.95, Level = 2 },
@@ -293,11 +242,6 @@ Config.Wolves = {
 		Grey_wolf = { Health = 95, Bite = 8, SpeedMult = 1.12, Level = 1 },
 	},
 	VariantOrder = { "White_Wolf", "Brown_Wolf", "black_wolf", "Black&White_wolf", "Grey_wolf" },
-	-- Batch 1 taming points: regular wolf needs 3 points.
-	-- CookedMeat 3 (1 item), CookedFish 1.5 (2 items),
-	-- RawMeat 1.5 (2 items), RawFish 1 (3 items).
-	-- Leader target is 1.5x, rounded up in items: 3 cooked
-	-- fish, 5 raw fish, 3 meat, 2 cooked meat.
 	TamePoints = 3,
 	TameFoodPoints = { CookedMeat = 3, CookedFish = 1.5, RawMeat = 1.5, RawFish = 1 },
 	LeaderTameMult = 1.5,
@@ -309,11 +253,6 @@ Config.Wolves = {
 	FleeHealthFrac = 0.25,
 	WolfFightRange = 20,
 }
-
--- Day 2 ice fishing. The rod arrives at Day 2 start (Weapons list,
--- Deferred). Axe hits crack a lake-ice cell open into a water hole;
--- the rod casts at a hole; a Fisch-style tap-in-the-zone reel game
--- lands the fish.
 Config.Fishing = {
 	IceWorkNeeded = 21,
 	AxeIceWork = 7,
@@ -332,22 +271,12 @@ Config.Fishing = {
 	ReelGainPerSecond = 26,
 	ReelLossPerSecond = 16,
 }
-
--- Phase 3: sleeping. Sleep rides out the night at a hunger
--- cost, keeps you warm in the bag, and cures sickness faster
--- (CureBoost multiplies the cure rate in SurvivalPlayer).
--- The first sleeping bag BUILT on a server grants +1 day
--- multiplier, once -- that is the design's sleeping-bag source.
 Config.Sleep = {
 	HungerPerSecond = 0.12,
 	WarmthBonus = 2.0,
 	CureBoost = 2,
 	SleepRange = 14,
 }
-
--- Phase 3: shelters. Built sheds and broken pre-placed
--- shelters both give a small warmth bonus inside their radius;
--- broken shelters carry loot crates (coins + a little food).
 Config.Shelters = {
 	WarmthRadius = 14,
 	WarmthBonus = 0.8,
@@ -356,10 +285,6 @@ Config.Shelters = {
 	LootCoinsMax = 25,
 	LootHunger = 8,
 }
-
--- Phase 3: pelts and fur. Every wild wolf kill drops pelts
--- (leader: 2, regular: 1). Three pelts craft one fur piece at
--- a lit fire; each piece cuts cold exposure loss by 15%.
 Config.Pelts = {
 	LeaderPelts = 2,
 	RegularPelts = 1,
@@ -370,13 +295,6 @@ Config.Pelts = {
 	CraftCooldown = 5,
 	SellPrice = 8,
 }
-
--- Phase 3: kids (child module under Animals). Three kids per
--- run; each rescue grants +1 day multiplier, once per kid.
--- Kids follow their rescuer, work on a cycle, and eat: every
--- EatInterval they take EatHunger from their owner's hunger
--- (shared camp food, setup abstraction -- real food items are
--- a slow-improve item). A hungry kid stops working until fed.
 Config.Kids = {
 	Count = 3,
 	MinDistance = 200,
@@ -388,12 +306,8 @@ Config.Kids = {
 	EatInterval = 240,
 	EatHunger = 2,
 	FeedHunger = 5,
-	TaskCycle = { "Wood", "Fish", "Stay", "Idle" }, -- panel tasks: wood, fishing, stay at campfire, idle
+	TaskCycle = { "Wood", "Fish", "Stay", "Idle" },
 }
-
--- Phase 3: merchant. Stock is limited and restocks every
--- 40 days (design). Prices are coins; medkits revive (see
--- Gameplay:ReviveWithMedkit -- death stays final otherwise).
 Config.Merchant = {
 	RestockDays = 40,
 	TradeRange = 14,
@@ -403,10 +317,6 @@ Config.Merchant = {
 		Medkit = { Price = 50, Stock = 3 },
 	},
 }
-
--- Phase 3: coal. A far-map deposit (layout.CoalSpot, 600+
--- studs out). Coal fed to a fire burns 3x longer than wood
--- and adds a warmth bonus while its coal fuel lasts.
 Config.Coal = {
 	Lumps = 5,
 	FuelSecondsPerUnit = 60,
@@ -416,14 +326,9 @@ Config.Coal = {
 	RespawnSeconds = 600,
 	Weight = 10,
 }
-
--- Batch 1 sack: Dead Rails style carry bag, 5 items max.
--- Stores logs, fish and meat as descriptors, not models,
--- so a full sack costs nothing while it is carried.
 Config.Sack = {
 	MaxItems = 5,
 }
-
 Config.Food = {
 	RawMeat = 15,
 	CookedMeat = 40,
@@ -434,9 +339,5 @@ Config.Food = {
 	CookedPieceHeal = 0.5,
 	CookSeconds = 5,
 }
-
--- Animations are owned by AnimationModule now (split out of
--- Config); this table is kept as a compatibility alias only.
 Config.Animations = require(script.Parent:WaitForChild("AnimationModule")).Player
-
 return Config

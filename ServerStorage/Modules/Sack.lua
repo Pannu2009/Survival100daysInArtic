@@ -1,41 +1,27 @@
--- Sack (Batch 1): Dead Rails style carry bag, 5 items max.
--- The player stores the item they are dragging (log, fish or
--- meat) and takes items back out, last in first out. Items are
--- stored as small descriptors, not models, so a full sack is
--- cheap. Taking an item respawns it in front of the player.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local DragSystem = require(Modules:WaitForChild("DragSystem"))
-
 local Sack = {}
 Sack.__index = Sack
-
 local function getLogPart(log)
 	return log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
 end
-
 local function getFishPart(fish)
 	return fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true)
 end
-
 function Sack.new(gameplay)
 	local self = setmetatable({}, Sack)
 	self.Gameplay = gameplay
-	self.Items = {} -- player -> array of descriptors
+	self.Items = {}
 	return self
 end
-
 function Sack:Count(player)
 	local list = self.Items[player]
 	return list and #list or 0
 end
-
 function Sack:_publish(player)
 	player:SetAttribute("SackCount", self:Count(player))
-	-- Net example: the client listens for UpdateInventory
-	-- and can refresh its HUD from this, instead of a
-	-- second remote per inventory change.
 	if self.Gameplay.Net then
 		local survival = self.Gameplay._survivals[player]
 		self.Gameplay.Net:SendToClient(player, "UpdateInventory", {
@@ -44,7 +30,6 @@ function Sack:_publish(player)
 		})
 	end
 end
-
 function Sack:Store(player)
 	local part = DragSystem.GetPlayerItem(player)
 	if not part then
@@ -79,7 +64,9 @@ function Sack:Store(player)
 		return
 	end
 	DragSystem.Stop(player, part)
-	if model then
+	if desc.Kind == "Meat" then
+		part:Destroy()
+	elseif model then
 		model:Destroy()
 	elseif part.Parent then
 		part:Destroy()
@@ -88,7 +75,6 @@ function Sack:Store(player)
 	self:_publish(player)
 	self.Gameplay:Notify(player, ("Sacked (%d/5)."):format(#list))
 end
-
 function Sack:Take(player)
 	local list = self.Items[player]
 	if not list or #list == 0 then
@@ -100,8 +86,9 @@ function Sack:Take(player)
 	if not root then
 		return
 	end
-	local desc = table.remove(list)
+	local desc = list[#list]
 	local pos = root.Position + root.CFrame.LookVector * 3
+	local spawned = false
 	if desc.Kind == "Log" then
 		local template = self.Gameplay.World.WoodLogTemplate
 		if template then
@@ -113,75 +100,50 @@ function Sack:Take(player)
 				log.Parent = self.Gameplay.LogsFolder
 				self.Gameplay.World:SnapPartToGround(log, logPart, pos.X, pos.Z)
 				self.Gameplay:AttachDragPrompt(log)
+				spawned = true
 			else
 				log:Destroy()
 			end
 		end
 	elseif desc.Kind == "Fish" then
-		local x, z = pos.X, pos.Z
-		self.Gameplay.Fish:Spawn(x, z)
-		-- Spawn is fire-and-forget; find the newest fish near
-		-- the player and restore its stored state.
-		local best, bestDist = nil, 999
-		for _, fish in ipairs(self.Gameplay.Fish.Folder:GetChildren()) do
-			local p = getFishPart(fish)
-			if p then
-				local d = (p.Position - pos).Magnitude
-				if d < bestDist then
-					best, bestDist = fish, d
-				end
-			end
-		end
-		if best then
-			-- Taming fix: a sack fish used to respawn with
-			-- NO LastDragger, so Animals:_tryTame ignored it
-			-- completely -- the wolf never ate sack food.
-			-- Stamp it like a dropped item, and hand its
-			-- physics back to auto ownership (the server
-			-- owned it at spawn; the wolf does not need a
-			-- player network owner to eat a static fish).
-			best:SetAttribute("LastDragger", player.UserId)
-			for _, part in ipairs(best:GetDescendants()) do
+		local fish = self.Gameplay.Fish:Spawn(pos.X, pos.Z)
+		if fish then
+			fish:SetAttribute("LastDragger", player.UserId)
+			for _, part in ipairs(fish:GetDescendants()) do
 				if part:IsA("BasePart") then
 					pcall(function() part:SetNetworkOwnershipAuto() end)
 				end
 			end
-			best:SetAttribute("Cooked", desc.Cooked)
-			best:SetAttribute("Pieces", desc.Pieces)
+			fish:SetAttribute("Cooked", desc.Cooked)
+			fish:SetAttribute("Pieces", desc.Pieces)
 			if desc.Cooked then
-				for _, p in ipairs(best:GetDescendants()) do
-					if p:IsA("BasePart") then
-						p.Color = Color3.fromRGB(198, 124, 56)
+				for _, part in ipairs(fish:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.Color = Color3.fromRGB(198, 124, 56)
 					end
 				end
 			end
+			spawned = true
 		end
 	elseif desc.Kind == "Meat" then
-		local meat = self.Gameplay.Meat:Spawn(pos.X, pos.Z, desc.Cooked)
-		if meat then
-			meat:SetAttribute("LastDragger", player.UserId)
-			pcall(function() meat:SetNetworkOwnershipAuto() end)
+		if self.Gameplay.Meat.Folder then
+			local meat = self.Gameplay.Meat:Spawn(pos.X, pos.Z, desc.Cooked)
+			if meat then
+				meat:SetAttribute("LastDragger", player.UserId)
+				pcall(function() meat:SetNetworkOwnershipAuto() end)
+				spawned = true
+			end
 		end
 	end
+	if not spawned then
+		self.Gameplay:Notify(player, "Could not take that item out -- it stays in your sack.")
+		return
+	end
+	table.remove(list)
 	self:_publish(player)
 	self.Gameplay:Notify(player, ("Took from sack (%d/5 left)."):format(#list))
 end
-
--- Feed support: peek at / pop the top sack item
--- WITHOUT respawning it, so Animals:Feed can eat
--- straight from the sack. Returns the descriptor.
-function Sack:PopTop(player)
-	local list = self.Items[player]
-	if not list or #list == 0 then
-		return nil
-	end
-	local desc = table.remove(list)
-	self:_publish(player)
-	return desc
-end
-
 function Sack:CleanupPlayer(player)
 	self.Items[player] = nil
 end
-
 return Sack

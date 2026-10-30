@@ -1,9 +1,7 @@
 local Modules = game:GetService("ReplicatedStorage"):WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local Seed = require(Modules:WaitForChild("Seed"))
-
 local WorldGen = {}
-
 local function place(rng, minDistance, maxDistance)
 	local angle = rng:Next() * math.pi * 2
 	local distance = rng:NextNumber(minDistance, maxDistance)
@@ -16,13 +14,11 @@ local function place(rng, minDistance, maxDistance)
 	end
 	return x, z
 end
-
 local function distanceTo(x1, z1, x2, z2)
 	local dx = x1 - x2
 	local dz = z1 - z2
 	return math.sqrt(dx * dx + dz * dz)
 end
-
 function WorldGen.Generate(seedString)
 	local master = Seed.new(seedString)
 	local world = Config.World
@@ -30,7 +26,6 @@ function WorldGen.Generate(seedString)
 	layout.SeedString = master.String
 	layout.WorldRadius = world.Radius
 	layout.Spawn = { X = 0, Z = 0 }
-
 	local rng = master:Fork("mountain")
 	local mountainX, mountainZ = place(rng, world.MountainMinDistance, world.MountainMaxDistance)
 	layout.Mountain = {
@@ -39,12 +34,7 @@ function WorldGen.Generate(seedString)
 		Radius = rng:NextNumber(world.MountainMinRadius, world.MountainMaxRadius),
 		Height = rng:NextNumber(world.MountainMinHeight, world.MountainMaxHeight),
 	}
-
 	rng = master:Fork("lake")
-	-- The lake and the mountain are the two biggest landmarks
-	-- and never checked each other: a seed could roll the lake
-	-- inside the mountain's footprint and carve a bowl through
-	-- solid rock. Retry placement until they clear each other.
 	local lakeRadius = rng:NextNumber(world.LakeMinRadius, world.LakeMaxRadius)
 	local lakeX, lakeZ = place(rng, world.LakeMinDistance, world.LakeMaxDistance)
 	for _try = 1, 12 do
@@ -60,7 +50,6 @@ function WorldGen.Generate(seedString)
 		Z = lakeZ,
 		Radius = lakeRadius,
 	}
-
 	rng = master:Fork("hills")
 	layout.Hills = {}
 	layout.BroadHills = {}
@@ -97,7 +86,6 @@ function WorldGen.Generate(seedString)
 			Height = rng:NextNumber(3, 4.5),
 		})
 	end
-
 	rng = master:Fork("peaks")
 	layout.Peaks = {}
 	for _ = 1, world.Peaks do
@@ -122,7 +110,6 @@ function WorldGen.Generate(seedString)
 			end
 		end
 	end
-
 	rng = master:Fork("ponds")
 	layout.Ponds = {}
 	for _ = 1, 10 do
@@ -145,7 +132,6 @@ function WorldGen.Generate(seedString)
 			end
 		end
 	end
-
 	rng = master:Fork("horizon")
 	layout.Horizon = {}
 	for i = 1, 14 do
@@ -159,7 +145,6 @@ function WorldGen.Generate(seedString)
 			Rot = rng:Next() * math.pi,
 		})
 	end
-
 	rng = master:Fork("tufts")
 	layout.Tufts = {}
 	for _ = 1, world.Tufts do
@@ -170,7 +155,6 @@ function WorldGen.Generate(seedString)
 			table.insert(layout.Tufts, { X = x, Z = z, R = rng:Next() * math.pi })
 		end
 	end
-
 	rng = master:Fork("forest")
 	layout.Trees = {}
 	for _ = 1, world.ForestClusters do
@@ -193,7 +177,6 @@ function WorldGen.Generate(seedString)
 			end
 		end
 	end
-
 	rng = master:Fork("cabins")
 	layout.Cabins = {}
 	local cabinCount = rng:NextInteger(world.CabinsMin, world.CabinsMax)
@@ -201,11 +184,9 @@ function WorldGen.Generate(seedString)
 		local x, z = place(rng, 150, world.Radius)
 		table.insert(layout.Cabins, { X = x, Z = z, Rotation = rng:NextNumber(0, 360) })
 	end
-
 	rng = master:Fork("coal")
 	local coalX, coalZ = place(rng, 600, world.Radius)
 	layout.CoalSpot = { X = coalX, Z = coalZ }
-
 	local mountain = layout.Mountain
 	local toSpawnX = -mountain.X
 	local toSpawnZ = -mountain.Z
@@ -214,8 +195,6 @@ function WorldGen.Generate(seedString)
 		X = mountain.X + (toSpawnX / toSpawnLength) * mountain.Radius * 0.55,
 		Z = mountain.Z + (toSpawnZ / toSpawnLength) * mountain.Radius * 0.55,
 	}
-
 	return layout
 end
-
 return WorldGen

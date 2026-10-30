@@ -1,19 +1,15 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
 local Lighting = game:GetService("Lighting")
-
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local FireEffect = require(Modules:WaitForChild("FireEffect"))
 local TerrainBuilder = require(script.Parent:WaitForChild("TerrainBuilder"))
-
-local NAVY = Color3.fromHex("0B1E2E") -- Frost Night base (see client)
+local NAVY = Color3.fromHex("0B1E2E")
 local SILVER = Color3.fromHex("DDE3E7")
 local MARIGOLD = Color3.fromHex("EAA000")
-
 local WorldBuilder = {}
 WorldBuilder.__index = WorldBuilder
-
 local function scaleModel(model, sx, sy, sz)
 	local pivot = model:GetPivot()
 	local factors = Vector3.new(sx, sy, sz)
@@ -26,7 +22,6 @@ local function scaleModel(model, sx, sy, sz)
 		end
 	end
 end
-
 function WorldBuilder.new(layout)
 	local self = setmetatable({}, WorldBuilder)
 	self.Layout = layout
@@ -46,7 +41,6 @@ function WorldBuilder.new(layout)
 	self._groundParams.FilterDescendantsInstances = { workspace:WaitForChild("Terrain") }
 	return self
 end
-
 function WorldBuilder:GroundY(x, z)
 	local result = workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0), self._groundParams)
 	if result then
@@ -54,7 +48,6 @@ function WorldBuilder:GroundY(x, z)
 	end
 	return 0
 end
-
 function WorldBuilder:SnapToGround(model, x, z)
 	local pivot = model:GetPivot()
 	model:PivotTo(CFrame.new(x, 0, z) * pivot.Rotation)
@@ -64,7 +57,6 @@ function WorldBuilder:SnapToGround(model, x, z)
 		model:PivotTo(model:GetPivot() + Vector3.new(0, dy, 0))
 	end
 end
-
 local function partBottomY(part)
 	local cf = part.CFrame
 	local half = part.Size / 2
@@ -81,7 +73,6 @@ local function partBottomY(part)
 	end
 	return minY
 end
-
 function WorldBuilder:SnapPartToGround(model, part, x, z)
 	local pivot = model:GetPivot()
 	model:PivotTo(CFrame.new(x, pivot.Position.Y, z) * pivot.Rotation)
@@ -90,19 +81,14 @@ function WorldBuilder:SnapPartToGround(model, part, x, z)
 		model:PivotTo(model:GetPivot() + Vector3.new(0, dy, 0))
 	end
 end
-
--- Warmth is per-fire now: any lit, fueled fire warms its radius.
 function WorldBuilder:WarmthRateAt(position)
 	for _, fire in ipairs(self.Fires) do
 		if fire.Lit and fire.Fuel > 0 then
-			-- Phase 3 coal: while coal fuel lasts, this fire
-			-- warms harder than a wood fire (see AddCoal).
 			local rate = Config.Campfire.WarmthRate
 			if (fire.CoalFuel or 0) > 0 then
 				rate += Config.Coal.WarmthBonus
 			end
 			if fire.WarmthPart then
-				-- The FireBox volume is the warmth area when present.
 				local p = fire.WarmthPart.CFrame:PointToObjectSpace(position)
 				local s = fire.WarmthPart.Size
 				if math.abs(p.X) <= s.X / 2
@@ -124,9 +110,6 @@ function WorldBuilder:WarmthRateAt(position)
 	end
 	return nil
 end
-
--- True when a point sits within `radius` of any fire or blueprint
--- (digging protection, blueprint spacing).
 function WorldBuilder:IsNearStructure(x, z, radius)
 	local function near(position)
 		local dx = x - position.X
@@ -145,29 +128,20 @@ function WorldBuilder:IsNearStructure(x, z, radius)
 	end
 	return false
 end
-
 function WorldBuilder:FireRadius(_fire)
 	return Config.Campfire.WarmthRadius
 end
-
 function WorldBuilder:TerrainRaycastDown(x, z)
 	return workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0), self._groundParams)
 end
-
--- Credit a fire with burned fuel (physical feeding via AddWoodBox).
 function WorldBuilder:AddFuel(fire, burnUnits)
 	fire.Fuel += burnUnits * Config.Campfire.FuelPerBurnUnit
 	self:_refreshFireVisual(fire)
 end
-
--- Phase 3 coal: a coal piece fed to a fire adds long
--- fuel (60s/unit vs wood's 20s) and the coal warmth bonus
--- in WarmthRateAt while it lasts. Called by Coal:FeedFire.
 function WorldBuilder:AddCoal(fire, burnUnits)
 	fire.CoalFuel = (fire.CoalFuel or 0) + burnUnits * Config.Coal.FuelSecondsPerUnit
 	self:_refreshFireVisual(fire)
 end
-
 function WorldBuilder:_refreshFireVisual(fire)
 	local burning = fire.Lit and fire.Fuel > 0
 	if fire.Fire then
@@ -185,12 +159,10 @@ function WorldBuilder:_refreshFireVisual(fire)
 		fire.LightPrompt.Enabled = not burning and fire.Fuel > 0
 	end
 end
-
 function WorldBuilder:TickFire(dt)
 	for _, fire in ipairs(self.Fires) do
 		if fire.Lit and fire.Fuel > 0 then
 			fire.Fuel = math.max(0, fire.Fuel - dt)
-			-- Coal fuel burns alongside wood fuel, only while lit.
 			if (fire.CoalFuel or 0) > 0 then
 				fire.CoalFuel = math.max(0, fire.CoalFuel - dt)
 			end
@@ -201,19 +173,15 @@ function WorldBuilder:TickFire(dt)
 		self:_refreshFireVisual(fire)
 	end
 end
-
 function WorldBuilder:Build()
 	local layout = self.Layout
-
 	if Config.World.GenerateTerrain then
 		TerrainBuilder.Build(layout)
 	end
-
 	local baseplate = workspace:FindFirstChild("Baseplate")
 	if baseplate then
 		baseplate:Destroy()
 	end
-
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
 	self.TreeTemplate = assets and assets:FindFirstChild("Tree")
 	self.GrassTemplate = assets and assets:FindFirstChild("Grass")
@@ -235,49 +203,32 @@ function WorldBuilder:Build()
 	else
 		warn("[Arctic] Assets.BonFire not found - campfire stays code-built")
 	end
-
 	self:_plantTrees()
 	self:_plantTufts()
 	self:_placeHorizon()
 	self:_placeLakeSign()
-	-- No fixed campfire anymore: players build their own from
-	-- blueprints (open-world direction, 2026-10-22).
 end
-
--- Arctic grass tufts: two crossed frost-straw wedges poking
--- through the snow. Pure dressing -- the client sways them in
--- the wind (they are anchored and weightless to the server).
 function WorldBuilder:_plantTufts()
 	local folder = Instance.new("Folder")
 	folder.Name = "Tufts"
 	folder.Parent = workspace
 	self.TuftsFolder = folder
-
 	local seedText = self.Layout.SeedString or "arctic"
 	local seedNum = 7
 	for i = 1, #seedText do
 		seedNum = (seedNum * 31 + string.byte(seedText, i)) % 100000
 	end
 	local rng = Random.new(seedNum + 41)
-	-- Chunked planting: 420 tufts with terrain snaps
-	-- used to run in one long synchronous loop. In
-	-- chunks of 32 with a yield between, server start
-	-- no longer freezes on grass. Order and RNG
-	-- sequence are unchanged.
 	local tuftSpots = self.Layout.Tufts or {}
 	for chunkStart = 1, #tuftSpots, 32 do
 	for chunkIdx = chunkStart, math.min(chunkStart + 31, #tuftSpots) do
 		local spot = tuftSpots[chunkIdx]
 		if self.GrassTemplate and self.GrassTemplate:IsA("BasePart") then
-			-- Ajay's grass: one white MeshPart, cloned at varied
-			-- sizes. It sways in the wind from the client.
 			local grass = self.GrassTemplate:Clone()
 			grass.Name = "Grass"
 			grass.Anchored = true
 			grass.CanCollide = false
 			grass.CanQuery = false
-			-- One uniform size for every clone, normalized by
-			-- the template's height: tufts stand ~1.1 studs.
 			local s = 1.1 / math.max(grass.Size.Y, 0.1)
 			grass.Size = grass.Size * s
 			grass.Parent = folder
@@ -305,15 +256,6 @@ function WorldBuilder:_plantTufts()
 		task.wait()
 	end
 end
-
--- Frozen Lake sign: a BillboardGui in the air over the
--- lake, so a player who cannot find the lake in the
--- whole map can follow it. Size 25x15 as asked.
--- Visibility is NOT server-side: the client toggles
--- this sign's Enabled per player, only when they are
--- more than 100 studs from the lake's edge (see
--- SurvivalClient). Close to the lake it hides, so
--- it never blocks the view while you fish.
 function WorldBuilder:_placeLakeSign()
 	local lake = self.Layout.Lake
 	if not lake then
@@ -350,17 +292,14 @@ function WorldBuilder:_placeLakeSign()
 	label.TextStrokeColor3 = Color3.fromHex("0B1E2E")
 	label.Parent = gui
 end
-
 function WorldBuilder:_plantTrees()
 	local treesFolder = Instance.new("Folder")
 	treesFolder.Name = "Trees"
 	treesFolder.Parent = workspace
 	self.TreesFolder = treesFolder
-
 	if not self.TreeTemplate then
 		return
 	end
-
 	for _, spot in ipairs(self.Layout.Trees) do
 		local model = self.TreeTemplate:Clone()
 		model.Name = "Tree"
@@ -377,15 +316,10 @@ function WorldBuilder:_plantTrees()
 		self:SnapToGround(model, spot.X, spot.Z)
 	end
 end
-
--- Horizon silhouettes: a ring of rock pyramids with snow caps
--- beyond the playable edge, so the world ends in mountains
--- instead of void. Pure dressing, non-collidable.
 function WorldBuilder:_placeHorizon()
 	local folder = Instance.new("Folder")
 	folder.Name = "Horizon"
 	folder.Parent = workspace
-
 	local function pyramid(width, height, color, material)
 		local part = Instance.new("Part")
 		part.Size = Vector3.new(width, height, width)
@@ -399,7 +333,6 @@ function WorldBuilder:_placeHorizon()
 		mesh.Parent = part
 		return part
 	end
-
 	for _, spot in ipairs(self.Layout.Horizon or {}) do
 		local rock = pyramid(spot.Width, spot.Height, Color3.fromRGB(104, 116, 134), Enum.Material.Slate)
 		rock.CFrame = CFrame.new(spot.X, spot.Height / 2 - 8, spot.Z) * CFrame.Angles(0, spot.Rot, 0)
@@ -410,18 +343,12 @@ function WorldBuilder:_placeHorizon()
 		cap.Parent = folder
 	end
 end
-
 function WorldBuilder:_createFire(x, z)
 	local campfire
 	local fireCore
 	local groundY = self:GroundY(x, z)
 	local emitters = {}
-
 	if self.BonfireTemplate then
-		-- Ajay's BonFire model is the campfire visual. The game owns
-		-- the fire state, so bundled scripts are stripped, every part
-		-- is anchored, and an invisible Core anchor at the model's
-		-- center carries the prompts, billboard, and fire state.
 		campfire = self.BonfireTemplate:Clone()
 		campfire.Name = "Campfire"
 		for _, obj in ipairs(campfire:GetDescendants()) do
@@ -433,8 +360,6 @@ function WorldBuilder:_createFire(x, z)
 		end
 		campfire.Parent = workspace
 		CollectionService:AddTag(campfire, "ArcticFire")
-		-- Streaming: a campfire must never stream out
-		-- while a player is warming by it.
 		if campfire:IsA("Model") then
 			pcall(function()
 				campfire.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
@@ -443,7 +368,6 @@ function WorldBuilder:_createFire(x, z)
 		if campfire:IsA("Model") then
 			self:SnapToGround(campfire, x, z)
 		end
-
 		local center = Vector3.new(x, groundY, z)
 		if campfire:IsA("Model") then
 			center = campfire:GetBoundingBox().Position
@@ -464,7 +388,6 @@ function WorldBuilder:_createFire(x, z)
 		fireCore.CanCollide = false
 		fireCore.CanTouch = false
 		fireCore.Parent = campfire
-
 		for _, obj in ipairs(campfire:GetDescendants()) do
 			if obj:IsA("ParticleEmitter") then
 				table.insert(emitters, obj)
@@ -473,7 +396,6 @@ function WorldBuilder:_createFire(x, z)
 	else
 		campfire = Instance.new("Model")
 		campfire.Name = "Campfire"
-
 		fireCore = Instance.new("Part")
 		fireCore.Name = "Core"
 		fireCore.Size = Vector3.new(3, 1, 3)
@@ -484,26 +406,17 @@ function WorldBuilder:_createFire(x, z)
 		fireCore.Parent = campfire
 		campfire.Parent = workspace
 	end
-
 	local fire = {
 		Model = campfire,
 		Core = fireCore,
-		-- A built fire carries starter fuel from its construction
-		-- wood, so the lighter works on it right away; feeding logs
-		-- is how it stays alive after that.
 		Fuel = Config.Campfire.BuildFuelSeconds,
 		Lit = false,
 		Emitters = emitters,
 		GroundY = groundY,
 	}
-
-	-- Ajay's utils.Fire emitter is the fire visual now: clone
-	-- it onto the core and let _refreshFireVisual toggle it
-	-- with Lit/Fuel, like the BonFire emitters above.
 	for _, emitter in ipairs(FireEffect.AttachFire(fireCore)) do
 		table.insert(fire.Emitters, emitter)
 	end
-	-- Legacy Fire object only if utils.Fire was not found.
 	local flame = nil
 	if #fire.Emitters == 0 then
 		flame = campfire:FindFirstChildOfClass("Fire", true)
@@ -515,7 +428,6 @@ function WorldBuilder:_createFire(x, z)
 		end
 	end
 	fire.Fire = flame
-
 	local fireLight = fireCore:FindFirstChildOfClass("PointLight")
 		or campfire:FindFirstChildOfClass("PointLight", true)
 	if not fireLight then
@@ -526,17 +438,12 @@ function WorldBuilder:_createFire(x, z)
 		fireLight.Parent = fireCore
 	end
 	fire.Light = fireLight
-
-	-- Feeding is physical: burnable items that land in the model's
-	-- AddWoodBox are consumed as this fire's fuel (Gameplay watches
-	-- the box every tick).
 	local addBox = campfire:FindFirstChild("AddWoodBox", true)
 	if addBox and addBox:IsA("BasePart") then
 		addBox.CanCollide = false
 		addBox.CanTouch = false
 		fire.AddBox = addBox
 	end
-
 	local lightPrompt = Instance.new("ProximityPrompt")
 	lightPrompt.ActionText = "Light with lighter"
 	lightPrompt.ObjectText = "Campfire"
@@ -550,7 +457,6 @@ function WorldBuilder:_createFire(x, z)
 		end
 	end)
 	fire.LightPrompt = lightPrompt
-
 	local radius = self:FireRadius(fire)
 	local ring = Instance.new("Part")
 	ring.Name = "WarmthRing"
@@ -567,11 +473,6 @@ function WorldBuilder:_createFire(x, z)
 	ring.Transparency = 0.93
 	ring.Parent = campfire
 	fire.Ring = ring
-
-	-- Ajay's FireBox rides on every built fire: FeelsWarmth becomes
-	-- the volume players feel warmth in (sized to the fire's warm
-	-- radius), CookingPart is the zone food cooks in, stretched to
-	-- fit a full log. Both are invisible logic volumes in game.
 	if self.FireBoxTemplate then
 		local box = self.FireBoxTemplate:Clone()
 		for _, obj in ipairs(box:GetDescendants()) do
@@ -580,7 +481,6 @@ function WorldBuilder:_createFire(x, z)
 			end
 		end
 		box.Parent = campfire
-
 		local warmthPart = box:FindFirstChild("FeelsWarmth", true)
 		if warmthPart and warmthPart:IsA("BasePart") then
 			warmthPart.Anchored = true
@@ -593,7 +493,6 @@ function WorldBuilder:_createFire(x, z)
 			warmthPart.CFrame = CFrame.new(fireCore.Position.X, groundY + h / 2, fireCore.Position.Z)
 			fire.WarmthPart = warmthPart
 		end
-
 		local cookingPart = box:FindFirstChild("CookingPart", true)
 		if cookingPart and cookingPart:IsA("BasePart") then
 			cookingPart.Anchored = true
@@ -614,14 +513,12 @@ function WorldBuilder:_createFire(x, z)
 			fire.CookingPart = cookingPart
 		end
 	end
-
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "CampfireGui"
 	billboard.Size = UDim2.fromOffset(170, 62)
 	billboard.StudsOffset = Vector3.new(0, 3.6, 0)
 	billboard.MaxDistance = 70
 	billboard.Parent = fireCore
-
 	local bg = Instance.new("Frame")
 	bg.Size = UDim2.fromScale(1, 1)
 	bg.BackgroundColor3 = NAVY
@@ -631,7 +528,6 @@ function WorldBuilder:_createFire(x, z)
 	local bgCorner = Instance.new("UICorner")
 	bgCorner.CornerRadius = UDim.new(0, 8)
 	bgCorner.Parent = bg
-
 	local title = Instance.new("TextLabel")
 	title.Size = UDim2.new(1, -12, 0, 20)
 	title.Position = UDim2.fromOffset(6, 4)
@@ -643,7 +539,6 @@ function WorldBuilder:_createFire(x, z)
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.Parent = bg
 	fire.Title = title
-
 	local track = Instance.new("Frame")
 	track.Size = UDim2.new(1, -12, 0, 10)
 	track.Position = UDim2.fromOffset(6, 28)
@@ -654,7 +549,6 @@ function WorldBuilder:_createFire(x, z)
 	local trackCorner = Instance.new("UICorner")
 	trackCorner.CornerRadius = UDim.new(0, 5)
 	trackCorner.Parent = track
-
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.fromScale(0, 1)
 	fill.BackgroundColor3 = MARIGOLD
@@ -664,7 +558,6 @@ function WorldBuilder:_createFire(x, z)
 	fillCorner.CornerRadius = UDim.new(0, 5)
 	fillCorner.Parent = fill
 	fire.Fill = fill
-
 	local state = Instance.new("TextLabel")
 	state.Size = UDim2.new(1, -12, 0, 16)
 	state.Position = UDim2.fromOffset(6, 42)
@@ -676,16 +569,10 @@ function WorldBuilder:_createFire(x, z)
 	state.TextXAlignment = Enum.TextXAlignment.Left
 	state.Parent = bg
 	fire.State = state
-
 	table.insert(self.Fires, fire)
 	self:_refreshFireVisual(fire)
 	return fire
 end
-
--- A placed blueprint: a ghost of a structure players fill
--- with logs (the structure's CostKg) until it completes. The
--- structure def comes from Config.Structures -- the campfire
--- is the first entry, not a hardcoded special case.
 function WorldBuilder:PlaceBlueprint(x, z, structureId)
 	structureId = structureId or "Campfire"
 	local def = Config.Structures[structureId]
@@ -700,9 +587,6 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 		return nil
 	end
 	local groundY = self:GroundY(x, z)
-
-	-- Ghost template: the campfire uses the cached BonFire
-	-- asset; other structures look their asset up by name.
 	local template = self.BonfireTemplate
 	if structureId ~= "Campfire" then
 		local assets = ReplicatedStorage:FindFirstChild("Assets")
@@ -739,12 +623,11 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 		marker.CanCollide = false
 		marker.CanQuery = false
 		marker.Material = Enum.Material.SmoothPlastic
-		marker.Color = Color3.fromHex("7FE7F2") -- Frost Night: blueprint marker is not fire
+		marker.Color = Color3.fromHex("7FE7F2")
 		marker.Transparency = 0.5
 		marker.Parent = model
 		model.Parent = workspace
 	end
-
 	local core = Instance.new("Part")
 	core.Name = "BlueprintCore"
 	core.Size = Vector3.new(2, 2, 2)
@@ -754,7 +637,6 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 	core.CanCollide = false
 	core.CanTouch = false
 	core.Parent = model
-
 	local bp = {
 		Model = model,
 		Core = core,
@@ -764,7 +646,6 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 		StructureId = structureId,
 		CostKg = def.CostKg,
 	}
-
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Add log"
 	prompt.ObjectText = def.PromptText
@@ -783,14 +664,12 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 			end
 		end
 	end)
-
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "BlueprintGui"
 	billboard.Size = UDim2.fromOffset(170, 40)
 	billboard.StudsOffset = Vector3.new(0, 4, 0)
 	billboard.MaxDistance = 70
 	billboard.Parent = core
-
 	local bg = Instance.new("Frame")
 	bg.Size = UDim2.fromScale(1, 1)
 	bg.BackgroundColor3 = NAVY
@@ -800,7 +679,6 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 	local bgCorner = Instance.new("UICorner")
 	bgCorner.CornerRadius = UDim.new(0, 8)
 	bgCorner.Parent = bg
-
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(1, -12, 1, 0)
 	label.Position = UDim2.fromOffset(6, 0)
@@ -812,11 +690,9 @@ function WorldBuilder:PlaceBlueprint(x, z, structureId)
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.Parent = bg
 	bp.Label = label
-
 	table.insert(self.Blueprints, bp)
 	return bp
 end
-
 function WorldBuilder:CompleteBlueprint(bp)
 	for i, other in ipairs(self.Blueprints) do
 		if other == bp then
@@ -827,9 +703,6 @@ function WorldBuilder:CompleteBlueprint(bp)
 	if bp.Model then
 		bp.Model:Destroy()
 	end
-	-- What a completed blueprint BECOMES: the campfire turns
-	-- into a fire here; Phase 3 structures complete through
-	-- OnBlueprintBuilt branches in Gameplay instead.
 	local fire = nil
 	if bp.StructureId == nil or bp.StructureId == "Campfire" then
 		fire = self:_createFire(bp.Position.X, bp.Position.Z)
@@ -839,16 +712,6 @@ function WorldBuilder:CompleteBlueprint(bp)
 	end
 	return fire
 end
-
--- Phase 3 structures, built from a completed blueprint.
--- Asset-first, never re-authored: if Ajay's model exists in
--- ReplicatedStorage/Assets under the registry's AssetName it
--- is cloned (scripts stripped, parts anchored); otherwise a
--- clearly-marked code placeholder stands in so the system is
--- playable and testable until he drops the real model in.
--- Returns the model and an invisible anchor part that owning
--- modules hang their prompts on. `broken` tilts a shed and
--- marks it, for pre-placed broken shelters in the wild.
 function WorldBuilder:CreateStructure(structureId, x, z, broken)
 	local def = Config.Structures[structureId]
 	if not def then
@@ -876,9 +739,6 @@ function WorldBuilder:CreateStructure(structureId, x, z, broken)
 		end
 		print(("[Arctic] %s uses Assets.%s"):format(structureId, def.AssetName))
 	else
-		-- Placeholder, on purpose: one labelled model so the
-		-- structure is real in-game, not a silent no-op. Ajay's
-		-- model replaces it by name, no code change needed.
 		model = Instance.new("Model")
 		model.Name = structureId .. "PLACEHOLDER"
 		if structureId == "SleepingBag" then
@@ -892,7 +752,6 @@ function WorldBuilder:CreateStructure(structureId, x, z, broken)
 			bag.Color = Color3.fromRGB(58, 15, 52)
 			bag.Parent = model
 		else
-			-- Shed placeholder: floor, two walls, a roof.
 			local floor = Instance.new("Part")
 			floor.Name = "PLACEHOLDER_ShedFloor"
 			floor.Size = Vector3.new(8, 0.4, 6)
@@ -922,7 +781,6 @@ function WorldBuilder:CreateStructure(structureId, x, z, broken)
 		warn(("[Arctic] Assets.%s not found - %s is a placeholder"):format(def.AssetName, structureId))
 	end
 	if broken then
-		-- A broken shed in the wild: knocked over, not pristine.
 		local pivot = model:GetPivot()
 		model:PivotTo(pivot * CFrame.Angles(0, 0, 0.15))
 		model:SetAttribute("Broken", true)
@@ -939,11 +797,7 @@ function WorldBuilder:CreateStructure(structureId, x, z, broken)
 	anchor.Parent = model
 	return model, anchor
 end
-
 function WorldBuilder:UpdateState(clock, temperature)
-	-- Wind: strength follows the weather with a two-sine gust
-	-- envelope; direction veers slowly. Published (rounded) for
-	-- the client's blowing snow and sway.
 	do
 		local weather = temperature:GetWeather()
 		local base = weather == "Blizzard" and 0.95 or weather == "Storm" and 0.55 or 0.22
@@ -958,7 +812,6 @@ function WorldBuilder:UpdateState(clock, temperature)
 			ReplicatedStorage:SetAttribute("WindDir", dir)
 		end
 	end
-
 	local progress = clock:GetPhaseProgress()
 	local timeOfDay
 	if clock:GetPhase() == "Day" then
@@ -970,10 +823,6 @@ function WorldBuilder:UpdateState(clock, temperature)
 		end
 	end
 	Lighting.ClockTime = timeOfDay
-
-	-- Realism pass (one-time): cold air haze, a touch of sun
-	-- glare, and a slight cool grade over everything. Per-phase
-	-- brightness/ambient below still owns the day-night feel.
 	if not Lighting:FindFirstChild("ArcticAtmosphere") then
 		local atmosphere = Instance.new("Atmosphere")
 		atmosphere.Name = "ArcticAtmosphere"
@@ -996,16 +845,12 @@ function WorldBuilder:UpdateState(clock, temperature)
 		grade.TintColor = Color3.fromRGB(238, 244, 255)
 		grade.Parent = Lighting
 	end
-
-	-- Brightness and ambient follow the sun: full daylight at
-	-- midday, properly dark at night, smooth fades between.
 	local daylight = math.clamp(1 - math.abs(timeOfDay - 12.5) / 6.5, 0, 1)
 	Lighting.Brightness = Config.DayCycle.NightBrightness
 		+ daylight * (Config.DayCycle.DayBrightness - Config.DayCycle.NightBrightness)
 	local ambient = Color3.fromRGB(16, 20, 38):Lerp(Color3.fromRGB(135, 145, 160), daylight)
 	Lighting.Ambient = ambient
 	Lighting.OutdoorAmbient = ambient
-
 	local published = self._publishedWorld
 	local function publish(name, value)
 		if published[name] ~= value then
@@ -1015,8 +860,6 @@ function WorldBuilder:UpdateState(clock, temperature)
 	end
 	publish("Day", clock:GetDay())
 	publish("Phase", clock:GetPhase())
-	-- Server timestamp of the next phase switch, set every tick so
-	-- clients can time animations to land exactly on the switch.
 	ReplicatedStorage:SetAttribute("PhaseEndsAt", workspace:GetServerTimeNow() + clock:GetSecondsLeft())
 	publish("Multiplier", clock:GetMultiplier())
 	publish("Weather", temperature:GetWeather())
@@ -1049,5 +892,4 @@ function WorldBuilder:UpdateState(clock, temperature)
 	end
 	publish("LitFires", litCount)
 end
-
 return WorldBuilder

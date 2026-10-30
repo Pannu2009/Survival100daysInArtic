@@ -1,19 +1,8 @@
--- LobbyTag: the days-survived tag above a player's head.
--- Source object (built in Studio, NOT in this repo):
---   ReplicatedStorage.utils.DSLT
--- On join, DSLT is cloned onto the player's head and its
--- TextLabel's Text is set to the days survived (Treasury
--- DaySurvived, or the DaysSurvived attribute in Studio).
--- If DSLT is missing, this prints a warning and does
--- nothing -- it never errors a join.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Treasury = require(script.Parent:WaitForChild("Treasury"))
-
 local LobbyTag = {}
 local tags = {}
-
 local function findTextLabel(instance)
 	if not instance then
 		return nil
@@ -27,7 +16,6 @@ local function findTextLabel(instance)
 	end
 	return instance:FindFirstChildWhichIsA("TextLabel", true)
 end
-
 function LobbyTag.TagPlayer(player)
 	local template = nil
 	local utils = ReplicatedStorage:FindFirstChild("utils")
@@ -54,8 +42,6 @@ function LobbyTag.TagPlayer(player)
 	else
 		warn("[LobbyTag] DSLT has no TextLabel -- tag cloned but text not set")
 	end
-	-- DSLT is expected to be a BillboardGui (Adornee = head).
-	-- If it is a Model/Folder holding one, attach that instead.
 	local gui = clone:IsA("BillboardGui") and clone or clone:FindFirstChildWhichIsA("BillboardGui", true)
 	if gui then
 		gui.Adornee = head
@@ -67,7 +53,6 @@ function LobbyTag.TagPlayer(player)
 	end
 	return tags[player]
 end
-
 function LobbyTag.Update(player)
 	local tag = tags[player]
 	if not tag then
@@ -78,7 +63,6 @@ function LobbyTag.Update(player)
 		label.Text = tostring(Treasury.DaysFor(player))
 	end
 end
-
 function LobbyTag.Start()
 	Players.PlayerAdded:Connect(function(player)
 		LobbyTag.TagPlayer(player)
@@ -95,5 +79,4 @@ function LobbyTag.Start()
 		end)
 	end
 end
-
 return LobbyTag

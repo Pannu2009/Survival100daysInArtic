@@ -2,13 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-
 local player = Players.LocalPlayer
--- Single-place setup: in a lobby server, do NOT build the
--- survival HUD and do NOT wait for game remotes (they never
--- exist in lobby mode). Wait briefly for the server's
--- ServerMode attribute; no attribute yet = game (fallback,
--- so old servers and early Studio joins still work).
 local serverMode = ReplicatedStorage:GetAttribute("ServerMode")
 for _ = 1, 30 do
 	if serverMode ~= nil then
@@ -17,8 +11,6 @@ for _ = 1, 30 do
 	task.wait(0.1)
 	serverMode = ReplicatedStorage:GetAttribute("ServerMode")
 end
--- Camera (client-side, same rule as the server): lobby
--- Classic, game LockFirstPerson.
 pcall(function()
 	player.DevComputerCameraMode = serverMode == "Lobby"
 		and Enum.DevComputerCameraMode.Classic
@@ -30,9 +22,6 @@ pcall(function()
 		or Enum.DevTouchCameraMode.LockFirstPerson
 end)
 if serverMode == "Lobby" then
-	-- Lobby client: wire the host queue GUI the server
-	-- creates (size buttons + Create -> QueueHostCreate).
-	-- This runs instead of the survival HUD in lobby mode.
 	task.spawn(function()
 		local playerGui = player:WaitForChild("PlayerGui")
 		local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -100,10 +89,6 @@ local eatRemote = remotes:WaitForChild("EatFish")
 local eatMeatRemote = remotes:WaitForChild("EatMeat", 10)
 local Net = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Network"))
 Net:InitClient()
--- Frozen Lake sign: per-player visibility. The sign
--- lives in workspace, but Enabled toggled here only
--- affects this client, so each player sees it only
--- when THEY are far from the lake.
 task.spawn(function()
 	local sign = workspace:WaitForChild("LakeSignAnchor", 10)
 	if not sign then
@@ -126,12 +111,6 @@ task.spawn(function()
 		task.wait(0.5)
 	end
 end)
--- Server-triggered sounds (FireIgnite, CookFish,
--- WolfHowl at night / Alert): one Net packet, no
--- new remote per sound. Names match SoundService
--- Folder exactly: AxeSwing, CookFish, EatFish, Equip,
--- FireGoing, FireIgnite, WolfHowl, Heart, UI_Click,
--- UI_Hover (screenshot, 2026-10-29).
 Net:ListenToServer("PlaySound", function(itemData)
 	if itemData and typeof(itemData.Sound) == "string" then
 		SoundModule.PlayService(itemData.Sound)
@@ -144,25 +123,15 @@ Net:ListenToServer("UpdateInventory", function(itemData)
 end)
 local openBuildMenuRemote = remotes:WaitForChild("OpenBuildMenu")
 local placeBlueprintRemote = remotes:WaitForChild("PlaceBlueprint")
-
-local NAVY = Color3.fromHex("0B1E2E") -- Frost Night base: deep navy panels/backgrounds
-local CYAN = Color3.fromHex("7FE7F2") -- Frost Night cold accent: glacier cyan
+local NAVY = Color3.fromHex("0B1E2E")
+local CYAN = Color3.fromHex("7FE7F2")
 local SILVER = Color3.fromHex("DDE3E7")
 local MARIGOLD = Color3.fromHex("EAA000")
-
 local gui = Instance.new("ScreenGui")
 gui.Name = "SurvivalHUD"
 gui.ResetOnSpawn = false
--- ZIndex layering: every GUI in one stack, so
--- buttons never hide under panels and the wheel
--- never hides under the HUD. Sibling mode means
--- ZIndex is compared only within this ScreenGui.
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.DisplayOrder = 10
--- Ajay's Studio GUIs (RadialGui, DeathGui, ColdGui)
--- are not code-created, so their order is set here
--- when they appear in PlayerGui, and for any that
--- already exist at script start.
 local function orderAjayGui(child)
 	if child.Name == "RadialGui" then
 		child.DisplayOrder = 50
@@ -185,9 +154,6 @@ if playerGuiEarly then
 	playerGuiEarly.ChildAdded:Connect(orderAjayGui)
 end
 gui.Parent = player:WaitForChild("PlayerGui")
-
--- Freezing overlay: fades in over the screen as this player's
--- warmth runs out (client-only effect).
 local frost = Instance.new("Frame")
 frost.Name = "Frost"
 frost.Size = UDim2.fromScale(1, 1)
@@ -195,7 +161,6 @@ frost.BackgroundColor3 = Color3.fromRGB(174, 216, 240)
 frost.BackgroundTransparency = 1
 frost.BorderSizePixel = 0
 frost.Parent = gui
-
 local function makeLabel(parent, text, size, position, color, textSize)
 	local label = Instance.new("TextLabel")
 	label.BackgroundTransparency = 1
@@ -209,7 +174,6 @@ local function makeLabel(parent, text, size, position, color, textSize)
 	label.Parent = parent
 	return label
 end
-
 local function addStroke(parent, color, thickness, transparency)
 	local stroke = Instance.new("UIStroke")
 	stroke.Color = color
@@ -219,11 +183,6 @@ local function addStroke(parent, color, thickness, transparency)
 	stroke.Parent = parent
 	return stroke
 end
-
--- Glassy shine: a thin white strip across the top of a panel.
--- Studio has no true backdrop blur, so this + lighter strokes +
--- more transparency is the Studio version of glass. Added before
--- the panel's labels, so text stays on top of the shine.
 local function addGloss(parent)
 	local shine = Instance.new("Frame")
 	shine.Name = "Gloss"
@@ -239,16 +198,12 @@ local function addGloss(parent)
 	corner.Parent = shine
 	return shine
 end
-
-
--- Day counter: flush with the top center of the screen, plain
--- white text with a thin black stroke.
 local dayBanner = Instance.new("TextLabel")
 dayBanner.Name = "DayBanner"
 dayBanner.BackgroundTransparency = 1
 dayBanner.AnchorPoint = Vector2.new(0.5, 0)
 dayBanner.Position = UDim2.new(0.5, 0, 0, 0)
-dayBanner.Size = UDim2.new(0.6, 0, 0, 34) -- Frost Night batch 1: Scale width so the banner never clips on narrow phones
+dayBanner.Size = UDim2.new(0.6, 0, 0, 34)
 dayBanner.Text = "Day: 1"
 dayBanner.TextColor3 = Color3.new(1, 1, 1)
 dayBanner.TextSize = 24
@@ -262,15 +217,9 @@ dayStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
 dayStroke.Parent = dayBanner
 local dayScale = Instance.new("UIScale")
 dayScale.Parent = dayBanner
-
 local function dayText(day)
 	return "Day: " .. tostring(day)
 end
-
--- Smooth day switch: the animation starts ~2 seconds BEFORE the
--- switch (timed off the server's PhaseEndsAt stamp), eases the
--- banner up while the night ends, the number flips at the switch
--- itself, then it settles back over the next ~1.6 seconds.
 local dayAnimActive = false
 local function animateDaySwitch(secondsLeft)
 	if dayAnimActive then
@@ -285,8 +234,6 @@ local function animateDaySwitch(secondsLeft)
 		)
 		up:Play()
 		up.Completed:Wait()
-		-- The flip happens in refreshWorld when the Day attribute
-		-- lands; give it a beat at the peak before settling.
 		task.wait(0.25)
 		local down = TweenService:Create(
 			dayScale,
@@ -298,7 +245,6 @@ local function animateDaySwitch(secondsLeft)
 		dayAnimActive = false
 	end)
 end
-
 task.spawn(function()
 	while true do
 		task.wait(0.1)
@@ -313,15 +259,12 @@ task.spawn(function()
 		end
 	end
 end)
-
 local sickLabel = makeLabel(gui, "SICK", UDim2.fromOffset(80, 22), UDim2.new(1, -96, 0, 46), MARIGOLD, 16)
 sickLabel.TextXAlignment = Enum.TextXAlignment.Right
 sickLabel.Visible = false
-
--- Day 1 objective banner (top center).
 local objectivePanel = Instance.new("Frame")
 objectivePanel.Name = "ObjectivePanel"
-objectivePanel.Size = UDim2.new(0.42, 40, 0, 30) -- Frost Night batch 1: Scale width (+40px floor so the text fits)
+objectivePanel.Size = UDim2.new(0.42, 40, 0, 30)
 objectivePanel.AnchorPoint = Vector2.new(0.5, 0)
 objectivePanel.Position = UDim2.new(0.5, 0, 0, 50)
 objectivePanel.BackgroundColor3 = NAVY
@@ -335,17 +278,12 @@ addStroke(objectivePanel, SILVER, 1, 0.35)
 addGloss(objectivePanel)
 local objectiveLabel = makeLabel(objectivePanel, "Day 1: Fell a tree", UDim2.new(1, -12, 1, 0), UDim2.fromOffset(6, 0), SILVER, 13)
 objectiveLabel.TextXAlignment = Enum.TextXAlignment.Center
-
 local OBJECTIVES = {
 	"Day 1: Fell a tree",
 	"Day 1: Dig a snow shelter",
 	"Day 1: Build a campfire (blueprint stick)",
 	"Day 1: Light the campfire with your lighter",
 }
-
--- Stat bars (Ajay's layout): each stat gets its OWN frame.
--- Health sits flush top-right where Roblox's health bar usually
--- lives; Warmth and Hunger are small frames stacked mid-left.
 local function makeStatFrame(name, size, position, anchorPoint)
 	local frame = Instance.new("Frame")
 	frame.Name = name
@@ -363,7 +301,6 @@ local function makeStatFrame(name, size, position, anchorPoint)
 	addGloss(frame)
 	return frame
 end
-
 local function makeBar(parent, name)
 	local frameH = parent.Size.Y.Offset
 	local statLabel = makeLabel(parent, name, UDim2.fromOffset(58, 16), UDim2.fromOffset(8, (frameH - 16) / 2), SILVER, 12)
@@ -388,34 +325,18 @@ local function makeBar(parent, name)
 	fillCorner.Parent = fill
 	return fill
 end
-
 local healthFrame = makeStatFrame("HealthFrame", UDim2.new(0.22, 40, 0, 36), UDim2.new(1, -6, 0, 3), Vector2.new(1, 0))
 local healthFill = makeBar(healthFrame, "Health")
 local warmthFrame = makeStatFrame("WarmthFrame", UDim2.new(0.18, 40, 0, 28), UDim2.new(0, 8, 0.42, 0), Vector2.new(0, 0))
--- Why warmth is moving, in words, right under the bar.
 local warmthWhy = makeLabel(gui, "", UDim2.new(0.18, 40, 0, 14), UDim2.new(0, 14, 0.42, 31), SILVER, 11)
 warmthWhy.ZIndex = 20
 warmthWhy.TextXAlignment = Enum.TextXAlignment.Left
 local warmthFill = makeBar(warmthFrame, "Warmth")
 local hungerFrame = makeStatFrame("HungerFrame", UDim2.new(0.18, 40, 0, 28), UDim2.new(0, 8, 0.42, 48), Vector2.new(0, 0))
 local hungerFill = makeBar(hungerFrame, "Hunger")
-
-
--- Stats HUD (Coins only): no leaderstats, no Pelts / Fur /
--- Medkits / Kids readout. The server publishes Coins as a
--- player attribute (Stats, not a leaderboard) and this only
--- READS it -- no new remote, no poll. Updated in refreshPlayer,
--- which already runs on player.AttributeChanged.
 local walletFrame = makeStatFrame("WalletFrame", UDim2.new(0.22, 40, 0, 24), UDim2.new(1, -6, 0, 45), Vector2.new(1, 0))
 local walletLine1 = makeLabel(walletFrame, "Coins: 0", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 3), CYAN, 12)
 walletLine1.TextXAlignment = Enum.TextXAlignment.Center
-
--- Kids panel: one row per rescued kid, from the server's
--- KidPanel attribute ("Name|Task|AssignedBy;..."). No
--- leaderstats, no Pelts/Fur/Medkit readout here either.
--- ASSIGN-TASK opens the task menu: Get Wood / Go Fishing /
--- Stay at Campfire / Idle. Kid index in panel order = kid Id
--- (Arzh=1, Noor=2, Veer=3, spawn order on the server).
 local kidAssignRemote = remotes:WaitForChild("KidAssignTask")
 local kidsPanel = makeStatFrame("KidsPanel", UDim2.new(0.30, 40, 0, 30), UDim2.new(0, 8, 0.42, 114), Vector2.new(0, 0))
 kidsPanel.Visible = false
@@ -539,11 +460,6 @@ local function rebuildKidsPanel()
 end
 player:GetAttributeChangedSignal("KidPanel"):Connect(rebuildKidsPanel)
 rebuildKidsPanel()
-
--- Wind pill (Frost Night batch 1, client-only): reads the wind
--- the server already publishes on ReplicatedStorage (WindDir /
--- WindStrength, used by the blowing-snow dressing). Compass is an
--- approximation from that published angle, not a new simulation.
 local windFrame = makeStatFrame("WindFrame", UDim2.new(0.18, 40, 0, 26), UDim2.new(0, 8, 0.42, 82), Vector2.new(0, 0))
 local windLabel = makeLabel(windFrame, "Wind --", UDim2.new(1, -8, 0, 18), UDim2.fromOffset(4, 4), CYAN, 12)
 windLabel.TextXAlignment = Enum.TextXAlignment.Center
@@ -558,14 +474,10 @@ end
 ReplicatedStorage:GetAttributeChangedSignal("WindDir"):Connect(refreshWind)
 ReplicatedStorage:GetAttributeChangedSignal("WindStrength"):Connect(refreshWind)
 refreshWind()
-
--- Lighter fuel: a small pill floating just over the hotbar,
--- visible only while the lighter is in hand.
 local lighterFuelPill = makeStatFrame("LighterFuel", UDim2.new(0.14, 40, 0, 26), UDim2.new(0.5, 0, 1, -118), Vector2.new(0.5, 0))
 lighterFuelPill.Visible = false
 local lighterFuelLabel = makeLabel(lighterFuelPill, "Fuel: 100", UDim2.new(1, 0, 1, 0), UDim2.fromOffset(0, 0), SILVER, 13)
 lighterFuelLabel.TextXAlignment = Enum.TextXAlignment.Center
-
 local sprintButton = Instance.new("TextButton")
 sprintButton.Name = "SprintButton"
 sprintButton.Size = UDim2.fromOffset(72, 72)
@@ -578,15 +490,10 @@ sprintButton.TextSize = 17
 sprintButton.Font = Enum.Font.GothamBold
 sprintButton.BorderSizePixel = 0
 sprintButton.Parent = gui
-
 local sprintCorner = Instance.new("UICorner")
 sprintCorner.CornerRadius = UDim.new(0.5, 0)
 sprintCorner.Parent = sprintButton
 addStroke(sprintButton, NAVY, 1.5, 0.25)
-
--- Context action: appears while a dragged log hovers over the sled's
--- cargo zone. Tappable on touch, clickable on PC, key-bound per
--- platform (E on keyboard, X on gamepad).
 local storeButton = Instance.new("TextButton")
 storeButton.Name = "StoreButton"
 storeButton.Size = UDim2.fromOffset(72, 72)
@@ -598,17 +505,14 @@ storeButton.AutoButtonColor = true
 storeButton.BorderSizePixel = 0
 storeButton.Visible = false
 storeButton.Parent = gui
-
 local storeCorner = Instance.new("UICorner")
 storeCorner.CornerRadius = UDim.new(0.5, 0)
 storeCorner.Parent = storeButton
 addStroke(storeButton, NAVY, 1.5, 0.25)
-
 local storeTitle = makeLabel(storeButton, "STORE ITEM", UDim2.new(1, -8, 0, 22), UDim2.fromOffset(4, 6), NAVY, 15)
 storeTitle.TextXAlignment = Enum.TextXAlignment.Center
 local storeHint = makeLabel(storeButton, "", UDim2.fromOffset(100, 14), UDim2.new(0.5, -50, 1, 2), SILVER, 11)
 storeHint.TextXAlignment = Enum.TextXAlignment.Center
-
 local canStore = false
 local function tryStore()
 	if canStore and storeRemote then
@@ -616,9 +520,6 @@ local function tryStore()
 	end
 end
 storeButton.Activated:Connect(tryStore)
-
--- Eat fish button: same contextual pattern as Store — appears
--- while dragging a fish or standing near one.
 local eatButton = Instance.new("TextButton")
 eatButton.Name = "EatButton"
 eatButton.Size = UDim2.fromOffset(72, 72)
@@ -639,9 +540,6 @@ addStroke(eatButton, NAVY, 1.5, 0.25)
 local eatHint = makeLabel(eatButton, "tap", UDim2.fromOffset(100, 14), UDim2.new(0.5, -50, 1, 2), SILVER, 11)
 eatHint.TextXAlignment = Enum.TextXAlignment.Center
 eatHint.Visible = false
-
--- Batch 1 sack button: stores the dragged item (max 5) or
--- takes the last sacked item back out.
 local sackButton = Instance.new("TextButton")
 sackButton.Name = "SackButton"
 sackButton.Size = UDim2.fromOffset(72, 72)
@@ -659,24 +557,13 @@ sackCorner.CornerRadius = UDim.new(0.5, 0)
 sackCorner.Parent = sackButton
 addStroke(sackButton, NAVY, 1.5, 0.25)
 sackButton.Activated:Connect(function()
-	-- myDragPartRef is the global accessor (defined later in
-	-- this file, like the grab button uses) -- myDragPart
-	-- itself is a local declared after this button.
 	if myDragPartRef and myDragPartRef() then
 		Net:SendToServer("SackAction", { Action = "Store" })
 	else
 		Net:SendToServer("SackAction", { Action = "Take" })
 	end
 end)
-
--- Grab / Drop button: ONE context button for dragging. It shows
--- GRAB while the center dot is on a draggable item and the hands
--- are empty; while carrying it shows DROP (and only DROP -- you
--- can't grab a second thing). Replaces the per-item prompts.
 local dragActionRemote = remotes:WaitForChild("DragAction")
--- FEED button: direct wolf feeding, no drop-and-hope.
--- Server (Animals:Feed) takes food from the sack
--- first, then from what you are dragging.
 local feedButton = Instance.new("TextButton")
 feedButton.Name = "FeedButton"
 feedButton.Size = UDim2.fromOffset(72, 72)
@@ -715,9 +602,6 @@ grabCorner.CornerRadius = UDim.new(0.5, 0)
 grabCorner.Parent = grabButton
 addStroke(grabButton, NAVY, 1.5, 0.25)
 local grabTarget = nil
--- Dedicated DROP: while dragging this button is the drop control.
--- Fallback Drop even if myDragPart tracking missed (the fish bug):
--- the server drops whatever item this player holds, by GetPlayerItem.
 local dropButton = Instance.new("TextButton")
 dropButton.Name = "DropButton"
 dropButton.Size = UDim2.fromOffset(72, 72)
@@ -744,11 +628,9 @@ grabButton.Activated:Connect(function()
 	elseif grabTarget then
 		dragActionRemote:FireServer("Grab", grabTarget)
 	else
-		-- Stuck-drag fallback: server drops the player's held item.
 		dragActionRemote:FireServer("Drop")
 	end
 end)
-
 local eatTarget = nil
 local function tryEat()
 	if not eatTarget then
@@ -762,11 +644,9 @@ local function tryEat()
 	end
 end
 eatButton.Activated:Connect(tryEat)
-
--- Build menu (blueprint stick) + campfire placement mode.
 local buildMenu = Instance.new("Frame")
 buildMenu.Name = "BuildMenu"
-buildMenu.Size = UDim2.new(0.42, 40, 0, 200) -- Frost Night batch 1: Scale width, centered by anchor
+buildMenu.Size = UDim2.new(0.42, 40, 0, 200)
 buildMenu.AnchorPoint = Vector2.new(0.5, 0.5)
 buildMenu.Position = UDim2.new(0.5, 0, 0.5, 0)
 buildMenu.BackgroundColor3 = NAVY
@@ -781,11 +661,7 @@ addStroke(buildMenu, SILVER, 1, 0.3)
 addGloss(buildMenu)
 local buildTitle = makeLabel(buildMenu, "BUILD", UDim2.new(1, -16, 0, 24), UDim2.fromOffset(8, 8), SILVER, 17)
 buildTitle.TextXAlignment = Enum.TextXAlignment.Center
-
--- One button per buildable structure, generated from
--- Config.Structures (Phase 3: new structures appear here by
--- adding a registry entry -- no menu code changes).
-local startPlacing -- forward-declared; defined with the ghost below
+local startPlacing
 local selectedStructure = "Campfire"
 local structureButtons = 0
 for _, structureId in ipairs(Config.StructureOrder) do
@@ -815,7 +691,6 @@ for _, structureId in ipairs(Config.StructureOrder) do
 		end)
 	end
 end
-
 local buildIconHolder = Instance.new("Frame")
 buildIconHolder.Name = "BuildIconHolder"
 buildIconHolder.Size = UDim2.new(0.33, 0, 0, 100)
@@ -823,7 +698,6 @@ buildIconHolder.Position = UDim2.new(0.62, 0, 0, 42)
 buildIconHolder.BackgroundTransparency = 1
 buildIconHolder.BorderSizePixel = 0
 buildIconHolder.Parent = buildMenu
-
 buildMenu.Size = UDim2.new(0.42, 40, 0, 42 + structureButtons * 52 + 52)
 local buildCloseButton = Instance.new("TextButton")
 buildCloseButton.Size = UDim2.new(1, -24, 0, 34)
@@ -842,15 +716,12 @@ buildCloseCorner.Parent = buildCloseButton
 buildCloseButton.Activated:Connect(function()
 	buildMenu.Visible = false
 end)
-
 openBuildMenuRemote.OnClientEvent:Connect(function()
 	buildMenu.Visible = true
 end)
-
 local placing = false
 local aimPosition = nil
 local buildGhost = nil
-
 local placeButton = Instance.new("TextButton")
 placeButton.Name = "PlaceButton"
 placeButton.Size = UDim2.fromOffset(150, 50)
@@ -867,7 +738,6 @@ local placeCorner = Instance.new("UICorner")
 placeCorner.CornerRadius = UDim.new(0, 12)
 placeCorner.Parent = placeButton
 addStroke(placeButton, NAVY, 1.5, 0.25)
-
 local cancelPlaceButton = Instance.new("TextButton")
 cancelPlaceButton.Name = "CancelPlaceButton"
 cancelPlaceButton.Size = UDim2.fromOffset(110, 50)
@@ -885,7 +755,6 @@ local cancelPlaceCorner = Instance.new("UICorner")
 cancelPlaceCorner.CornerRadius = UDim.new(0, 12)
 cancelPlaceCorner.Parent = cancelPlaceButton
 addStroke(cancelPlaceButton, NAVY, 1.5, 0.4)
-
 local function stopPlacing()
 	placing = false
 	placeButton.Visible = false
@@ -894,7 +763,6 @@ local function stopPlacing()
 		buildGhost.Parent = nil
 	end
 end
-
 startPlacing = function()
 	buildMenu.Visible = false
 	if not buildGhost then
@@ -907,7 +775,7 @@ startPlacing = function()
 		buildGhost.CanQuery = false
 		buildGhost.CanTouch = false
 		buildGhost.Material = Enum.Material.SmoothPlastic
-		buildGhost.Color = CYAN -- Frost Night: placement preview is not fire, so not marigold
+		buildGhost.Color = CYAN
 		buildGhost.Transparency = 0.45
 	end
 	buildGhost.Parent = workspace
@@ -915,7 +783,6 @@ startPlacing = function()
 	placeButton.Visible = true
 	cancelPlaceButton.Visible = true
 end
-
 cancelPlaceButton.Activated:Connect(stopPlacing)
 placeButton.Activated:Connect(function()
 	if aimPosition then
@@ -923,7 +790,6 @@ placeButton.Activated:Connect(function()
 	end
 	stopPlacing()
 end)
-
 local hotbar = Instance.new("Frame")
 hotbar.Name = "Hotbar"
 hotbar.Size = UDim2.fromOffset(302, 56)
@@ -932,13 +798,11 @@ hotbar.BackgroundColor3 = NAVY
 hotbar.BackgroundTransparency = 0.18
 hotbar.BorderSizePixel = 0
 hotbar.Parent = gui
-
 local hotbarCorner = Instance.new("UICorner")
 hotbarCorner.CornerRadius = UDim.new(0, 12)
 hotbarCorner.Parent = hotbar
 addStroke(hotbar, SILVER, 1, 0.35)
 addGloss(hotbar)
-
 local inputMode = "Keyboard"
 local function toggleTool(toolName)
 	local character = player.Character
@@ -957,12 +821,10 @@ local function toggleTool(toolName)
 		SoundModule.PlayService("Equip")
 	end
 end
-
 local MAX_SLOTS = 10
 local TOOL_ORDER = { "Axe", "Shovel", "Blueprint", "Lighter", "FishingRod" }
 local slotPool = {}
 local slotTools = {}
-
 local function slotHintFor(index)
 	if inputMode == "Keyboard" then
 		return tostring(index % 10)
@@ -971,12 +833,6 @@ local function slotHintFor(index)
 	end
 	return ""
 end
-
--- ViewportFrame icons: clone a tool's parts into a WorldModel,
--- center them on the origin from the bounding box, and frame them
--- with an auto-fit camera. Ajay tunes angles in Config.ViewportIcons
--- (per-tool overrides there) -- background stays transparent so the
--- slot's own color shows through.
 local function buildIconModel(source)
 	local model = Instance.new("Model")
 	local any = false
@@ -1006,7 +862,6 @@ local function buildIconModel(source)
 	model:PivotTo(CFrame.new(pivot.Position - cf.Position) * (pivot - pivot.Position))
 	return model
 end
-
 local function setViewportIcon(vpf, source, iconName)
 	local oldWorld = vpf:FindFirstChildOfClass("WorldModel")
 	if oldWorld then
@@ -1046,7 +901,6 @@ local function setViewportIcon(vpf, source, iconName)
 	camera.Parent = vpf
 	vpf.CurrentCamera = camera
 end
-
 local function makePoolSlot(index)
 	local slot = Instance.new("TextButton")
 	slot.Text = ""
@@ -1086,9 +940,6 @@ end
 for i = 1, MAX_SLOTS do
 	makePoolSlot(i)
 end
-
--- The tools the player owns, canonical order first (the game's
--- tool list), then anything else they picked up, alphabetical.
 local function ownedTools()
 	local owned = {}
 	local seen = {}
@@ -1122,12 +973,6 @@ local function ownedTools()
 	end
 	return ordered
 end
-
--- Ajay's hand-framed icons live in ReplicatedStorage/PointFrames,
--- named "<Tool>Frame" or just "<Tool>" (AxeFrame, Campfire,
--- FishingRod, LighterFrame...). A slot clones its tool's frame
--- when the tool arrives and destroys it when the slot changes --
--- nothing is created ahead of time.
 local function findPointFrame(name)
 	local folder = ReplicatedStorage:FindFirstChild("PointFrames")
 	if not folder then
@@ -1144,7 +989,6 @@ local function findPointFrame(name)
 	end
 	return nil
 end
-
 local function setSlotIcon(entry, toolName)
 	for _, child in ipairs(entry.Icon:GetChildren()) do
 		child:Destroy()
@@ -1161,7 +1005,6 @@ local function setSlotIcon(entry, toolName)
 	clone.Position = UDim2.fromOffset(0, 0)
 	clone.Parent = entry.Icon
 end
-
 local function refreshHotbar()
 	local owned = ownedTools()
 	local character = player.Character
@@ -1192,11 +1035,9 @@ local function refreshHotbar()
 		end
 	end
 end
-
 local hotbarBackpack = player:WaitForChild("Backpack")
 hotbarBackpack.ChildAdded:Connect(refreshHotbar)
 hotbarBackpack.ChildRemoved:Connect(refreshHotbar)
-
 local function hookCharacter(character)
 	character.ChildAdded:Connect(refreshHotbar)
 	character.ChildRemoved:Connect(refreshHotbar)
@@ -1206,13 +1047,6 @@ if player.Character then
 	hookCharacter(player.Character)
 end
 player.CharacterAdded:Connect(hookCharacter)
-
--- Blueprint menu icon, created ONLY while the menu is open and
--- destroyed when it closes (Ajay's optimization rule). Preferred
--- source: his hand-framed ViewportFrames in
--- ReplicatedStorage/PointFrames, named after the structure
--- ("Campfire"). Fallback: an auto-framed viewport of the Assets
--- model.
 local buildIconLive = nil
 local function clearBuildIcon()
 	if buildIconLive then
@@ -1260,12 +1094,6 @@ buildMenu:GetPropertyChangedSignal("Visible"):Connect(function()
 		clearBuildIcon()
 	end
 end)
-
--- Coughs: the server bumps a player's CoughCount attribute
--- when he coughs (sickness). Show a "*cough!*" tag over his
--- head briefly; if a Sound named "Cough" is ever added to
--- SoundService it plays too -- asset-optional, like the
--- wolves' AttackAnim hook.
 local SoundService = game:GetService("SoundService")
 local Debris = game:GetService("Debris")
 local function showCough(anyPlayer)
@@ -1307,10 +1135,6 @@ for _, anyPlayer in ipairs(Players:GetPlayers()) do
 	watchCoughs(anyPlayer)
 end
 Players.PlayerAdded:Connect(watchCoughs)
-
--- Platform control modes: the HUD and bindings follow the input the
--- player is actually using and switch live when it changes (touch
--- buttons on mobile, keys on PC, gamepad buttons on console).
 local function detectMode()
 	local last = UserInputService:GetLastInputType()
 	if last == Enum.UserInputType.Touch then
@@ -1329,7 +1153,6 @@ local function detectMode()
 	end
 	return "Keyboard"
 end
-
 local function applyMode()
 	inputMode = detectMode()
 	sprintButton.Visible = inputMode == "Touch"
@@ -1339,7 +1162,6 @@ local function applyMode()
 end
 UserInputService.LastInputTypeChanged:Connect(applyMode)
 applyMode()
-
 local isSprinting = false
 local function setSprint(value)
 	if value == isSprinting then
@@ -1348,7 +1170,6 @@ local function setSprint(value)
 	isSprinting = value
 	setSprinting:FireServer(value)
 end
-
 sprintButton.MouseButton1Down:Connect(function()
 	setSprint(true)
 end)
@@ -1358,7 +1179,6 @@ end)
 sprintButton.MouseLeave:Connect(function()
 	setSprint(false)
 end)
-
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then
 		return
@@ -1407,23 +1227,16 @@ UserInputService.InputEnded:Connect(function(input)
 		setSprint(false)
 	end
 end)
-
 local dayShown = nil
 local function refreshWorld()
 	local day = ReplicatedStorage:GetAttribute("Day") or 1
-	-- The number flips exactly at the switch; the smooth scale
-	-- animation around it is timed separately off PhaseEndsAt.
 	dayBanner.Text = dayText(day)
 	dayShown = day
 end
-
 local function setBar(fill, value, maxValue)
 	local fraction = math.clamp((value or maxValue) / maxValue, 0, 1)
 	fill.Size = UDim2.fromScale(fraction, 1)
 end
-
--- Toasts: small event lines under the day banner (fish caught,
--- fish cooked, wolf tamed, warnings). They stack, sit ~3s, fade.
 local TweenService = game:GetService("TweenService")
 local toastHolder = Instance.new("Frame")
 toastHolder.Name = "Toasts"
@@ -1438,7 +1251,6 @@ toastLayout.FillDirection = Enum.FillDirection.Vertical
 toastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 toastLayout.Padding = UDim.new(0, 5)
 toastLayout.Parent = toastHolder
-
 local function toast(text)
 	local labels = {}
 	for _, child in ipairs(toastHolder:GetChildren()) do
@@ -1478,8 +1290,6 @@ local function toast(text)
 	end)
 end
 remotes:WaitForChild("Notify").OnClientEvent:Connect(toast)
-
--- Danger: a red edge pulse + label while a wolf is hunting you.
 local dangerFrame = Instance.new("Frame")
 dangerFrame.Name = "DangerFrame"
 dangerFrame.Size = UDim2.fromScale(1, 1)
@@ -1500,12 +1310,10 @@ local dangerStroke2 = Instance.new("UIStroke")
 dangerStroke2.Color = Color3.new(0, 0, 0)
 dangerStroke2.Thickness = 1.2
 dangerStroke2.Parent = dangerLabel
-
 local heartSound = nil
 local fireGoingSound = nil
 local lastColdWarn = 0
 local lastFoodWarn = 0
-
 local function refreshPlayer()
 	setBar(healthFill, player:GetAttribute("Health"), Config.Survival.MaxHealth)
 	setBar(warmthFill, player:GetAttribute("Warmth"), Config.Survival.MaxWarmth)
@@ -1515,12 +1323,6 @@ local function refreshPlayer()
 	else
 		frost.BackgroundTransparency = 1
 	end
-	-- Heart: below 40% health, Heart loops, faster as
-	-- health falls, LINEAR as asked: 40% -> speed 1,
-	-- 20% -> speed 2, 0% -> speed 3. Sound is
-	-- SoundService.Folder.Heart (screenshot), not
-	-- UI_Heart -- the old name found nothing, so the
-	-- heart never played.
 	local healthNow = player:GetAttribute("Health") or Config.Survival.MaxHealth
 	local playerGui = player:FindFirstChild("PlayerGui")
 	if playerGui then
@@ -1537,8 +1339,6 @@ local function refreshPlayer()
 		elseif heartSound and heartSound.IsPlaying then
 			heartSound:Stop()
 		end
-		-- FireGoing: loop while you are by a fire
-		-- (server WarmState), stop when you leave it.
 		local warmStateNow = player:GetAttribute("WarmState")
 		if warmStateNow == "By the fire" then
 			if not fireGoingSound or not fireGoingSound.Parent then
@@ -1550,15 +1350,10 @@ local function refreshPlayer()
 		elseif fireGoingSound and fireGoingSound.IsPlaying then
 			fireGoingSound:Stop()
 		end
-		-- DeathGui: Enabled on death, button wiring lands later.
 		local deathGui = playerGui:FindFirstChild("DeathGui")
 		if deathGui then
 			deathGui.Enabled = healthNow <= 0
 		end
-		-- ColdGui: your Bottom/Left/Right/Top frames + Image.
-		-- Only transparencies are touched -- your UIGradients
-		-- keep their shape. Warmth >= 35 = invisible, warmth 0
-		-- = most visible (0.3 transparency on frames/image).
 		local coldGui = playerGui:FindFirstChild("ColdGui")
 		if coldGui then
 			local coldness = math.clamp((35 - warmthNow) / 35, 0, 1)
@@ -1575,7 +1370,6 @@ local function refreshPlayer()
 	setBar(hungerFill, player:GetAttribute("Hunger"), Config.Survival.MaxHunger)
 	local hungerNow = player:GetAttribute("Hunger") or Config.Survival.MaxHunger
 	hungerFill.BackgroundColor3 = hungerNow <= 10 and Color3.fromRGB(214, 48, 43) or CYAN
-	-- Warmth reason + danger + the two loud warnings (cooldowned).
 	local warmState = player:GetAttribute("WarmState") or ""
 	warmthWhy.Text = warmState
 	warmthWhy.TextColor3 = warmState == "Freezing" and Color3.fromRGB(255, 90, 80)
@@ -1598,8 +1392,6 @@ local function refreshPlayer()
 	end
 	lighterFuelLabel.Text = "Fuel: " .. tostring(player:GetAttribute("LighterFuel") or 0)
 	walletLine1.Text = ("Coins: %d"):format(player:GetAttribute("Coins") or 0)
-	-- The tutorial ends the moment the campfire is lit (step 5):
-	-- the banner goes away for good.
 	local tutorialStep = player:GetAttribute("TutorialStep") or 1
 	objectivePanel.Visible = tutorialStep < 5
 	if tutorialStep < 5 then
@@ -1608,16 +1400,10 @@ local function refreshPlayer()
 	sickLabel.Visible = player:GetAttribute("IsSick") == true
 	refreshHotbar()
 end
-
 ReplicatedStorage.AttributeChanged:Connect(refreshWorld)
 player.AttributeChanged:Connect(refreshPlayer)
 refreshWorld()
 refreshPlayer()
-
--- Wolf command buttons (bottom-left circles): appear once you
--- own a wolf. The active mode is marigold. ATTACK sends where
--- your center dot is pointing; your dogs charge the animal
--- nearest that spot.
 local wolfCommandRemote = remotes:WaitForChild("WolfCommand")
 local wolfButtons = {}
 for i, mode in ipairs({ "Follow", "Wander", "Alert", "Attack" }) do
@@ -1658,16 +1444,6 @@ for i, mode in ipairs({ "Follow", "Wander", "Alert", "Attack" }) do
 	end)
 	wolfButtons[mode] = b
 end
-
-
--- Wolf radial wheel (Ark-style): Studio-built
--- StarterGui.RadialGui -> WolfRadial (runtime copy in
--- PlayerGui.RadialGui). Wedges are ImageLabels "1".."6",
--- each with a Label child; Center holds the centre label.
--- Hold the whistle button to open, move pointer/finger
--- to pick, release to fire. Behaviour opens a 3-way
--- submenu (Passive / Neutral / Attack) after a short
--- hover, so one hold can reach it.
 local radialRunService = game:GetService("RunService")
 local radialPlayerGui = player:FindFirstChild("PlayerGui")
 local radialScreen = radialPlayerGui and radialPlayerGui:FindFirstChild("RadialGui")
@@ -1685,7 +1461,6 @@ local radialSubmenu = false
 local radialHoverSince = 0
 local radialPointer = nil
 local radialScale = nil
-
 local whistleButton = Instance.new("TextButton")
 whistleButton.Name = "WolfWhistle"
 whistleButton.Size = UDim2.fromOffset(56, 56)
@@ -1703,10 +1478,6 @@ local whistleCorner = Instance.new("UICorner")
 whistleCorner.CornerRadius = UDim.new(0.5, 0)
 whistleCorner.Parent = whistleButton
 addStroke(whistleButton, NAVY, 1.5, 0.5)
-
--- Ark Mobile's Last Function button, adapted: re-issues the
--- last wolf command/behaviour with one tap, so you rarely
--- need the wheel twice in a row.
 local repeatButton = Instance.new("TextButton")
 repeatButton.Name = "WolfRepeat"
 repeatButton.Size = UDim2.fromOffset(56, 56)
@@ -1724,9 +1495,6 @@ local repeatCorner = Instance.new("UICorner")
 repeatCorner.CornerRadius = UDim.new(0.5, 0)
 repeatCorner.Parent = repeatButton
 addStroke(repeatButton, NAVY, 1.5, 0.5)
--- ZIndex within SurvivalHUD: action buttons above
--- stat frames, wolf buttons above action buttons,
--- so nothing clickable hides under a panel.
 for _, name in ipairs({ "SprintButton", "StoreButton", "EatButton", "SackButton", "GrabButton", "DropButton", "FeedButton" }) do
 	local b = gui:FindFirstChild(name)
 	if b then
@@ -1762,7 +1530,6 @@ repeatButton.Activated:Connect(function()
 		wolfCommandRemote:FireServer(radialLastAction.mode, nil)
 	end
 end)
-
 local function radialTryWire()
 	if radialFound or not wolfRadial then
 		return radialFound
@@ -1807,20 +1574,15 @@ local function radialTryWire()
 	end
 	return true
 end
-
 local function radialDisplay(w)
 	if radialSubmenu then
 		return w.subName or w.mainName
 	end
 	return w.mainName
 end
-
 local function radialApplySelection()
 	for _, w in ipairs(radialWedges) do
 		if w.wedge:IsA("ImageLabel") and w.wedge.Visible then
-			-- Selected = solid (0), default = faded (0.5).
-			-- A selected value of 1 would hide the wedge
-			-- entirely, so it is not used here.
 			local target = (w == radialSelected) and 0 or 0.5
 			TweenService:Create(w.wedge, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { ImageTransparency = target }):Play()
 		end
@@ -1835,7 +1597,6 @@ local function radialApplySelection()
 		end
 	end
 end
-
 local function radialEnterSubmenu()
 	if radialSubmenu then
 		return
@@ -1854,7 +1615,6 @@ local function radialEnterSubmenu()
 	end
 	radialApplySelection()
 end
-
 local function radialExitSubmenu()
 	if not radialSubmenu then
 		return
@@ -1869,7 +1629,6 @@ local function radialExitSubmenu()
 	end
 	radialApplySelection()
 end
-
 local function radialUpdateSelection()
 	if not radialHolding or not radialFound or not radialPointer then
 		return
@@ -1910,7 +1669,6 @@ local function radialUpdateSelection()
 		radialEnterSubmenu()
 	end
 end
-
 local function radialOpen()
 	if not radialFound then
 		return
@@ -1936,7 +1694,6 @@ local function radialOpen()
 		TweenService:Create(radialScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 	end
 end
-
 local function radialClose(fire)
 	if not radialHolding then
 		return
@@ -1973,15 +1730,10 @@ local function radialClose(fire)
 	end
 	radialExitSubmenu()
 end
-
 whistleButton.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		radialTouchHolding = input.UserInputType == Enum.UserInputType.Touch
-		-- Input.Position is a Vector3; the wheel math is Vector2.
 		radialPointer = Vector2.new(input.Position.X, input.Position.Y)
-		-- Ark tap-vs-hold: a quick tap must not flash the
-		-- wheel open and closed. Only open after 0.25s held;
-		-- a release before that is just a tap, no wheel.
 		radialPressing = true
 		radialPressToken = radialPressToken + 1
 		local token = radialPressToken
@@ -1992,13 +1744,6 @@ whistleButton.InputBegan:Connect(function(input)
 		end)
 	end
 end)
--- Do NOT close on the whistle button's own InputEnded:
--- on mobile, sliding a finger off the button fires that
--- even though the finger is still down, which closed the
--- wheel the moment you tried to drag to a wedge.
--- Close only on the GLOBAL input ending (finger lifted
--- / mouse released anywhere), so dragging off the button
--- keeps the wheel open until you actually let go.
 UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		radialPressing = false
@@ -2018,14 +1763,13 @@ radialRunService.RenderStepped:Connect(function()
 	end
 	radialUpdateSelection()
 end)
-
 radialTryWire()
 if not radialFound and radialPlayerGui then
 	radialPlayerGui.ChildAdded:Connect(function(child)
 		if child.Name == "RadialGui" then
 			wolfRadial = child:FindFirstChild("WolfRadial")
 			if radialTryWire() then
-				whistleButton.Visible = true -- test mode: show without a tamed wolf
+				whistleButton.Visible = true
 				repeatButton.Visible = true
 				for _, b in pairs(wolfButtons) do
 					b.Visible = false
@@ -2034,7 +1778,6 @@ if not radialFound and radialPlayerGui then
 		end
 	end)
 end
-
 local function refreshWolfButtons()
 	local count = player:GetAttribute("WolfCount") or 0
 	local active = player:GetAttribute("WolfCommand") or "Follow"
@@ -2042,9 +1785,6 @@ local function refreshWolfButtons()
 		for _, b in pairs(wolfButtons) do
 			b.Visible = false
 		end
-		-- Test mode: whistle always shows, even with 0 wolves,
-		-- so the wheel can be tested without taming first.
-		-- Firing a command with no wolves just does nothing.
 		whistleButton.Visible = true
 		repeatButton.Visible = true
 		return
@@ -2059,15 +1799,9 @@ end
 player:GetAttributeChangedSignal("WolfCount"):Connect(refreshWolfButtons)
 player:GetAttributeChangedSignal("WolfCommand"):Connect(refreshWolfButtons)
 refreshWolfButtons()
-
--- Fishing panel: driven by server-published attributes
--- (FishingPhase / FishingProgress / FishingStartAt / FishingSeed).
--- The reel needle and zone are pure functions of elapsed time from
--- the shared start values -- the same math the server judges taps
--- with -- so they render locally at full frame rate.
 local fishingPanel = Instance.new("Frame")
 fishingPanel.Name = "FishingPanel"
-fishingPanel.Size = UDim2.new(0.55, 0, 0, 124) -- Frost Night batch 1: Scale width
+fishingPanel.Size = UDim2.new(0.55, 0, 0, 124)
 fishingPanel.AnchorPoint = Vector2.new(0.5, 0)
 fishingPanel.Position = UDim2.new(0.5, 0, 1, -208)
 fishingPanel.BackgroundTransparency = 1
@@ -2123,9 +1857,6 @@ progressFill.BackgroundColor3 = CYAN
 progressFill.BorderSizePixel = 0
 progressFill.Size = UDim2.fromScale(0, 1)
 progressFill.Parent = progressTrack
-
--- Bite badge: a big marigold circle with a "!" -- impossible to
--- miss. Waiting gets a small pulsing bobber dot instead.
 local biteBadge = Instance.new("Frame")
 biteBadge.Size = UDim2.fromOffset(64, 64)
 biteBadge.Position = UDim2.new(0.5, -32, 0, 30)
@@ -2148,19 +1879,13 @@ bobberDot.Parent = fishingPanel
 local bobberDotCorner = Instance.new("UICorner")
 bobberDotCorner.CornerRadius = UDim.new(0.5, 0)
 bobberDotCorner.Parent = bobberDot
-
 local fishingSyncRemote = remotes:WaitForChild("FishingSync")
-
--- Same wander the server judges with (shared start + seed).
 local function clientFishPos(elapsed, seed)
 	local p = 0.5
 		+ 0.36 * math.sin(elapsed * 0.8 + seed)
 		+ 0.12 * math.sin(elapsed * 2.3 + seed * 2)
 	return math.clamp(p, 0.08, 0.92)
 end
-
--- Hold to raise your catch bar; let go and it sinks. Mouse, touch,
--- space, or gamepad A all count.
 local reelHolding = false
 UserInputService.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -2180,7 +1905,6 @@ UserInputService.InputEnded:Connect(function(input)
 		reelHolding = false
 	end
 end)
-
 local localBar = 0.5
 local lastSync = 0
 local lastPhase = ""
@@ -2214,8 +1938,6 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
 		local startAt = player:GetAttribute("FishingStartAt") or 0
 		local seed = player:GetAttribute("FishingSeed") or 0
 		local elapsed = math.max(0, workspace:GetServerTimeNow() - startAt)
-		-- Your bar is integrated locally (smooth) and streamed to
-		-- the server, which keeps the judging copy.
 		if reelHolding then
 			localBar += Config.Fishing.ReelRiseSpeed * dt
 		else
@@ -2239,15 +1961,11 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
 		progressFill.Size = UDim2.fromScale(math.clamp(progress, 0, 1), 1)
 	end
 end)
-
--- Drag mover: as network owner, float my dragged piece at a point in
--- front of the camera (aim with the center dot). The server validates.
 local RunService = game:GetService("RunService")
 local logsFolder = workspace:WaitForChild("Logs")
 local dragSurfaceParams = RaycastParams.new()
 dragSurfaceParams.FilterType = Enum.RaycastFilterType.Exclude
 dragSurfaceParams.IgnoreWater = true
-
 local function dragLengthAxis(size)
 	if size.Y >= size.X and size.Y >= size.Z then
 		return Vector3.yAxis
@@ -2257,7 +1975,6 @@ local function dragLengthAxis(size)
 		return Vector3.zAxis
 	end
 end
-
 local function dragHorizontal(v)
 	local h = Vector3.new(v.X, 0, v.Z)
 	if h.Magnitude < 0.01 then
@@ -2265,19 +1982,11 @@ local function dragHorizontal(v)
 	end
 	return h.Unit
 end
-
--- Track the dragged part by its DraggedBy attribute instead of
--- scanning the whole folder every frame.
 local myDragPart = nil
 local lastDragSend = 0
 local dragSmoothedTarget = nil
 local dragSmoothedPart = nil
 local function trackLog(log)
-	-- Track EVERY part of the item (a fish has 5 welded parts,
-	-- only its primary is Draggable). Latching onto just the
-	-- first part was the stuck-fish bug: secondary parts never
-	-- get DraggedBy, so myDragPart never updated and the client
-	-- never streamed the drag.
 	local parts = {}
 	if log:IsA("BasePart") then
 		table.insert(parts, log)
@@ -2303,12 +2012,6 @@ for _, log in ipairs(logsFolder:GetChildren()) do
 	trackLog(log)
 end
 logsFolder.ChildAdded:Connect(trackLog)
-
--- GRAB/DROP button state: DROP while carrying; otherwise GRAB
--- when the center dot rests on a free draggable item. Any part of
--- an item counts (a fish is five parts) -- resolve to the part
--- the server marked Draggable, and outline the whole item so
--- it's obvious WHICH one will be grabbed.
 local grabHighlight = Instance.new("Highlight")
 grabHighlight.Name = "GrabHighlight"
 grabHighlight.FillColor = Color3.fromRGB(234, 160, 0)
@@ -2316,7 +2019,6 @@ grabHighlight.FillTransparency = 0.82
 grabHighlight.OutlineColor = Color3.new(1, 1, 1)
 grabHighlight.OutlineTransparency = 0.1
 grabHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-
 local function draggablePartOf(instance)
 	if not instance then
 		return nil
@@ -2366,10 +2068,6 @@ RunService.RenderStepped:Connect(function()
 	local hit = workspace:Raycast(camera.CFrame.Position, camera.CFrame.LookVector * 14, grabParams)
 	local part = draggablePartOf(hit and hit.Instance)
 	if not part then
-		-- Forgiving probe: thin items (a flat fish on the ice)
-		-- slip past a pixel-perfect ray and the grab feels stuck.
-		-- Anything draggable passing within ~1.9 studs of the
-		-- aim line counts.
 		local origin = camera.CFrame.Position
 		local dir = camera.CFrame.LookVector
 		local bestT = math.huge
@@ -2406,16 +2104,11 @@ RunService.RenderStepped:Connect(function()
 		grabHighlight.Parent = nil
 	end
 end)
--- Fish live in their own folder but drag exactly like logs; the
--- tracker must watch them too or a caught fish never moves.
 local fishFolder = workspace:WaitForChild("Fish")
 for _, fish in ipairs(fishFolder:GetChildren()) do
 	trackLog(fish)
 end
 fishFolder.ChildAdded:Connect(trackLog)
-
--- Center aim dot: the game's main interaction pointer. Visible
--- while dragging and while a center-dot tool is equipped.
 local dragDot = Instance.new("Frame")
 dragDot.Name = "DragDot"
 dragDot.Size = UDim2.fromOffset(8, 8)
@@ -2428,10 +2121,6 @@ dragDot.Parent = gui
 local dotCorner = Instance.new("UICorner")
 dotCorner.CornerRadius = UDim.new(1, 0)
 dotCorner.Parent = dragDot
-
--- Center-dot tools: the shovel and the lighter act where the dot
--- is pointing. The client raycasts the center of the camera and
--- reports the hit; the server validates and decides (ToolAim).
 local toolAimRemote = remotes:WaitForChild("ToolAim")
 local aimParams = RaycastParams.new()
 aimParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -2480,7 +2169,6 @@ if player.Character then
 	hookAimCharacter(player.Character)
 end
 player.CharacterAdded:Connect(hookAimCharacter)
-
 local function nearestFish()
 	local fishFolder = workspace:FindFirstChild("Fish")
 	local character = player.Character
@@ -2502,7 +2190,6 @@ local function nearestFish()
 	end
 	return best
 end
-
 local function nearestMeat()
 	local meatFolder = workspace:FindFirstChild("Meat")
 	local character = player.Character
@@ -2519,20 +2206,18 @@ local function nearestMeat()
 	end
 	return best
 end
-
 RunService.RenderStepped:Connect(function(dt)
 	local myPart = myDragPart
 	local characterNow = player.Character
 	local aimEquipped = characterNow
 		and (characterNow:FindFirstChild("Shovel") or characterNow:FindFirstChild("Lighter")
 			or characterNow:FindFirstChild("FishingRod") or characterNow:FindFirstChild("Axe"))
-	dragDot.Visible = true -- the dot is always on: it is your aim
+	dragDot.Visible = true
 	lighterFuelPill.Visible = characterNow ~= nil and characterNow:FindFirstChild("Lighter") ~= nil
 	if not myPart then
 		dragSmoothedPart = nil
 		dragSmoothedTarget = nil
 	end
-
 	canStore = false
 	if myPart and myPart.Parent and not myPart.Parent:GetAttribute("OnSled") then
 		local sledModel = workspace:FindFirstChild("Sled")
@@ -2546,7 +2231,6 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 	storeButton.Visible = canStore
-
 	local draggedModel = myPart and myPart.Parent
 	if draggedModel and draggedModel.Name == "Fish" then
 		eatTarget = draggedModel
@@ -2560,7 +2244,6 @@ RunService.RenderStepped:Connect(function(dt)
 	sackButton.Visible = myPart ~= nil or (player:GetAttribute("SackCount") or 0) > 0
 	feedButton.Visible = sackButton.Visible
 	sackButton.Text = myPart and "SACK" or ("SACK (" .. tostring(player:GetAttribute("SackCount") or 0) .. ")")
-
 	if not myPart then
 		return
 	end
@@ -2577,15 +2260,10 @@ RunService.RenderStepped:Connect(function(dt)
 	if not camera then
 		return
 	end
-
 	local cf = myPart.CFrame
 	local pos = cf.Position
-
-	-- The item floats at a point in front of the camera: where you
-	-- look is where it goes, including up and down (99 Nights style).
 	local look = camera.CFrame.LookVector
 	local anchor = root.Position + look * Config.Log.DragDistance
-
 	local axisVec = dragLengthAxis(myPart.Size)
 	local currentDir = dragHorizontal(cf:VectorToWorldSpace(axisVec))
 	local faceDir = dragHorizontal(look)
@@ -2598,15 +2276,10 @@ RunService.RenderStepped:Connect(function(dt)
 	if math.abs(yawDelta) > 0.0005 then
 		cf = CFrame.new(cf.Position) * CFrame.Angles(0, yawDelta, 0) * (cf - cf.Position)
 	end
-
 	local size = myPart.Size
 	local halfY = (math.abs(cf.RightVector.Y) * size.X
 		+ math.abs(cf.UpVector.Y) * size.Y
 		+ math.abs(cf.LookVector.Y) * size.Z) / 2
-
-	-- Rest height comes from whatever solid surface is under the
-	-- aim point: terrain, the sled bed, or the campfire — trees and
-	-- other logs do not count, so canopies never lift the item.
 	local exclude = { character, myPart.Parent, logsFolder }
 	local treesFolder = workspace:FindFirstChild("Trees")
 	if treesFolder then
@@ -2618,18 +2291,9 @@ RunService.RenderStepped:Connect(function(dt)
 	if hit then
 		minY = hit.Position.Y + halfY + 0.05
 	end
-	-- Carried items hover: looking level keeps them floating at the
-	-- aim height, looking down settles them to hover height (never a
-	-- ground scrape), looking up lifts toward the rise cap.
 	local desiredY = math.max(anchor.Y, minY + Config.Log.DragHover)
 	local targetY = math.clamp(desiredY, minY, root.Position.Y + Config.Log.DragMaxRise)
 	local target = Vector3.new(anchor.X, targetY, anchor.Z)
-
-	-- Glide, don't snap: the aim target is low-passed so terrain
-	-- bumps stop shaking the carry height, the item eases toward it
-	-- inside the server's accepted step speed, and physics velocity
-	-- is zeroed every frame so gravity can't fight the hold between
-	-- frames (that fight was the shake).
 	if dragSmoothedPart ~= myPart then
 		dragSmoothedPart = myPart
 		dragSmoothedTarget = target
@@ -2642,23 +2306,15 @@ RunService.RenderStepped:Connect(function(dt)
 		local step = math.min(gap * (1 - math.exp(-dt * 12)), 38 * dt)
 		newPos = pos + delta.Unit * step
 	end
-
 	myPart.CFrame = CFrame.new(newPos) * (cf - cf.Position)
 	myPart.AssemblyLinearVelocity = Vector3.zero
 	myPart.AssemblyAngularVelocity = Vector3.zero
-
-	-- Stream the applied position as a movement intent at 20 Hz.
-	-- The server validates reach and step speed per intent and keeps
-	-- the last accepted position as the ledger the item must track.
 	local now = os.clock()
 	if now - lastDragSend >= 1 / 20 then
 		lastDragSend = now
 		DragSystem.SendUpdate(myPart, newPos)
 	end
 end)
-
--- Placement aim: the ghost follows the center of the camera while
--- placing a blueprint; the server makes the final call.
 RunService.RenderStepped:Connect(function()
 	if not placing then
 		return
@@ -2680,10 +2336,6 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 end)
-
--- Wind life (client-only dressing): blowing snow around the
--- camera plus trees and grass tufts rocking in the gusts. The
--- server publishes WindDir / WindStrength on ReplicatedStorage.
 do
 	local windPart = Instance.new("Part")
 	windPart.Name = "WindSnowVolume"
@@ -2711,7 +2363,6 @@ do
 	snow.Drag = 0.4
 	snow.Rate = 0
 	snow.Parent = windPart
-
 	local swayTargets = {}
 	local function collectSway()
 		for _, folderName in ipairs({ "Trees", "Tufts" }) do
@@ -2737,14 +2388,12 @@ do
 			end
 		end
 	end
-
 	RunService.RenderStepped:Connect(function()
 		local camera = workspace.CurrentCamera
 		if camera then
 			windPart.CFrame = CFrame.new(camera.CFrame.Position)
 		end
 	end)
-
 	task.spawn(function()
 		while true do
 			task.wait(0.12)
@@ -2777,9 +2426,6 @@ do
 		end
 	end)
 end
-
--- Aurora (client dressing): three neon ribbons high overhead
--- that fade in at night and drift with slow sine undulation.
 do
 	local ribbons = {}
 	local ribbonColors = {
@@ -2800,7 +2446,6 @@ do
 		ribbon.Parent = workspace
 		ribbons[i] = ribbon
 	end
-
 	local fade = 0
 	RunService.RenderStepped:Connect(function(dt)
 		local isNight = ReplicatedStorage:GetAttribute("Phase") == "Night"

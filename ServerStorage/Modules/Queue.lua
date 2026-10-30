@@ -1,40 +1,11 @@
--- Queue v2 (LOBBY ONLY): Workspace.QueueFolder.Queue1.
---   Queue1.Base      = the floor part
---   Queue1.Reserved  = transparent box players touch to join
---   Queue1.In        = part inside Reserved: joiners are
---                      teleported (moved) here on touch
---   Queue1.Reserved.DataGui.PlayerLabel.Label = player count
---   Queue1.Reserved.DataGui.TimeLabel.Label   = countdown
---
--- Flow:
--- 1. Player touches Reserved -> moved to In, joins the queue.
--- 2. If the queue was empty, that first player is the HOST:
---    he gets a GUI to choose the queue size (1-5) and a
---    Create button. Until he clicks Create, other players
---    touching Reserved wait (they are not counted yet).
--- 3. After Create, other players touch Reserved to join,
---    up to the chosen size.
--- 4. When full (e.g. 5/5, or whatever size was chosen):
---    TimeLabel counts 3, 2, 1, then the party is MOVED to
---    SpawnLocation (so Reserved is empty and a new party
---    can form in the lobby right away), the queue is
---    cleared, and the old party gets a black loading
---    screen and is teleported to a PrivateGameSession
---    (a private server of this same place).
--- In Studio, TeleportService cannot run, so it prints
--- what it would teleport and removes the black screen
--- after a moment, instead of erroring.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local CrossServer = require(script.Parent:WaitForChild("CrossServer"))
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Queue = {}
-
 local MAX_SIZE = 5
-
 local function findLabel(queue, name)
 	local reserved = queue and queue:FindFirstChild("Reserved")
 	local dataGui = reserved and reserved:FindFirstChild("DataGui")
@@ -51,7 +22,6 @@ local function findLabel(queue, name)
 	end
 	return holder:FindFirstChildWhichIsA("TextLabel", true)
 end
-
 local function insideBox(part, position)
 	if not (part and part:IsA("BasePart")) then
 		return false
@@ -62,7 +32,6 @@ local function insideBox(part, position)
 		and math.abs(localPos.Y) <= half.Y + 2
 		and math.abs(localPos.Z) <= half.Z
 end
-
 local function findSpawnLocation(queue)
 	local spawn = Workspace:FindFirstChild("SpawnLocation")
 	if spawn and spawn:IsA("BasePart") then
@@ -76,7 +45,6 @@ local function findSpawnLocation(queue)
 	end
 	return nil
 end
-
 local function showBlackScreen(player)
 	local playerGui = player:FindFirstChild("PlayerGui")
 	if not playerGui then
@@ -114,7 +82,6 @@ local function showBlackScreen(player)
 	gui.Parent = playerGui
 	return gui
 end
-
 local function makeHostGui(player, remote)
 	local playerGui = player:FindFirstChild("PlayerGui")
 	if not playerGui then
@@ -129,9 +96,6 @@ local function makeHostGui(player, remote)
 	gui.DisplayOrder = 100
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.ResetOnSpawn = false
-	-- Mobile-compatible: everything in Scale, not Offset, so
-	-- the GUI adapts to phone screens instead of overflowing
-	-- or shrinking to a corner. Anchor in the centre.
 	local frame = Instance.new("Frame")
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Size = UDim2.fromScale(0.85, 0.5)
@@ -173,7 +137,6 @@ local function makeHostGui(player, remote)
 	gui.Parent = playerGui
 	return gui
 end
-
 function Queue.Start()
 	local folder = Workspace:FindFirstChild("QueueFolder")
 	local queue = folder and folder:FindFirstChild("Queue1")
@@ -183,12 +146,6 @@ function Queue.Start()
 		warn("[Queue] Workspace.QueueFolder.Queue1.Reserved not found -- queue not started")
 		return
 	end
-	-- Hollow from the inside: a solid Reserved box pushes a
-	-- player back out the moment moveToIn puts him inside
-	-- it, and the prune loop then cancels his queue -- which
-	-- is why the host GUI got stuck. A queue box is a
-	-- VOLUME, not a wall: no collision, touch still on.
-	-- In is the same: a teleport target, never a collider.
 	reserved.CanCollide = false
 	reserved.CanTouch = true
 	if inPart and inPart:IsA("BasePart") then
@@ -201,8 +158,6 @@ function Queue.Start()
 	if not playerLabel or not timeLabel then
 		warn("[Queue] DataGui PlayerLabel/TimeLabel not found -- labels will not update")
 	end
-
-	-- Remote for the host GUI (created here, lobby only).
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	if not remotes then
 		remotes = Instance.new("Folder")
@@ -215,14 +170,12 @@ function Queue.Start()
 		hostRemote.Name = "QueueHostCreate"
 		hostRemote.Parent = remotes
 	end
-
-	local members = {} -- array of players, in join order
+	local members = {}
 	local host = nil
-	local queueSize = nil -- nil until the host clicks Create
+	local queueSize = nil
 	local pending = false
 	local countingDown = false
 	local lastTouch = {}
-
 	local function isMember(player)
 		for _, member in ipairs(members) do
 			if member == player then
@@ -231,7 +184,6 @@ function Queue.Start()
 		end
 		return false
 	end
-
 	local function updateLabels(countdown)
 		if playerLabel then
 			if queueSize then
@@ -252,7 +204,6 @@ function Queue.Start()
 			end
 		end
 	end
-
 	local function resetQueue()
 		if host then
 			local playerGui = host:FindFirstChild("PlayerGui")
@@ -268,7 +219,6 @@ function Queue.Start()
 		countingDown = false
 		updateLabels(nil)
 	end
-
 	local function moveToIn(player)
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -281,7 +231,6 @@ function Queue.Start()
 			root.CFrame = reserved.CFrame + Vector3.new(0, 3, 0)
 		end
 	end
-
 	local function moveToSpawn(player)
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -295,10 +244,7 @@ function Queue.Start()
 			warn("[Queue] No SpawnLocation found -- party stays at queue")
 		end
 	end
-
 	local function teleportParty(party)
-		-- Black screen first, then teleport. Queue is already
-		-- cleared by the caller, so a new party can form.
 		for _, player in ipairs(party) do
 			showBlackScreen(player)
 		end
@@ -321,10 +267,6 @@ function Queue.Start()
 			warn("[Queue] ReserveServer failed:", code)
 			return
 		end
-		-- MemoryStore handoff: the game server reads this
-		-- party back and generates from this seed, instead
-		-- of rolling its own. TeleportData carries the same
-		-- seed as a fallback if MemoryStore is unavailable.
 		local seedLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 		local seedParts = {}
 		for i = 1, 6 do
@@ -347,7 +289,6 @@ function Queue.Start()
 			warn("[Queue] Teleport failed:", teleportErr)
 		end
 	end
-
 	local function startCountdown()
 		if countingDown then
 			return
@@ -356,10 +297,6 @@ function Queue.Start()
 		task.spawn(function()
 			for n = 3, 1, -1 do
 				updateLabels(n)
-				-- At 1: black screen, move to SpawnLocation,
-				-- then teleport -- no extra wait on 1. The
-				-- queue is cleared here, so a new party can
-				-- form in the lobby right away.
 				if n == 1 then
 					local party = {}
 					for _, member in ipairs(members) do
@@ -376,7 +313,6 @@ function Queue.Start()
 			end
 		end)
 	end
-
 	hostRemote.OnServerEvent:Connect(function(player, size)
 		if player ~= host or not pending then
 			return
@@ -401,7 +337,6 @@ function Queue.Start()
 			startCountdown()
 		end
 	end)
-
 	reserved.Touched:Connect(function(hit)
 		local player = Players:GetPlayerFromCharacter(hit.Parent)
 		if not player then
@@ -413,12 +348,11 @@ function Queue.Start()
 		end
 		lastTouch[player] = now
 		if countingDown then
-			return -- this party is leaving; next party forms after reset
+			return
 		end
 		if isMember(player) then
 			return
 		end
-		-- First player, no queue yet: he is the host.
 		if #members == 0 then
 			table.insert(members, player)
 			host = player
@@ -430,7 +364,6 @@ function Queue.Start()
 			print(("[Queue] Host: %s -- waiting for queue size"):format(player.Name))
 			return
 		end
-		-- Host has not created the queue yet: others wait.
 		if pending then
 			return
 		end
@@ -444,7 +377,6 @@ function Queue.Start()
 			startCountdown()
 		end
 	end)
-
 	Players.PlayerRemoving:Connect(function(player)
 		for i, member in ipairs(members) do
 			if member == player then
@@ -461,9 +393,6 @@ function Queue.Start()
 		end
 		updateLabels(nil)
 	end)
-
-	-- Prune players who walked out of Reserved (not during
-	-- countdown, when they are being moved to SpawnLocation).
 	task.spawn(function()
 		while true do
 			task.wait(1)
@@ -474,7 +403,6 @@ function Queue.Start()
 					local character = player.Character
 					local root = character and character:FindFirstChild("HumanoidRootPart")
 					if not root or not insideBox(reserved, root.Position) then
-						-- Host walking out before Create cancels the queue.
 						if player == host and pending then
 							resetQueue()
 							changed = false
@@ -492,8 +420,6 @@ function Queue.Start()
 			end
 		end
 	end)
-
 	updateLabels(nil)
 end
-
 return Queue

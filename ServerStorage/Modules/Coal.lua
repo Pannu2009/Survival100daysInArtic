@@ -1,40 +1,18 @@
--- Coal (Phase 3, setup): the deeper heat source.
---
--- After wood and fur, the far map holds coal: a deposit
--- at layout.CoalSpot (600+ studs out, seeded -- the
--- design's coal route). Mining a lump with the axe in
--- hand gives a physical coal piece; feeding it to a fire
--- (Gameplay's fire-feeding tick, extended for coal)
--- adds 60s of fuel per unit -- 3x wood's 20s -- and the
--- fire warms harder while coal fuel lasts (see
--- WorldBuilder:AddCoal / WarmthRateAt).
---
--- Coal pieces are draggable like logs, so they haul on
--- the sled the same way. A mined-out deposit regrows
--- after RespawnSeconds. Setup limits, stated plainly:
--- coal does not ignite loose as its own fire yet (it
--- feeds fires only), and the deposit is one spot, not
--- a coal seam system -- both are slow-improve items.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
-
 local Coal = {}
 Coal.__index = Coal
-
 function Coal.new(gameplay)
 	local self = setmetatable({}, Coal)
 	self.Gameplay = gameplay
 	self.Folder = nil
-	self.Lumps = {} -- lump part -> mined?
+	self.Lumps = {}
 	self._mineCooldowns = {}
 	self._respawnAt = nil
 	self.DepositPosition = nil
 	return self
 end
-
 function Coal:Start()
 	local folder = Instance.new("Folder")
 	folder.Name = "Coal"
@@ -50,7 +28,6 @@ function Coal:Start()
 	self:_spawnDeposit()
 	print("[Arctic] Coal: deposit placed at the far coal spot")
 end
-
 function Coal:_spawnDeposit()
 	if not self.DepositPosition then
 		return
@@ -83,18 +60,12 @@ function Coal:_spawnDeposit()
 	end
 	self._respawnAt = nil
 end
-
--- Mining needs the axe in hand -- coal is a late-game
--- resource, and the axe check keeps it from being a
--- free prompt at spawn distance. (Setup check: the Axe
--- tool present on the character or in the backpack.)
 function Coal:_hasAxe(player)
 	local backpack = player:FindFirstChild("Backpack")
 	local character = player.Character
 	return (backpack and backpack:FindFirstChild("Axe"))
 		or (character and character:FindFirstChild("Axe"))
 end
-
 function Coal:Mine(player, lump)
 	if not lump.Parent then
 		return
@@ -131,10 +102,6 @@ function Coal:Mine(player, lump)
 		self._respawnAt = os.clock() + Config.Coal.RespawnSeconds
 	end
 end
-
--- A coal piece: draggable like a log, so the sled hauls
--- it. Gameplay's fire-feeding tick picks coal pieces up
--- from a fire's AddWoodBox (see Gameplay:_feedFires).
 function Coal:_spawnPiece(position)
 	local piece = Instance.new("Part")
 	piece.Name = "Coal"
@@ -154,12 +121,10 @@ function Coal:_spawnPiece(position)
 		existing:Destroy()
 	end
 end
-
 function Coal:Update(_dt)
 	if self._respawnAt and os.clock() >= self._respawnAt then
 		self._respawnAt = nil
 		self:_spawnDeposit()
 	end
 end
-
 return Coal

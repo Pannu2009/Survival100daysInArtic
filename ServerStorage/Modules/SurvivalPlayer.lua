@@ -2,31 +2,19 @@ local Modules = game:GetService("ReplicatedStorage"):WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
 local Signal = require(Modules:WaitForChild("Signal"))
 local Hunger = require(script.Parent:WaitForChild("Hunger"))
-
 local SurvivalPlayer = {}
 SurvivalPlayer.__index = SurvivalPlayer
-
 function SurvivalPlayer.new(clock, temperature)
 	local self = setmetatable({}, SurvivalPlayer)
 	self.Clock = clock
 	self.Temperature = temperature
-	-- Health IS the Roblox Humanoid's health now (Ajay's call):
-	-- self.Health is a mirror, kept in sync by BindHumanoid,
-	-- _setHealth and Update. Everything still routes through
-	-- Heal()/Damage()/Update -- they just land on the Humanoid.
 	self.Health = Config.Survival.MaxHealth
 	self.Humanoid = nil
 	self._diedConn = nil
 	self.Warmth = Config.Survival.MaxWarmth
 	self.Hunger = Hunger.new()
-	-- Phase 3 seams (defaults = today's behavior): Insulation
-	-- scales cold exposure loss (fur clothing will lower it);
-	-- Coins is the merchant currency (loot will grant it).
 	self.Insulation = 1
 	self.Coins = 0
-	-- Phase 3 seam: Sleep sets CureBoost while the player
-	-- sleeps in a bag, so sickness cures faster there.
-	-- Default 1 = today's cure speed, untouched otherwise.
 	self.CureBoost = 1
 	self.IsSick = false
 	self.Dead = false
@@ -37,7 +25,6 @@ function SurvivalPlayer.new(clock, temperature)
 	self._cureTime = 0
 	return self
 end
-
 function SurvivalPlayer:BindHumanoid(humanoid)
 	if self._diedConn then
 		self._diedConn:Disconnect()
@@ -55,14 +42,12 @@ function SurvivalPlayer:BindHumanoid(humanoid)
 		end
 	end)
 end
-
 function SurvivalPlayer:Heal(amount)
 	if self.Dead then
 		return
 	end
 	self:_setHealth(self.Health + amount)
 end
-
 function SurvivalPlayer:Damage(amount)
 	if self.Dead then
 		return
@@ -74,15 +59,11 @@ function SurvivalPlayer:Damage(amount)
 		self:_setHealth(self.Health - amount)
 	end
 end
-
 function SurvivalPlayer:Update(dt, context)
 	if self.Dead then
 		return
 	end
 	context = context or {}
-
-	-- Mirror the Humanoid: damage that arrived outside our own
-	-- routing still counts, and 0 is death however it happened.
 	if self.Humanoid and self.Humanoid.Parent then
 		if self.Humanoid.Health ~= self.Health then
 			self:_setHealth(self.Humanoid.Health)
@@ -91,21 +72,15 @@ function SurvivalPlayer:Update(dt, context)
 			end
 		end
 	end
-
-	-- Day 1 is the tutorial: hunger drains at the gentle rate.
-	-- From Day 2 the journey begins and the drain steps up.
 	local drainScale = 1
 	if self.Clock and self.Clock:GetDay() >= 2 then
 		drainScale = Config.Survival.Day2HungerMultiplier
 	end
 	self.Hunger:Update(dt, context.IsSprinting == true, drainScale)
-
 	local loss = self.Temperature:GetExposureRate(self.Clock:GetPhase()) * (self.Insulation or 1)
 	local gain = (context.FireRate or 0) + (context.WarmthBonus or 0)
 	self.Warmth = math.clamp(self.Warmth + (gain - loss) * dt, 0, Config.Survival.MaxWarmth)
-
 	self:_updateSickness(dt)
-
 	local change = 0
 	if self.Warmth <= 0 then
 		change -= Config.Survival.FreezingHealthDrain
@@ -120,7 +95,6 @@ function SurvivalPlayer:Update(dt, context)
 		self:_setHealth(self.Health + change * dt)
 	end
 end
-
 function SurvivalPlayer:_setHealth(value)
 	local clamped = math.clamp(value, 0, Config.Survival.MaxHealth)
 	if self.Humanoid and self.Humanoid.Parent and self.Humanoid.Health ~= clamped then
@@ -135,7 +109,6 @@ function SurvivalPlayer:_setHealth(value)
 		self.OnDied:Fire()
 	end
 end
-
 function SurvivalPlayer:_updateSickness(dt)
 	if self.IsSick then
 		if self.Warmth >= Config.Sickness.CureWarmth then
@@ -159,5 +132,4 @@ function SurvivalPlayer:_updateSickness(dt)
 		self._coldExposure = math.max(0, self._coldExposure - dt * 0.5)
 	end
 end
-
 return SurvivalPlayer

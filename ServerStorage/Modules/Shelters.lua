@@ -1,39 +1,14 @@
--- Shelters (Phase 3, setup): built sheds and broken
--- shelters in the wild, with loot.
---
--- Two kinds, one system:
---  * Built sheds: a completed Shed blueprint becomes a
---    shelter model (Ajay's Assets.Shed when present, else
---    the placeholder from WorldBuilder:CreateStructure).
---    Standing inside a shed's radius warms you a little --
---    a roof over your head is worth something, but it is
---    not a fire.
---  * Broken shelters: pre-placed at the seeded cabin spots
---    (layout.Cabins, now 5-10 per run) as broken sheds.
---    Each carries loot crates; taking a crate gives coins
---    and a little food, once per crate. Destinations worth
---    the cold -- the design's shelter-to-economy link.
---
--- Loot crates are ProximityPrompts, so no client UI is
--- needed. Slow-improve: real loot items, shed storage,
--- and a coins HUD readout (Coins is already published
--- as a player attribute, the HUD just doesn't draw it yet).
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Config = require(Modules:WaitForChild("Config"))
-
 local Shelters = {}
 Shelters.__index = Shelters
-
 function Shelters.new(gameplay)
 	local self = setmetatable({}, Shelters)
 	self.Gameplay = gameplay
-	self.Shelters = {} -- { Position, Radius } for warmth
+	self.Shelters = {}
 	return self
 end
-
 function Shelters:Start()
 	local layout = self.Gameplay.World and self.Gameplay.World.Layout
 	if not layout or not layout.Cabins then
@@ -52,15 +27,12 @@ function Shelters:Start()
 	end
 	print(("[Arctic] Shelters: %d broken shelters placed"):format(#self.Shelters))
 end
-
--- A built shed joins the warmth list too: a roof is a roof.
 function Shelters:RegisterBuiltShed(model, x, z)
 	table.insert(self.Shelters, {
 		Position = Vector3.new(x, 0, z),
 		Radius = Config.Shelters.WarmthRadius,
 	})
 end
-
 function Shelters:WarmthBonusAt(position)
 	local bonus = 0
 	for _, shelter in ipairs(self.Shelters) do
@@ -72,10 +44,6 @@ function Shelters:WarmthBonusAt(position)
 	end
 	return bonus
 end
-
--- Loot crates: small parts with a Take prompt. One take per
--- crate, first come -- the crate is destroyed on take, so
--- it cannot be farmed by re-prompting.
 function Shelters:_addLoot(model, x, z)
 	local groundY = self.Gameplay.World:GroundY(x, z)
 	for i = 1, Config.Shelters.LootCratesPerShelter do
@@ -98,7 +66,6 @@ function Shelters:_addLoot(model, x, z)
 		end)
 	end
 end
-
 function Shelters:_takeLoot(player, crate)
 	if not crate.Parent then
 		return
@@ -110,7 +77,7 @@ function Shelters:_takeLoot(player, crate)
 		return
 	end
 	if (root.Position - crate.Position).Magnitude > 14 then
-		return -- prompt range is client-side; re-check here
+		return
 	end
 	crate:Destroy()
 	local coins = math.random(Config.Shelters.LootCoinsMin, Config.Shelters.LootCoinsMax)
@@ -119,5 +86,4 @@ function Shelters:_takeLoot(player, crate)
 	self.Gameplay:Notify(player, ("Loot! +%d coins, a little food."):format(coins))
 	self.Gameplay:RecordAction(player, "loot")
 end
-
 return Shelters
