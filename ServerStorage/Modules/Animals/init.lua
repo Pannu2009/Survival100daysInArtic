@@ -796,6 +796,7 @@ function Animals:_claimWolf(wolf, lastDragger)
 		return
 	end
 	wolf.Owner = owner
+	wolf.TamedAt = os.clock()
 	wolf.State = "Tamed"
 	wolf.TargetPlayer = nil
 	local list = self._byOwner[owner]
@@ -1796,6 +1797,10 @@ function Animals:_step(dt)
 		end
 	end
 end
+function Animals:_loyaltyLevel(wolf)
+	local since = os.clock() - (wolf.TamedAt or os.clock())
+	return math.min(W.LoyaltyMaxLevel or 10, math.floor(since / (W.LoyaltySecondsPerLevel or 120)))
+end
 function Animals:_stepTamed(wolf, dt, now, isNight)
 	local owner = wolf.Owner
 	local character = owner and owner.Character
@@ -1820,6 +1825,24 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 			return
 		end
 	end
+	if wolf.Health < wolf.MaxHealth * (W.TamedRestHealthFrac or 0.4)
+		and (root.Position - pos).Magnitude < 20
+		and self:NearestWildWolf(root.Position, 25) == nil
+	then
+		wolf.Health = math.min(wolf.MaxHealth, wolf.Health + (W.TamedRestHealPerSecond or 2) * dt)
+		self:_moveToward(wolf, pos, 0, dt)
+		return
+	end
+	if not wolf.AttackWolf and (self._commands[owner] or "Follow") ~= "Stop"
+		and self._behaviours[owner] ~= "Passive"
+	then
+		local loyalty = self:_loyaltyLevel(wolf)
+		local threat = self:NearestWildWolf(root.Position, 20 + loyalty)
+		if threat then
+			wolf.AttackWolf = threat
+			wolf.AttackUntil = now + W.AttackSeconds
+		end
+	end
 	local mode = self._commands[owner] or "Follow"
 	if mode == "Stop" then
 		self:_moveToward(wolf, pos, 0, dt)
@@ -1834,7 +1857,15 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 			local r = math.sqrt(math.random()) * 25
 			wolf.RoamTarget = anchor + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
 		end
-		self:_moveToward(wolf, wolf.RoamTarget, (W.RoamSpeed + 1.5) * (wolf.SpeedMult or 1), dt)
+		if (root.Position - pos).Magnitude > 70 then
+			self:_placeAt(wolf, root.Position - horizontalDir(root.CFrame.LookVector) * 8)
+			return
+		end
+		local roamTarget = wolf.RoamTarget
+		if self:_shelteredByFire(roamTarget) then
+			roamTarget = self:_pushOutOfFire(roamTarget)
+		end
+		self:_moveToward(wolf, roamTarget, (W.RoamSpeed + 1.5) * (wolf.SpeedMult or 1), dt)
 	elseif mode == "Alert" then
 		local back = root.Position - horizontalDir(root.CFrame.LookVector) * 5
 		if (pos - back).Magnitude > 3 then
@@ -1866,7 +1897,15 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 		if wolf.SlotIndex == 1 then
 			side = 0
 		end
-		local slot = root.Position + back * (8 + row * 2.2) + right * (side * 1.7)
+		local loyalty = self:_loyaltyLevel(wolf)
+		local slotDist = math.max(6, 8 - loyalty * 0.2)
+		local slot = root.Position + back * (slotDist + row * 2.2) + right * (side * 1.7)
+		if self:_shelteredByFire(slot) then
+			slot = self:_pushOutOfFire(slot)
+		end
+		if (pos - root.Position).Magnitude < 2.5 and (slot - pos).Magnitude > 1 then
+			slot = slot + right * 2
+		end
 		local d = self:_moveSmart(wolf, slot, W.FollowSpeed * (wolf.SpeedMult or 1), dt)
 		if d > 70 then
 			self:_placeAt(wolf, slot)
