@@ -597,6 +597,26 @@ feedButton.Activated:Connect(function()
 	SoundModule.PlayService("UI_Click")
 	Net:SendToServer("FeedWolf", {})
 end)
+local sleepButton = Instance.new("TextButton")
+sleepButton.Name = "SleepButton"
+sleepButton.Size = UDim2.fromOffset(72, 72)
+sleepButton.Position = UDim2.new(1, -88, 1, -564)
+sleepButton.BackgroundColor3 = CYAN
+sleepButton.Text = "SLEEP"
+sleepButton.TextColor3 = NAVY
+sleepButton.TextSize = 16
+sleepButton.Font = Enum.Font.GothamBold
+sleepButton.BorderSizePixel = 0
+sleepButton.Visible = false
+sleepButton.Parent = gui
+local sleepCorner = Instance.new("UICorner")
+sleepCorner.CornerRadius = UDim.new(0.5, 0)
+sleepCorner.Parent = sleepButton
+addStroke(sleepButton, NAVY, 1.5, 0.25)
+sleepButton.Activated:Connect(function()
+	SoundModule.PlayService("UI_Click")
+	Net:SendToServer("SleepBag", {})
+end)
 local grabButton = Instance.new("TextButton")
 grabButton.Name = "GrabButton"
 grabButton.Size = UDim2.fromOffset(72, 72)
@@ -1332,6 +1352,35 @@ local heartSound = nil
 local fireGoingSound = nil
 local lastColdWarn = 0
 local lastFoodWarn = 0
+local function nearestFireDistance(rootPos)
+	local best = nil
+	for _, child in ipairs(workspace:GetChildren()) do
+		if child.Name == "Campfire" then
+			local core = child:FindFirstChild("Core", true)
+			if core then
+				local d = (Vector3.new(core.Position.X, 0, core.Position.Z) - Vector3.new(rootPos.X, 0, rootPos.Z)).Magnitude
+				if not best or d < best then
+					best = d
+				end
+			end
+		end
+	end
+	local logsFolder = workspace:FindFirstChild("Logs")
+	if logsFolder then
+		for _, log in ipairs(logsFolder:GetChildren()) do
+			if log:GetAttribute("Burning") == true then
+				local part = log:IsA("BasePart") and log or log:FindFirstChildWhichIsA("BasePart", true)
+				if part then
+					local d = (Vector3.new(part.Position.X, 0, part.Position.Z) - Vector3.new(rootPos.X, 0, rootPos.Z)).Magnitude
+					if not best or d < best then
+						best = d
+					end
+				end
+			end
+		end
+	end
+	return best
+end
 local function refreshPlayer()
 	setBar(healthFill, player:GetAttribute("Health"), Config.Survival.MaxHealth)
 	setBar(warmthFill, player:GetAttribute("Warmth"), Config.Survival.MaxWarmth)
@@ -1362,8 +1411,16 @@ local function refreshPlayer()
 			if not fireGoingSound or not fireGoingSound.Parent then
 				fireGoingSound = SoundModule.PlayService("FireGoing", true)
 			end
-			if fireGoingSound and not fireGoingSound.IsPlaying then
-				fireGoingSound:Play()
+			if fireGoingSound then
+				local characterNow = player.Character
+				local rootNow = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
+				if rootNow then
+					local dist = nearestFireDistance(rootNow.Position) or Config.Campfire.WarmthRadius
+					fireGoingSound.Volume = math.clamp(0.4 * (1 - dist / Config.Campfire.WarmthRadius), 0, 0.4)
+				end
+				if not fireGoingSound.IsPlaying then
+					fireGoingSound:Play()
+				end
 			end
 		elseif fireGoingSound and fireGoingSound.IsPlaying then
 			fireGoingSound:Stop()
@@ -1775,6 +1832,12 @@ UserInputService.InputChanged:Connect(function(input)
 		radialPointer = Vector2.new(input.Position.X, input.Position.Y)
 	end
 end)
+UserInputService.InputBegan:Connect(function(input)
+	if radialHolding and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
+		radialPointer = Vector2.new(input.Position.X, input.Position.Y)
+		radialUpdateSelection()
+	end
+end)
 radialRunService.RenderStepped:Connect(function()
 	if (radialHolding or radialPressing) and not radialTouchHolding then
 		radialPointer = UserInputService:GetMouseLocation()
@@ -2156,6 +2219,7 @@ local aimParams = RaycastParams.new()
 aimParams.FilterType = Enum.RaycastFilterType.Exclude
 aimParams.IgnoreWater = true
 local wiredAimTools = {}
+local lastAxeSoundAt = 0
 local function watchAimTool(tool)
 	if wiredAimTools[tool] then
 		return
@@ -2170,7 +2234,11 @@ local function watchAimTool(tool)
 	end)
 	tool.Activated:Connect(function()
 		if tool.Name == "Axe" then
-			SoundModule.PlayService("AxeSwing")
+			local nowAxe = os.clock()
+			if nowAxe - lastAxeSoundAt >= Config.Tree.ChopCooldown then
+				lastAxeSoundAt = nowAxe
+				SoundModule.PlayService("AxeSwing")
+			end
 		end
 		local camera = workspace.CurrentCamera
 		if not camera then
@@ -2277,6 +2345,24 @@ RunService.RenderStepped:Connect(function(dt)
 	sackButton.Visible = myPart ~= nil or (player:GetAttribute("SackCount") or 0) > 0
 	feedButton.Visible = sackButton.Visible
 	sackButton.Text = myPart and "SACK" or ("SACK (" .. tostring(player:GetAttribute("SackCount") or 0) .. ")")
+	sleepButton.Visible = false
+	do
+		local cameraNow = workspace.CurrentCamera
+		local rootNow = characterNow and characterNow:FindFirstChild("HumanoidRootPart")
+		if cameraNow and rootNow then
+			local sleepParams = RaycastParams.new()
+			sleepParams.FilterType = Enum.RaycastFilterType.Exclude
+			sleepParams.FilterDescendantsInstances = { characterNow }
+			sleepParams.IgnoreWater = true
+			local hit = workspace:Raycast(cameraNow.CFrame.Position, cameraNow.CFrame.LookVector * Config.Sleep.SleepRange, sleepParams)
+			if hit and hit.Instance then
+				local model = hit.Instance:FindFirstAncestorOfClass("Model")
+				if model and model:GetAttribute("StructureId") == "SleepingBag" then
+					sleepButton.Visible = true
+				end
+			end
+		end
+	end
 	if not myPart then
 		return
 	end

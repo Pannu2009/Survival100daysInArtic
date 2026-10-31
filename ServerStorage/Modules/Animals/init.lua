@@ -1233,16 +1233,20 @@ function Animals:_step(dt)
 	local clock = self.Gameplay.Clock
 	local isNight = clock and clock:GetPhase() == "Night"
 	if isNight then
-		self._nightHowlTick = (self._nightHowlTick or 30) - dt
+		self._nightHowlTick = (self._nightHowlTick or 20) - dt
 		if self._nightHowlTick <= 0 then
-			self._nightHowlTick = 90 + math.random() * 60
+			self._nightHowlTick = 35 + math.random() * 40
 			if self.Gameplay.Net then
 				self.Gameplay.Net:SendToAll("PlaySound", { Sound = "WolfHowl" })
 			end
+			local howled = 0
 			for _, wolf in ipairs(self.Wolves) do
 				if not wolf.Owner and wolf.Health > 0 then
 					wolf.HowlUntil = now + 1.6
-					break
+					howled += 1
+					if howled >= 3 then
+						break
+					end
 				end
 			end
 		end

@@ -82,6 +82,7 @@ function WorldBuilder:SnapPartToGround(model, part, x, z)
 	end
 end
 function WorldBuilder:WarmthRateAt(position)
+	local total = 0
 	for _, fire in ipairs(self.Fires) do
 		if fire.Lit and fire.Fuel > 0 then
 			local rate = Config.Campfire.WarmthRate
@@ -96,17 +97,20 @@ function WorldBuilder:WarmthRateAt(position)
 					and p.Y >= -s.Y / 2 - 2
 					and p.Y <= s.Y / 2 + 3
 				then
-					return rate
+					total += rate
 				end
 			else
 				local radius = Config.Campfire.WarmthRadius
 				local dx = position.X - fire.Core.Position.X
 				local dz = position.Z - fire.Core.Position.Z
 				if dx * dx + dz * dz <= radius * radius then
-					return rate
+					total += rate
 				end
 			end
 		end
+	end
+	if total > 0 then
+		return total
 	end
 	return nil
 end

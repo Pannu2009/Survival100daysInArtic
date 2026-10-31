@@ -65,11 +65,13 @@ function SurvivalPlayer:Update(dt, context)
 	end
 	context = context or {}
 	if self.Humanoid and self.Humanoid.Parent then
-		if self.Humanoid.Health ~= self.Health then
+		if self.Humanoid.Health < self.Health then
 			self:_setHealth(self.Humanoid.Health)
 			if self.Dead then
 				return
 			end
+		elseif self.Humanoid.Health > self.Health then
+			self.Humanoid.Health = self.Health
 		end
 	end
 	local drainScale = 1
@@ -88,7 +90,12 @@ function SurvivalPlayer:Update(dt, context)
 	if self.Hunger:IsStarving() then
 		change -= Config.Survival.StarvingHealthDrain
 	end
-	if change == 0 and self.Hunger:Get() > 0 and self.Warmth > 0 then
+	local fullHunger = self.Hunger:Get() >= Config.Survival.MaxHunger
+	local fullWarmth = self.Warmth >= Config.Survival.MaxWarmth
+	local nearFire = (context.FireRate or 0) > 0
+	if nearFire then
+		change += Config.Survival.HealthRegenPerSecond
+	elseif change == 0 and fullHunger and fullWarmth then
 		change += Config.Survival.HealthRegenPerSecond
 	end
 	if change ~= 0 then

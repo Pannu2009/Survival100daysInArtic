@@ -63,7 +63,6 @@ function Gameplay.new(world, clock, temperature)
 	self.Net = Network
 	self.Merchant = Merchant.new(self)
 	self.Coal = Coal.new(self)
-	self._sleepBagMultiplierGranted = false
 	self._kidMultiplierGranted = {}
 	self.Weapons = Weapons.new(self)
 	self._foot = {}
@@ -201,12 +200,8 @@ function Gameplay:Start()
 				end
 				self.Sleep:RegisterBag(model, anchor, owner)
 			end
-			if not self._sleepBagMultiplierGranted then
-				self._sleepBagMultiplierGranted = true
-				self.Clock:SetMultiplier(self.Clock:GetMultiplier() + 1)
-				for _, player in ipairs(Players:GetPlayers()) do
-					self:Notify(player, "Sleeping bag built! Day multiplier +1.")
-				end
+			for _, player in ipairs(Players:GetPlayers()) do
+				self:Notify(player, "Sleeping bag built!")
 			end
 		elseif bp.StructureId == "Shed" then
 			local model, _anchor = self.World:CreateStructure("Shed", bp.Position.X, bp.Position.Z, false)
@@ -232,6 +227,34 @@ function Gameplay:Start()
 	end)
 	Network:ListenToClient("FeedWolf", function(player, data)
 		self.Animals:Feed(player)
+	end, { RateLimit = 5 })
+	Network:ListenToClient("SleepBag", function(player, data)
+		if not self.Sleep then
+			return
+		end
+		if self.Sleep:IsSleeping(player) then
+			self.Sleep:Wake(player, "You wake up.")
+			return
+		end
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not root then
+			return
+		end
+		local best = nil
+		local bestDist = nil
+		for _, bag in pairs(self.Sleep.Bags) do
+			if bag.Anchor then
+				local d = (root.Position - bag.Anchor.Position).Magnitude
+				if d <= Config.Sleep.SleepRange and (not bestDist or d < bestDist) then
+					best = bag
+					bestDist = d
+				end
+			end
+		end
+		if best then
+			self.Sleep:StartSleep(player, best)
+		end
 	end, { RateLimit = 5 })
 	Network:ListenToClient("SackAction", function(player, data)
 		local action = typeof(data) == "table" and data.Action or nil
@@ -963,15 +986,14 @@ function Gameplay:Update(dt)
 				context.WarmthBonus = bonus
 			end
 		end
-		if root and not context.FireRate then
+		if root then
 			for log in pairs(self._burning) do
 				local lp = getLogPart(log)
 				if lp then
 					local dx = lp.Position.X - root.Position.X
 					local dz = lp.Position.Z - root.Position.Z
 					if dx * dx + dz * dz <= Config.Campfire.BurningLogRadius * Config.Campfire.BurningLogRadius then
-					context.FireRate = Config.Campfire.BurningLogWarmRate
-					break
+						context.FireRate = (context.FireRate or 0) + Config.Campfire.BurningLogWarmRate
 					end
 				end
 			end
