@@ -1109,15 +1109,63 @@ function Animals:_computePath(from, to)
 	end
 	return points
 end
+function Animals:_safeRetreat(wolf, threatPos)
+	local pos = wolf.Root.Position
+	local away = Vector3.new(pos.X - threatPos.X, 0, pos.Z - threatPos.Z)
+	if away.Magnitude < 0.1 then
+		away = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5)
+	end
+	away = away.Unit
+	local dist = W.RetreatDistance or 20
+	for _, angle in ipairs({ 0, 60, -60, 120, -120 }) do
+		local rad = math.rad(angle)
+		local dir = Vector3.new(away.X * math.cos(rad) - away.Z * math.sin(rad), 0, away.X * math.sin(rad) + away.Z * math.cos(rad))
+		local candidate = self:_pushOutOfFire(pos + dir * dist)
+		if not self:_shelteredByFire(candidate) then
+			return candidate
+		end
+	end
+	return self:_pushOutOfFire(pos + away * dist)
+end
 function Animals:_moveSmart(wolf, targetPos, speed, dt)
 	local pos = wolf.Root.Position
 	local targetDist = (Vector3.new(targetPos.X, 0, targetPos.Z) - Vector3.new(pos.X, 0, pos.Z)).Magnitude
+	local now = os.clock()
+	if wolf.RecoverTarget and now < (wolf.RecoverUntil or 0) then
+		self:_moveToward(wolf, wolf.RecoverTarget, speed, dt)
+		return targetDist
+	end
+	wolf.RecoverTarget = nil
+	if speed <= 0 then
+		wolf.StuckCheckAt = nil
+	end
+	if speed > 0 and targetDist > 3 then
+		if not wolf.StuckCheckAt then
+			wolf.StuckCheckAt = now
+			wolf.StuckCheckPos = pos
+		elseif now - wolf.StuckCheckAt >= (W.StuckSeconds or 2) then
+			if (pos - wolf.StuckCheckPos).Magnitude < (W.StuckMoveMin or 0.5) then
+				wolf.Path = nil
+				local dir = Vector3.new(targetPos.X - pos.X, 0, targetPos.Z - pos.Z)
+				if dir.Magnitude < 0.1 then dir = Vector3.new(1, 0, 0) end
+				dir = dir.Unit
+				local side = math.random() < 0.5 and 1 or -1
+				wolf.RecoverTarget = self:_pushOutOfFire(pos + Vector3.new(-dir.Z * side * 6, 0, dir.X * side * 6))
+				wolf.RecoverUntil = now + (W.RecoverSeconds or 2)
+				wolf.StuckCheckAt = now
+				wolf.StuckCheckPos = pos
+				self:_moveToward(wolf, wolf.RecoverTarget, speed, dt)
+				return targetDist
+			end
+			wolf.StuckCheckAt = now
+			wolf.StuckCheckPos = pos
+		end
+	end
 	if targetDist < 8 then
 		wolf.Path = nil
 		self:_moveToward(wolf, targetPos, speed, dt)
 		return targetDist
 	end
-	local now = os.clock()
 	if now < (wolf.PathFailUntil or 0) then
 		self:_moveToward(wolf, targetPos, speed, dt)
 		return targetDist
@@ -1128,10 +1176,12 @@ function Animals:_moveSmart(wolf, targetPos, speed, dt)
 		if points then
 			wolf.Path = { Points = points, Index = 2, TargetPos = targetPos, ExpiresAt = now + 5 }
 			path = wolf.Path
+			wolf.PathFailCount = 0
 		else
 			wolf.Path = nil
 			path = nil
-			wolf.PathFailUntil = now + 1.5
+			wolf.PathFailCount = (wolf.PathFailCount or 0) + 1
+			wolf.PathFailUntil = now + math.min(1.5 * wolf.PathFailCount, W.PathFailBackoffMax or 6)
 		end
 	end
 	if not path then
@@ -1392,10 +1442,18 @@ function Animals:_step(dt)
 			and not wolf.Leader and (wolf.State == "Aggro" or wolf.State == "WolfFight")
 			and not (wolf.FleeUntil and now < wolf.FleeUntil)
 		then
+			local threatPos = nil
+			if wolf.TargetPlayer and wolf.TargetPlayer.Character then
+				local tr = wolf.TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+				threatPos = tr and tr.Position
+			end
+			if not threatPos and wolf.TargetWolf and wolf.TargetWolf.Root then
+				threatPos = wolf.TargetWolf.Root.Position
+			end
 			wolf.State = "Roam"
 			wolf.TargetPlayer = nil
 			wolf.TargetWolf = nil
-			wolf.RoamTarget = wolf.Home
+			wolf.RoamTarget = threatPos and self:_safeRetreat(wolf, threatPos) or wolf.Home
 			wolf.FleeUntil = now + 5
 		end
 		if not wolf.Owner and think and (wolf.State == "Roam" or wolf.State == "Wary")
