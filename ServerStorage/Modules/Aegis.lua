@@ -360,8 +360,10 @@ function AimbotGuard.trackShot(player, aimDir)
 end
 local SessionGuard = {}
 local activity = {}
+local idleAuditLogged = {}
 function SessionGuard.ping(player)
 	activity[player.UserId] = os.clock()
+	idleAuditLogged[player.UserId] = nil
 end
 function SessionGuard.start()
 	local cfg = Config.session
@@ -385,7 +387,14 @@ function SessionGuard.start()
 				if not isTrusted(player) then
 					local lastActive = activity[player.UserId] or now
 					if now - lastActive > cfg.maxIdle then
-						Logger.kick(player, "Aegis: idle too long")
+						if Config.auditOnly then
+							if not idleAuditLogged[player.UserId] then
+								idleAuditLogged[player.UserId] = true
+								Logger.log("AUDIT (no action): idle too long / " .. player.Name)
+							end
+						else
+							Logger.kick(player, "Aegis: idle too long")
+						end
 					end
 				end
 			end

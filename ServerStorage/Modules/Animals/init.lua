@@ -1346,7 +1346,7 @@ function Animals:_step(dt)
 				end
 			end
 			if wolf.RoamTarget then
-				self:_moveSmart(wolf, wolf.RoamTarget, W.RoamSpeed, dt)
+				self:_moveSmart(wolf, wolf.RoamTarget, W.RoamSpeed * (wolf.SpeedMult or 1), dt)
 			end
 		elseif wolf.State == "Playing" then
 			if think then
@@ -1389,7 +1389,7 @@ function Animals:_step(dt)
 				elseif d > W.WaryRange + 10 then
 					if wolf.NoisePos and now < (wolf.NoiseUntil or 0) then
 						investigating = true
-						self:_moveToward(wolf, wolf.NoisePos, W.RoamSpeed * 1.6, dt)
+						self:_moveToward(wolf, wolf.NoisePos, W.RoamSpeed * 1.6 * (wolf.SpeedMult or 1), dt)
 						if (wolf.NoisePos - pos).Magnitude < 5 then
 							wolf.NoisePos = nil
 						end
@@ -1417,7 +1417,7 @@ function Animals:_step(dt)
 								+ Vector3.new(math.cos(a) * 18, 0, math.sin(a) * 18)
 							wolf.WaryPaceUntil = now + 3
 						end
-						self:_moveSmart(wolf, wolf.WaryPaceTarget, W.RoamSpeed, dt)
+						self:_moveSmart(wolf, wolf.WaryPaceTarget, W.RoamSpeed * (wolf.SpeedMult or 1), dt)
 					else
 						self:_moveToward(wolf, pos, 0, dt)
 					end
@@ -1432,7 +1432,7 @@ function Animals:_step(dt)
 			elseif think and self:_shelteredByFire(root.Position) then
 				wolf.State = "Wary"
 			else
-				local d = self:_moveSmart(wolf, root.Position, W.ChaseSpeed, dt)
+				local d = self:_moveSmart(wolf, root.Position, W.ChaseSpeed * (wolf.SpeedMult or 1), dt)
 				if d <= W.BiteRange and wolf.BiteCd <= 0 then
 					self:_bitePlayer(wolf, target)
 				end
@@ -1474,7 +1474,7 @@ function Animals:_step(dt)
 			else
 				local slotPos = sledService:GetHarnessSlot(wolf.SlotIndex, self:Count(wolf.Owner))
 				if slotPos then
-					local d = self:_moveSmart(wolf, slotPos, W.HarnessSpeed, dt)
+					local d = self:_moveSmart(wolf, slotPos, W.HarnessSpeed * (wolf.SpeedMult or 1), dt)
 					if d > 26 then
 						self:_placeAt(wolf, slotPos)
 					end
@@ -1499,7 +1499,7 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 		if prey.Health <= 0 or now > wolf.AttackUntil then
 			wolf.AttackWolf = nil
 		else
-			local d = self:_moveToward(wolf, prey.Root.Position, W.ChaseSpeed + 1, dt)
+			local d = self:_moveToward(wolf, prey.Root.Position, W.ChaseSpeed * (wolf.SpeedMult or 1) + 1, dt)
 			if d <= W.BiteRange and wolf.BiteCd <= 0 then
 				wolf.BiteCd = 0.9
 				if wolf.BiteSound then
@@ -1524,11 +1524,11 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 			local r = math.sqrt(math.random()) * 25
 			wolf.RoamTarget = anchor + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
 		end
-		self:_moveToward(wolf, wolf.RoamTarget, W.RoamSpeed + 1.5, dt)
+		self:_moveToward(wolf, wolf.RoamTarget, (W.RoamSpeed + 1.5) * (wolf.SpeedMult or 1), dt)
 	elseif mode == "Alert" then
 		local back = root.Position - horizontalDir(root.CFrame.LookVector) * 5
 		if (pos - back).Magnitude > 3 then
-			self:_moveToward(wolf, back, W.FollowSpeed, dt)
+			self:_moveToward(wolf, back, W.FollowSpeed * (wolf.SpeedMult or 1), dt)
 		end
 		local threat = self:NearestWildWolf(pos, 25)
 		if threat then
@@ -1557,7 +1557,7 @@ function Animals:_stepTamed(wolf, dt, now, isNight)
 			side = 0
 		end
 		local slot = root.Position + back * (8 + row * 2.2) + right * (side * 1.7)
-		local d = self:_moveSmart(wolf, slot, W.FollowSpeed, dt)
+		local d = self:_moveSmart(wolf, slot, W.FollowSpeed * (wolf.SpeedMult or 1), dt)
 		if d > 70 then
 			self:_placeAt(wolf, slot)
 		end
