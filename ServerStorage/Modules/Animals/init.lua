@@ -264,6 +264,9 @@ function Animals:_buildWolf()
 		BiteDamage = variant.Bite or W.BiteDamage,
 		PackIndex = 0,
 		PackRole = nil,
+		Hunger = 50,
+		HungryEat = false,
+		RestUntil = 0,
 		TamePoints = 0,
 		TameTarget = nil,
 		Owner = nil,
@@ -655,6 +658,43 @@ function Animals:_tryTame(wolf)
 	wolf.State = "GoEat"
 	return true
 end
+function Animals:_tryHungryEat(wolf)
+	local pos = wolf.Root.Position
+	local best, bestDist, bestFood = nil, W.HungrySearchRange or 30, nil
+	local fishFolder = self.Gameplay.Fish and self.Gameplay.Fish.Folder
+	if fishFolder then
+		for _, fish in ipairs(fishFolder:GetChildren()) do
+			if fish:GetAttribute("WolfEating") ~= true then
+				local primary = fish:FindFirstChild("F1") or fish:FindFirstChildWhichIsA("BasePart", true)
+				if primary and primary:GetAttribute("DraggedBy") == nil then
+					local d = (primary.Position - pos).Magnitude
+					if d < bestDist then
+						best, bestDist = fish, d
+						bestFood = fish:GetAttribute("Cooked") == true and "CookedFish" or "RawFish"
+					end
+				end
+			end
+		end
+	end
+	local meatFolder = self.Gameplay.Meat and self.Gameplay.Meat.Folder
+	if meatFolder then
+		for _, meat in ipairs(meatFolder:GetChildren()) do
+			if meat:GetAttribute("DraggedBy") == nil and meat:GetAttribute("WolfEating") ~= true then
+				local d = (meat.Position - pos).Magnitude
+				if d < bestDist then
+					best, bestDist = meat, d
+					bestFood = meat:GetAttribute("FoodType") or "RawMeat"
+				end
+			end
+		end
+	end
+	if not best then return false end
+	wolf.EatTarget = best
+	wolf.EatFood = bestFood
+	wolf.HungryEat = true
+	wolf.State = "GoEat"
+	return true
+end
 function Animals:_stepGoEat(wolf, dt, now)
 	local fish = wolf.EatTarget
 	local primary = nil
@@ -725,6 +765,12 @@ function Animals:_consumeFood(wolf, food)
 	local foodType = wolf.EatFood or "RawFish"
 	food:Destroy()
 	wolf.EatFood = nil
+	if wolf.HungryEat then
+		wolf.HungryEat = false
+		wolf.Hunger = math.min(100, (wolf.Hunger or 0) + (W.HungryEatRestore or 40))
+		wolf.State = "Roam"
+		return
+	end
 	local points = (W.TameFoodPoints or {})[foodType] or 1
 	wolf.TamePoints = (wolf.TamePoints or 0) + points
 	local target = wolf.TameTarget or W.TamePoints
@@ -995,14 +1041,19 @@ function Animals:_nearestPlayer(position, maxDist)
 end
 function Animals:_aggroRange(wolf, isNight)
 	local base = isNight and W.AggroRangeNight or W.AggroRangeDay
+	local weather = self.Gameplay.Temperature and self.Gameplay.Temperature:GetWeather()
+	if weather == "Blizzard" then base = base * 0.8 end
 	if wolf.Personality == "Aggressive" then return base * 1.25 end
 	if wolf.Personality == "Cautious" then return base * 0.75 end
 	return base
 end
 function Animals:_waryRange(wolf)
-	if wolf.Personality == "Cautious" then return W.WaryRange * 1.25 end
-	if wolf.Personality == "Aggressive" then return W.WaryRange * 0.85 end
-	return W.WaryRange
+	local range = W.WaryRange
+	if wolf.Personality == "Cautious" then range = range * 1.25 end
+	if wolf.Personality == "Aggressive" then range = range * 0.85 end
+	local weather = self.Gameplay.Temperature and self.Gameplay.Temperature:GetWeather()
+	if weather == "Blizzard" then range = range * 0.8 end
+	return range
 end
 function Animals:_fleeFrac(wolf)
 	if wolf.Personality == "Cautious" then return W.FleeHealthFrac * 1.5 end
@@ -1237,6 +1288,10 @@ function Animals:_moveSmart(wolf, targetPos, speed, dt)
 	return targetDist
 end
 function Animals:_moveToward(wolf, targetPos, speed, dt)
+	local weather = self.Gameplay.Temperature and self.Gameplay.Temperature:GetWeather()
+	if weather == "Blizzard" then speed = speed * 0.75 end
+	if weather == "Storm" then speed = speed * 0.9 end
+	if (wolf.Hunger or 50) <= 0 then speed = speed * 0.85 end
 	local pos = wolf.Root.Position
 	local to = Vector3.new(targetPos.X - pos.X, 0, targetPos.Z - pos.Z)
 	local dist = to.Magnitude
@@ -1448,6 +1503,24 @@ function Animals:_step(dt)
 			if not wolf.Owner.Parent or (survival and survival.Dead) then
 				self:_releaseWolf(wolf)
 				continue
+			end
+		end
+		if not wolf.Owner then
+			wolf.Hunger = math.max(0, (wolf.Hunger or 50) - (W.HungerDrainPerSecond or 0.05) * dt)
+			if now < (wolf.RestUntil or 0) and wolf.State == "Roam" then
+				wolf.Health = math.min(wolf.MaxHealth, wolf.Health + (W.RestHealPerSecond or 3) * dt)
+				self:_moveToward(wolf, wolf.Root.Position, 0, dt)
+				continue
+			end
+			if think and wolf.State == "Roam" and wolf.Health < wolf.MaxHealth * 0.5
+				and self:_nearestVisiblePlayer(wolf, self:_waryRange(wolf)) == nil
+			then
+				wolf.RestUntil = now + (W.RestSeconds or 8)
+			end
+			if think and (wolf.State == "Roam" or wolf.State == "Wary")
+				and (wolf.Hunger or 50) < (W.HungryThreshold or 30)
+			then
+				self:_tryHungryEat(wolf)
 			end
 		end
 		if not wolf.Owner and wolf.State ~= "GoEat" and wolf.Health <= W.TameHealth then
