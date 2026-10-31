@@ -618,6 +618,9 @@ function Weapons:_hitTree(player, target, def)
 		return
 	end
 	self:_fellTree(target)
+	if self.Gameplay.Animals then
+		self.Gameplay.Animals:NoiseAt(target:GetPivot().Position, player, Config.Wolves.ChopHearRadius or 45)
+	end
 	self.Gameplay:_markTutorial(player, "Felled")
 	self.Gameplay:RecordAction(player, "chop")
 end

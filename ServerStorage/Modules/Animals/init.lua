@@ -257,6 +257,10 @@ function Animals:_buildWolf()
 		Variant = variantName,
 		Level = variant.Level or 1,
 		SpeedMult = variant.SpeedMult or 1,
+		Personality = (function()
+			local r = math.random()
+			if r < 0.35 then return "Cautious" elseif r < 0.7 then return "Aggressive" else return "Curious" end
+		end)(),
 		BiteDamage = variant.Bite or W.BiteDamage,
 		PackIndex = 0,
 		TamePoints = 0,
@@ -407,12 +411,16 @@ function Animals:NoiseAt(position, player, radius)
 		if not wolf.Owner and wolf.Health > 0 and not wolf.Removed
 			and wolf.State ~= "GoEat" and wolf.State ~= "Aggro"
 		then
-			if (wolf.Root.Position - position).Magnitude <= radius then
+			local hear = radius
+			if wolf.Personality == "Curious" then hear = radius * 1.5 end
+			if wolf.Personality == "Cautious" then hear = radius * 0.75 end
+			if (wolf.Root.Position - position).Magnitude <= hear then
 				wolf.State = "Wary"
 				wolf.TargetPlayer = player
 				wolf.WarySince = now
 				wolf.NoisePos = position
 				wolf.NoiseUntil = now + Config.Sickness.CoughInvestigateSeconds
+				self:_remember(wolf, position)
 			end
 		end
 	end
@@ -974,6 +982,88 @@ function Animals:_nearestPlayer(position, maxDist)
 	end
 	return best, bestDist
 end
+function Animals:_aggroRange(wolf, isNight)
+	local base = isNight and W.AggroRangeNight or W.AggroRangeDay
+	if wolf.Personality == "Aggressive" then return base * 1.25 end
+	if wolf.Personality == "Cautious" then return base * 0.75 end
+	return base
+end
+function Animals:_waryRange(wolf)
+	if wolf.Personality == "Cautious" then return W.WaryRange * 1.25 end
+	if wolf.Personality == "Aggressive" then return W.WaryRange * 0.85 end
+	return W.WaryRange
+end
+function Animals:_fleeFrac(wolf)
+	if wolf.Personality == "Cautious" then return W.FleeHealthFrac * 1.5 end
+	if wolf.Personality == "Aggressive" then return W.FleeHealthFrac * 0.6 end
+	return W.FleeHealthFrac
+end
+function Animals:_waryTimeout(wolf)
+	if wolf.Personality == "Cautious" then return 12 end
+	if wolf.Personality == "Aggressive" then return 5 end
+	return 8
+end
+function Animals:_canSee(wolf, targetPos, maxDist)
+	local pos = wolf.Root.Position
+	local toTarget = targetPos - pos
+	local dist = toTarget.Magnitude
+	if dist > maxDist then return false end
+	if dist <= (W.CloseSenseRange or 8) then return true end
+	local flat = Vector3.new(toTarget.X, 0, toTarget.Z)
+	if flat.Magnitude < 0.1 then return true end
+	local facing = Vector3.new(-math.sin(wolf.Yaw), 0, -math.cos(wolf.Yaw))
+	local cosHalf = math.cos(math.rad((W.VisionFovDegrees or 120) / 2))
+	if facing:Dot(flat.Unit) < cosHalf then return false end
+	local origin = pos + Vector3.new(0, 1.5, 0)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { wolf.Model }
+	params.IgnoreWater = true
+	local hit = workspace:Raycast(origin, toTarget, params)
+	if hit and hit.Distance < dist - 2.5 then return false end
+	return true
+end
+function Animals:_nearestVisiblePlayer(wolf, maxDist)
+	local pos = wolf.Root.Position
+	local best, bestDist = nil, maxDist
+	for _, player in ipairs(Players:GetPlayers()) do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if root then
+			local survival = self.Gameplay._survivals[player]
+			if not (survival and survival.Dead) then
+				local d = (root.Position - pos).Magnitude
+				if d < bestDist and self:_canSee(wolf, root.Position, maxDist) then
+					best, bestDist = player, d
+				end
+			end
+		end
+	end
+	return best, bestDist
+end
+function Animals:_nearestSprintingPlayer(wolf, maxDist)
+	local pos = wolf.Root.Position
+	local best, bestDist = nil, maxDist
+	local sprinting = self.Gameplay._sprinting or {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		if sprinting[player] then
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if root then
+				local survival = self.Gameplay._survivals[player]
+				if not (survival and survival.Dead) then
+					local d = (root.Position - pos).Magnitude
+					if d < bestDist then best, bestDist = player, d end
+				end
+			end
+		end
+	end
+	return best, bestDist
+end
+function Animals:_remember(wolf, pos)
+	wolf.LastSeenPos = pos
+	wolf.LastSeenUntil = os.clock() + (W.MemorySeconds or 8)
+end
 function Animals:_pushOutOfFire(position)
 	local x, z = position.X, position.Z
 	for _, fire in ipairs(self.Gameplay.World.Fires or {}) do
@@ -1298,7 +1388,7 @@ function Animals:_step(dt)
 				end
 			end
 		end
-		if not wolf.Owner and wolf.Health > 0 and wolf.Health < (wolf.MaxHealth * W.FleeHealthFrac)
+		if not wolf.Owner and wolf.Health > 0 and wolf.Health < (wolf.MaxHealth * self:_fleeFrac(wolf))
 			and not wolf.Leader and (wolf.State == "Aggro" or wolf.State == "WolfFight")
 			and not (wolf.FleeUntil and now < wolf.FleeUntil)
 		then
@@ -1320,9 +1410,9 @@ function Animals:_step(dt)
 		self:_syncMood(wolf)
 		if wolf.State == "Roam" then
 			if think then
-				local near, dist = self:_nearestPlayer(pos, W.WaryRange)
+				local near, dist = self:_nearestVisiblePlayer(wolf, self:_waryRange(wolf))
 				if near then
-					local aggroRange = isNight and W.AggroRangeNight or W.AggroRangeDay
+					local aggroRange = self:_aggroRange(wolf, isNight)
 					local nearRoot = near.Character and near.Character:FindFirstChild("HumanoidRootPart")
 					local sheltered = nearRoot and self:_shelteredByFire(nearRoot.Position)
 					if dist <= aggroRange and not sheltered then
@@ -1332,6 +1422,19 @@ function Animals:_step(dt)
 						wolf.State = "Wary"
 						wolf.TargetPlayer = near
 						wolf.WarySince = now
+					end
+				else
+					local sprinter = self:_nearestSprintingPlayer(wolf, W.SprintHearRadius or 35)
+					if sprinter then
+						local sRoot = sprinter.Character and sprinter.Character:FindFirstChild("HumanoidRootPart")
+						if sRoot then
+							wolf.State = "Wary"
+							wolf.TargetPlayer = sprinter
+							wolf.WarySince = now
+							wolf.NoisePos = sRoot.Position
+							wolf.NoiseUntil = now + (W.MemorySeconds or 8)
+							self:_remember(wolf, sRoot.Position)
+						end
 					end
 				end
 				if not wolf.RoamTarget or (wolf.RoamTarget - pos).Magnitude < 2 then
@@ -1350,9 +1453,9 @@ function Animals:_step(dt)
 			end
 		elseif wolf.State == "Playing" then
 			if think then
-				local near, dist = self:_nearestPlayer(pos, W.WaryRange)
+				local near, dist = self:_nearestVisiblePlayer(wolf, self:_waryRange(wolf))
 				if near then
-					local aggroRange = isNight and W.AggroRangeNight or W.AggroRangeDay
+					local aggroRange = self:_aggroRange(wolf, isNight)
 					local nearRoot = near.Character and near.Character:FindFirstChild("HumanoidRootPart")
 					local sheltered = nearRoot and self:_shelteredByFire(nearRoot.Position)
 					if dist <= aggroRange and not sheltered then
@@ -1377,16 +1480,28 @@ function Animals:_step(dt)
 			local target = wolf.TargetPlayer
 			local root = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
 			if not root then
-				wolf.State = "Roam"
+				if wolf.LastSeenPos and now < (wolf.LastSeenUntil or 0) then
+					self:_moveToward(wolf, wolf.LastSeenPos, W.RoamSpeed * 1.6 * (wolf.SpeedMult or 1), dt)
+					if (wolf.LastSeenPos - pos).Magnitude < 5 then
+						wolf.LastSeenPos = nil
+						wolf.State = "Roam"
+						wolf.TargetPlayer = nil
+					end
+				else
+					wolf.LastSeenPos = nil
+					wolf.State = "Roam"
+					wolf.TargetPlayer = nil
+				end
 			else
+				self:_remember(wolf, root.Position)
 				local d = (root.Position - pos).Magnitude
 				wolf.Yaw = yawLerp(wolf.Yaw, yawOf(horizontalDir(root.Position - pos)), dt * 7)
-				local aggroRange = isNight and W.AggroRangeNight or W.AggroRangeDay
+				local aggroRange = self:_aggroRange(wolf, isNight)
 				local investigating = false
 				if d <= aggroRange and not self:_shelteredByFire(root.Position) then
 					wolf.State = "Aggro"
 					wolf.NoisePos = nil
-				elseif d > W.WaryRange + 10 then
+				elseif d > self:_waryRange(wolf) + 10 then
 					if wolf.NoisePos and now < (wolf.NoiseUntil or 0) then
 						investigating = true
 						self:_moveToward(wolf, wolf.NoisePos, W.RoamSpeed * 1.6 * (wolf.SpeedMult or 1), dt)
@@ -1404,7 +1519,7 @@ function Animals:_step(dt)
 						wolf.WarySince = now
 					end
 					local waryFor = now - wolf.WarySince
-					if waryFor > 8 then
+					if waryFor > self:_waryTimeout(wolf) then
 						wolf.State = "Roam"
 						wolf.TargetPlayer = nil
 						wolf.WarySince = nil
@@ -1427,18 +1542,33 @@ function Animals:_step(dt)
 			local target = wolf.TargetPlayer
 			local root = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
 			if not root then
-				wolf.State = "Roam"
-				wolf.TargetPlayer = nil
+				if wolf.LastSeenPos and now < (wolf.LastSeenUntil or 0) then
+					wolf.State = "Wary"
+					wolf.NoisePos = wolf.LastSeenPos
+					wolf.NoiseUntil = wolf.LastSeenUntil
+					wolf.WarySince = now
+				else
+					wolf.State = "Roam"
+					wolf.TargetPlayer = nil
+				end
 			elseif think and self:_shelteredByFire(root.Position) then
 				wolf.State = "Wary"
 			else
+				self:_remember(wolf, root.Position)
 				local d = self:_moveSmart(wolf, root.Position, W.ChaseSpeed * (wolf.SpeedMult or 1), dt)
 				if d <= W.BiteRange and wolf.BiteCd <= 0 then
 					self:_bitePlayer(wolf, target)
 				end
 				if think and d > 90 then
-					wolf.State = "Roam"
-					wolf.TargetPlayer = nil
+					if wolf.LastSeenPos and now < (wolf.LastSeenUntil or 0) then
+						wolf.State = "Wary"
+						wolf.NoisePos = wolf.LastSeenPos
+						wolf.NoiseUntil = wolf.LastSeenUntil
+						wolf.WarySince = now
+					else
+						wolf.State = "Roam"
+						wolf.TargetPlayer = nil
+					end
 				end
 			end
 		elseif wolf.State == "WolfFight" then
