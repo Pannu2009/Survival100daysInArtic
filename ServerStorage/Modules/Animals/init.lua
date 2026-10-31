@@ -263,6 +263,7 @@ function Animals:_buildWolf()
 		end)(),
 		BiteDamage = variant.Bite or W.BiteDamage,
 		PackIndex = 0,
+		PackRole = nil,
 		TamePoints = 0,
 		TameTarget = nil,
 		Owner = nil,
@@ -367,13 +368,23 @@ function Animals:_spawnPack()
 		record.Home = home
 		record.PackIndex = i
 		if i == 1 and count >= 2 then
+			record.PackRole = "Leader"
 			record.Leader = true
 			record.Level = (record.Level or 1) + 1
 			record.MaxHealth = math.floor((record.MaxHealth or W.MaxHealth) * 1.6)
 			record.Health = record.MaxHealth
 			record.BiteDamage = math.floor((record.BiteDamage or W.BiteDamage) * W.LeaderDamageMult)
 		end
+		if not record.PackRole then
+			if count == 1 then
+				record.PackRole = "Scout"
+			else
+				local roles = { "Scout", "Guard", "Chaser", "Flanker" }
+				record.PackRole = roles[((i - 2) % 4) + 1]
+			end
+		end
 		record.Model:SetAttribute("Leader", record.Leader)
+		record.Model:SetAttribute("PackRole", record.PackRole or "")
 		local angle = (i / count) * math.pi * 2
 		self:_placeAt(record, home + Vector3.new(math.cos(angle) * 4, 0, math.sin(angle) * 4))
 		table.insert(self.Wolves, record)
@@ -1109,6 +1120,25 @@ function Animals:_computePath(from, to)
 	end
 	return points
 end
+function Animals:_shareThreat(wolf, player)
+	if not wolf.PackId or not player then return end
+	local now = os.clock()
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	for _, other in ipairs(self.Wolves) do
+		if other ~= wolf and other.PackId == wolf.PackId and not other.Owner and other.Health > 0
+			and (other.State == "Roam" or other.State == "Wary")
+			and (other.Root.Position - wolf.Root.Position).Magnitude <= (W.SharedThreatRange or 40)
+		then
+			other.State = "Wary"
+			other.TargetPlayer = player
+			other.WarySince = now
+			other.NoisePos = root.Position
+			other.NoiseUntil = now + (W.MemorySeconds or 8)
+			self:_remember(other, root.Position)
+		end
+	end
+end
 function Animals:_safeRetreat(wolf, threatPos)
 	local pos = wolf.Root.Position
 	local away = Vector3.new(pos.X - threatPos.X, 0, pos.Z - threatPos.Z)
@@ -1459,7 +1489,8 @@ function Animals:_step(dt)
 		if not wolf.Owner and think and (wolf.State == "Roam" or wolf.State == "Wary")
 			and not (wolf.FleeUntil and now < wolf.FleeUntil)
 		then
-			local enemy = self:_nearestEnemyWolf(wolf, W.WolfFightRange)
+			local fightRange = (wolf.Root.Position - wolf.Home).Magnitude <= (W.TerritoryRadius or 40) and W.WolfFightRange or (W.OutsideTerritoryFightRange or 12)
+			local enemy = self:_nearestEnemyWolf(wolf, fightRange)
 			if enemy then
 				wolf.State = "WolfFight"
 				wolf.TargetWolf = enemy
@@ -1476,6 +1507,7 @@ function Animals:_step(dt)
 					if dist <= aggroRange and not sheltered then
 						wolf.State = "Aggro"
 						wolf.TargetPlayer = near
+						self:_shareThreat(wolf, near)
 					else
 						wolf.State = "Wary"
 						wolf.TargetPlayer = near
@@ -1501,7 +1533,10 @@ function Animals:_step(dt)
 						self:_enterPlaying(wolf, now)
 					else
 						local a = math.random() * math.pi * 2
-						local r = math.sqrt(math.random()) * W.RoamRadius
+						local radius = W.RoamRadius
+						if wolf.PackRole == "Scout" then radius = radius * 1.5 end
+						if wolf.PackRole == "Guard" then radius = radius * 0.5 end
+						local r = math.sqrt(math.random()) * radius
 						wolf.RoamTarget = wolf.Home + Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
 					end
 				end
@@ -1519,6 +1554,7 @@ function Animals:_step(dt)
 					if dist <= aggroRange and not sheltered then
 						wolf.State = "Aggro"
 						wolf.TargetPlayer = near
+						self:_shareThreat(wolf, near)
 					else
 						wolf.State = "Wary"
 						wolf.TargetPlayer = near
@@ -1559,6 +1595,7 @@ function Animals:_step(dt)
 				if d <= aggroRange and not self:_shelteredByFire(root.Position) then
 					wolf.State = "Aggro"
 					wolf.NoisePos = nil
+					self:_shareThreat(wolf, target)
 				elseif d > self:_waryRange(wolf) + 10 then
 					if wolf.NoisePos and now < (wolf.NoiseUntil or 0) then
 						investigating = true
@@ -1613,11 +1650,23 @@ function Animals:_step(dt)
 				wolf.State = "Wary"
 			else
 				self:_remember(wolf, root.Position)
-				local d = self:_moveSmart(wolf, root.Position, W.ChaseSpeed * (wolf.SpeedMult or 1), dt)
-				if d <= W.BiteRange and wolf.BiteCd <= 0 then
+				local chaseTarget = root.Position
+				if wolf.PackRole == "Flanker" then
+					local toPrey = Vector3.new(root.Position.X - pos.X, 0, root.Position.Z - pos.Z)
+					if toPrey.Magnitude > 0.1 then
+						local perp = Vector3.new(-toPrey.Z, 0, toPrey.X).Unit * ((wolf.PackIndex or 0) % 2 == 0 and 4 or -4)
+						chaseTarget = root.Position + perp
+					end
+				end
+				local chaseSpeed = W.ChaseSpeed * (wolf.SpeedMult or 1)
+				if wolf.PackRole == "Chaser" then chaseSpeed = chaseSpeed * 1.1 end
+				local d = self:_moveSmart(wolf, chaseTarget, chaseSpeed, dt)
+				local biteDist = (root.Position - wolf.Root.Position).Magnitude
+				if biteDist <= W.BiteRange and wolf.BiteCd <= 0 then
 					self:_bitePlayer(wolf, target)
 				end
-				if think and d > 90 then
+				local giveUp = wolf.PackRole == "Guard" and 50 or 90
+				if think and d > giveUp then
 					if wolf.LastSeenPos and now < (wolf.LastSeenUntil or 0) then
 						wolf.State = "Wary"
 						wolf.NoisePos = wolf.LastSeenPos
