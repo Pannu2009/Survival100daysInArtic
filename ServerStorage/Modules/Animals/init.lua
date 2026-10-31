@@ -771,12 +771,15 @@ function Animals:_step(dt)
 			end
 			if think and (wolf.State == "Roam" or wolf.State == "Wary")
 				and (wolf.Hunger or 50) < (W.HungryThreshold or 30)
+				and now >= (wolf.NextFoodSearch or 0)
 			then
+				wolf.NextFoodSearch = now + 1
 				self:_tryHungryEat(wolf)
 			end
 		end
 		if not wolf.Owner and wolf.State ~= "GoEat" and wolf.Health <= W.TameHealth then
-			if think then
+			if think and now >= (wolf.NextFoodSearch or 0) then
+				wolf.NextFoodSearch = now + 1
 				self:_tryTame(wolf)
 			end
 			if (wolf.State == "Roam" or wolf.State == "Wary")

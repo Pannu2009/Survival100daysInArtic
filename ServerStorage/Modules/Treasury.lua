@@ -47,12 +47,20 @@ function Treasury.Save(player)
 		return false
 	end
 	local success = pcall(function()
-		store:SetAsync("player_" .. player.UserId, profile)
+		store:UpdateAsync("player_" .. player.UserId, function()
+			return profile
+		end)
 	end)
 	return success
 end
 Players.PlayerRemoving:Connect(function(player)
+	Treasury.Save(player)
 	cache[player] = nil
+end)
+game:BindToClose(function()
+	for player in pairs(cache) do
+		Treasury.Save(player)
+	end
 end)
 function Treasury.DaysFor(player)
 	local attr = player:GetAttribute("DaysSurvived")
