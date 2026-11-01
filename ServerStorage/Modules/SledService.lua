@@ -44,6 +44,15 @@ local function yawBetween(fromDir, toDir)
 	local dot = fromDir.X * toDir.X + fromDir.Z * toDir.Z
 	return math.atan2(crossY, dot)
 end
+local function playerRoot(player)
+	local character = player.Character
+	return character and character:FindFirstChild("HumanoidRootPart")
+end
+local function withinRange(root, position, range)
+	local dx = root.Position.X - position.X
+	local dz = root.Position.Z - position.Z
+	return (dx * dx + dz * dz) <= range * range
+end
 function SledService.new(world, gameplay)
 	local self = setmetatable({}, SledService)
 	self.World = world

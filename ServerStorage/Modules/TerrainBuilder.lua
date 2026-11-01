@@ -1,16 +1,31 @@
 local TerrainBuilder = {}
-local function paintPeak(terrain, x, z, radius, height)
-	terrain:FillBall(Vector3.new(x, 0, z), radius, Enum.Material.Rock)
+local function paintHill(terrain, x, z, radius, height)
 	local seed = math.abs(x * 31 + z * 17) % 100 / 100
-	for i = 1, 6 do
-		local angle = (i / 6) * math.pi * 2 + seed * 0.9
-		local dist = radius * (0.55 + seed * 0.2)
-		local shoulderRadius = radius * (0.3 + ((i * 13 + seed * 50) % 10) / 100)
-		terrain:FillBall(Vector3.new(x + math.cos(angle) * dist, height * 0.28, z + math.sin(angle) * dist), shoulderRadius, Enum.Material.Rock)
+	local angle = seed * math.pi * 2
+	local dx, dz = math.cos(angle), math.sin(angle)
+	local stops = { { -0.45, 0.7, 0.65 }, { 0, 1.0, 1.0 }, { 0.45, 0.7, 0.65 } }
+	for _, stop in ipairs(stops) do
+		local r = radius * stop[2]
+		local top = height * stop[3]
+		terrain:FillBall(Vector3.new(x + dx * stop[1] * radius, top - r, z + dz * stop[1] * radius), r, Enum.Material.Snow)
 	end
-	terrain:FillBall(Vector3.new(x, height * 0.45, z), radius * 0.62, Enum.Material.Rock)
-	terrain:FillBall(Vector3.new(x, height * 0.92, z), radius * 0.24, Enum.Material.Rock)
-	terrain:FillBall(Vector3.new(x, height * 0.98, z), radius * 0.18, Enum.Material.Snow)
+end
+local function paintPeak(terrain, x, z, radius, height)
+	local seed = math.abs(x * 31 + z * 17) % 100 / 100
+	local angle = seed * math.pi * 2
+	local dx, dz = math.cos(angle), math.sin(angle)
+	local px, pz = -dz, dx
+	local ridge = { { -0.6, 0.55 }, { -0.3, 0.75 }, { 0, 0.95 }, { 0.3, 0.75 }, { 0.6, 0.55 } }
+	for _, stop in ipairs(ridge) do
+		local r = radius * stop[2]
+		terrain:FillBall(Vector3.new(x + dx * stop[1] * radius, -radius * 0.25, z + dz * stop[1] * radius), r, Enum.Material.Rock)
+	end
+	for _, side in ipairs({ -0.4, 0.4 }) do
+		terrain:FillBall(Vector3.new(x + px * side * radius, -radius * 0.25, z + pz * side * radius), radius * 0.6, Enum.Material.Rock)
+	end
+	terrain:FillBall(Vector3.new(x, height * 0.5, z), radius * 0.35, Enum.Material.Rock)
+	terrain:FillBall(Vector3.new(x, height * 0.85, z), radius * 0.18, Enum.Material.Rock)
+	terrain:FillBall(Vector3.new(x, height * 0.92, z), radius * 0.12, Enum.Material.Snow)
 end
 function TerrainBuilder.Build(layout)
 	local terrain = workspace:WaitForChild("Terrain")
@@ -19,7 +34,7 @@ function TerrainBuilder.Build(layout)
 	local diameter = radius * 2
 	terrain:FillBlock(CFrame.new(0, -12, 0), Vector3.new(diameter, 24, diameter), Enum.Material.Snow)
 	for _, hill in ipairs(layout.Hills or {}) do
-		terrain:FillBall(Vector3.new(hill.X, -(hill.Radius - hill.Height), hill.Z), hill.Radius, Enum.Material.Snow)
+		paintHill(terrain, hill.X, hill.Z, hill.Radius, hill.Height)
 	end
 	for _, peak in ipairs(layout.Peaks or {}) do
 		paintPeak(terrain, peak.X, peak.Z, peak.Radius, peak.Height)
