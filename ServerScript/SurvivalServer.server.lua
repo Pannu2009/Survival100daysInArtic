@@ -120,6 +120,17 @@ if milestone2Ok then
 else
 	warn("[Arctic] Milestone 2 landmark visuals failed:", milestone2Result)
 end
+local ArcticMilestone3 = require(ServerModules:WaitForChild("ArcticMilestone3"))
+local milestone3Ok, milestone3Result = pcall(function()
+	return ArcticMilestone3.Build(layout, function(x, z)
+		return world:GroundY(x, z)
+	end)
+end)
+if milestone3Ok then
+	print("[Arctic] Milestone 3 wilderness visuals built")
+else
+	warn("[Arctic] Milestone 3 wilderness visuals failed:", milestone3Result)
+end
 ReplicatedStorage:SetAttribute("WorldSeed", layout.SeedString)
 print("[Arctic] World seed: " .. layout.SeedString)
 local gameplay = Gameplay.new(world, clock, temperature)
