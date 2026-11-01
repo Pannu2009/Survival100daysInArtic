@@ -22,11 +22,20 @@ local Aegis = require(script.Parent:WaitForChild("Aegis"))
 local Network = require(Modules:WaitForChild("Network"))
 local Leaderboards = require(script.Parent:WaitForChild("Leaderboards"))
 local Gameplay = {}
+local GameplayFire = require(script.Parent:WaitForChild("GameplayFire"))
 local function finiteVector(v)
 	return v.X == v.X and v.Y == v.Y and v.Z == v.Z
 		and math.abs(v.X) < 1e6 and math.abs(v.Y) < 1e6 and math.abs(v.Z) < 1e6
 end
 Gameplay.__index = Gameplay
+Gameplay._takeLogNear = GameplayFire._takeLogNear
+Gameplay._addLogToBlueprint = GameplayFire._addLogToBlueprint
+Gameplay._lightFire = GameplayFire._lightFire
+Gameplay._igniteLog = GameplayFire._igniteLog
+Gameplay._setBurning = GameplayFire._setBurning
+Gameplay._tickBurning = GameplayFire._tickBurning
+Gameplay._spreadFire = GameplayFire._spreadFire
+Gameplay._feedFires = GameplayFire._feedFires
 local function getLogPart(log)
 	return log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
 end
@@ -541,240 +550,14 @@ end
 function Gameplay:ReleaseDraggedLogs(player)
 	self:_releaseLogs(player)
 end
-function Gameplay:_takeLogNear(player, position)
-	if not self.LogsFolder then
-		return nil
-	end
-	local chosen = nil
-	local draggedPart = DragSystem.GetPlayerItem(player)
-	if draggedPart then
-		local model = draggedPart.Parent
-		if model
-			and model.Parent == self.LogsFolder
-			and not model:GetAttribute("OnSled")
-			and model:GetAttribute("Burning") ~= true
-			and (model:GetPivot().Position - position).Magnitude <= Config.Campfire.FeedRange
-		then
-			chosen = model
-		end
-	end
-	if not chosen then
-		local nearestDistance = Config.Campfire.FeedRange
-		for _, log in ipairs(self.LogsFolder:GetChildren()) do
-			local logPart = getLogPart(log)
-			if logPart
-				and not log:GetAttribute("OnSled")
-				and log:GetAttribute("Burning") ~= true
-				and logPart:GetAttribute("DraggedBy") == nil
-			then
-				local distance = (log:GetPivot().Position - position).Magnitude
-				if distance <= nearestDistance then
-					chosen = log
-					nearestDistance = distance
-				end
-			end
-		end
-	end
-	if not chosen then
-		return nil
-	end
-	local logPart = getLogPart(chosen)
-	if not logPart then
-		return nil
-	end
-	local taken = {
-		Weight = chosen:GetAttribute("Weight") or 0,
-		BurnUnits = logBurnUnits(logPart),
-	}
-	if logPart:GetAttribute("DraggedBy") then
-		DragSystem.ForceStop(logPart)
-	end
-	chosen:Destroy()
-	return taken
-end
-function Gameplay:_addLogToBlueprint(player, bp)
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not root or (root.Position - bp.Position).Magnitude > 14 then
-		return nil
-	end
-	local taken = self:_takeLogNear(player, bp.Position)
-	if not taken then
-		return nil
-	end
-	bp.Contributors[player] = true
-	return taken.Weight
-end
-function Gameplay:_lightFire(player, fire)
-	if fire.Lit or fire.Fuel <= 0 then
-		return false
-	end
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not root or (root.Position - fire.Core.Position).Magnitude > 14 then
-		return false
-	end
-	if not self.Weapons:SpendFuel(player) then
-		return false
-	end
-	fire.Lit = true
-	if self.Net then
-		self.Net:SendToClient(player, "PlaySound", { Sound = "FireIgnite" })
-	end
-	for _, key in ipairs(TUTORIAL_ORDER) do
-		self:_markTutorial(player, key)
-	end
-	return true
-end
-function Gameplay:_igniteLog(player, log)
-	local logPart = getLogPart(log)
-	if not logPart or log:GetAttribute("Burning") == true then
-		return false
-	end
-	if not self.Weapons:SpendFuel(player) then
-		return false
-	end
-	self:_setBurning(log)
-	if self.Net then
-		self.Net:SendToClient(player, "PlaySound", { Sound = "FireIgnite" })
-	end
-	self:Notify(player, "Log is burning -- stay within 16 studs to feel its warmth.")
-	return true
-end
-function Gameplay:_setBurning(log)
-	local logPart = getLogPart(log)
-	if not logPart or log:GetAttribute("Burning") == true then
-		return
-	end
-	log:SetAttribute("Burning", true)
-	DragSystem.ForceStop(logPart)
-	if log:GetAttribute("OnSled") and self.Sleds then
-		self.Sleds:RemovePiece(log)
-	end
-	self:_refreshLog(log)
-	local burnEmitters = FireEffect.AttachFire(logPart)
-	for _, emitter in ipairs(burnEmitters) do
-		emitter.Enabled = true
-	end
-	if #burnEmitters == 0 then
-		local flame = Instance.new("Fire")
-		flame.Name = "BurnFlame"
-		flame.Size = 5
-		flame.Heat = 10
-		flame.Parent = logPart
-	end
-	local light = Instance.new("PointLight")
-	light.Name = "BurnLight"
-	light.Color = Color3.fromRGB(255, 176, 66)
-	light.Range = 16
-	light.Brightness = 1.5
-	light.Parent = logPart
-	self._burning[log] = logBurnUnits(logPart) * Config.Campfire.OpenBurnSecondsPerUnit
-end
-function Gameplay:_tickBurning(dt)
-	for log, timeLeft in pairs(self._burning) do
-		if not log.Parent then
-			self._burning[log] = nil
-		else
-			timeLeft -= dt
-			if timeLeft <= 0 then
-				self._burning[log] = nil
-				local logPart = getLogPart(log)
-				if logPart and logPart:GetAttribute("DraggedBy") then
-					DragSystem.ForceStop(logPart)
-				end
-				log:Destroy()
-			else
-				self._burning[log] = timeLeft
-			end
-		end
-	end
-end
-function Gameplay:_spreadFire(dt)
-	if not next(self._burning) then
-		if next(self._spread) then
-			table.clear(self._spread)
-		end
-		return
-	end
-	local burningParts = {}
-	for log in pairs(self._burning) do
-		local part = getLogPart(log)
-		if part then
-			table.insert(burningParts, part)
-		end
-	end
-	for _, log in ipairs(self.LogsFolder:GetChildren()) do
-		if log:GetAttribute("Burnable") and log:GetAttribute("Burning") ~= true then
-			local part = getLogPart(log)
-			if part and part:GetAttribute("DraggedBy") == nil then
-				local touching = false
-				for _, other in ipairs(burningParts) do
-					if other ~= part then
-						local gap = (other.Position - part.Position).Magnitude
-							- (other.Size.Magnitude + part.Size.Magnitude) / 2
-						if gap <= Config.Campfire.SpreadGap then
-							touching = true
-							break
-						end
-					end
-				end
-				if touching then
-					local exposure = (self._spread[log] or 0) + dt
-					if exposure >= Config.Campfire.SpreadSeconds then
-						self._spread[log] = nil
-						self:_setBurning(log)
-					else
-						self._spread[log] = exposure
-					end
-				elseif self._spread[log] then
-					self._spread[log] = nil
-				end
-			end
-		end
-	end
-end
-function Gameplay:_feedFires()
-	for _, fire in ipairs(self.World.Fires) do
-		if fire.AddBox and self.Coal and self.Coal.Folder then
-			for _, piece in ipairs(self.Coal.Folder:GetChildren()) do
-				if piece:GetAttribute("Coal") == true then
-					local inBox = false
-					if piece:IsA("BasePart") then
-						local rel = fire.AddBox.CFrame:PointToObjectSpace(piece.Position)
-						local half = fire.AddBox.Size / 2 + Vector3.new(0.3, 0.3, 0.3)
-						inBox = math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
-					end
-					if inBox and piece:GetAttribute("DraggedBy") == nil then
-						piece:Destroy()
-						self.World:AddCoal(fire, 1)
-					end
-				end
-			end
-		end
-		if fire.AddBox then
-			for _, log in ipairs(self.LogsFolder:GetChildren()) do
-				if not log:GetAttribute("OnSled") then
-					local logPart = getLogPart(log)
-					local inBox = false
-					if logPart then
-						local rel = fire.AddBox.CFrame:PointToObjectSpace(logPart.Position)
-						local half = fire.AddBox.Size / 2 + Vector3.new(0.3, 0.3, 0.3)
-						inBox = math.abs(rel.X) <= half.X and math.abs(rel.Y) <= half.Y and math.abs(rel.Z) <= half.Z
-					end
-					if logPart and inBox and logPart:GetAttribute("DraggedBy") == nil then
-						local units = logBurnUnits(logPart)
-						self._burning[log] = nil
-						log:Destroy()
-						if units > 0 then
-							self.World:AddFuel(fire, units)
-						end
-					end
-				end
-			end
-		end
-	end
-end
+
+
+
+
+
+
+
+
 function Gameplay:_refreshLog(log)
 	local logPart = getLogPart(log)
 	if not logPart then
