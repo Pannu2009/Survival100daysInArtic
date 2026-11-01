@@ -7,11 +7,20 @@ local VALID_WEATHER = { Clear = true, Storm = true, Blizzard = true }
 function Temperature.new()
 	local self = setmetatable({}, Temperature)
 	self.Weather = "Clear"
+	self.Forecast = "Clear"
 	self.OnWeatherChanged = Signal.new()
 	return self
 end
 function Temperature:GetWeather()
 	return self.Weather
+end
+function Temperature:GetForecast()
+	return self.Forecast
+end
+function Temperature:SetForecast(weather)
+	if VALID_WEATHER[weather] then
+		self.Forecast = weather
+	end
 end
 function Temperature:SetWeather(weather)
 	if not VALID_WEATHER[weather] then

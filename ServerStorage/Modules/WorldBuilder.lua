@@ -164,11 +164,13 @@ function WorldBuilder:_refreshFireVisual(fire)
 	end
 end
 function WorldBuilder:TickFire(dt)
+	local wind = ReplicatedStorage:GetAttribute("WindStrength") or 0.22
+	local burnMult = 1 + wind * (Config.Weather2.WindFuelMult or 0.5)
 	for _, fire in ipairs(self.Fires) do
 		if fire.Lit and fire.Fuel > 0 then
-			fire.Fuel = math.max(0, fire.Fuel - dt)
+			fire.Fuel = math.max(0, fire.Fuel - dt * burnMult)
 			if (fire.CoalFuel or 0) > 0 then
-				fire.CoalFuel = math.max(0, fire.CoalFuel - dt)
+				fire.CoalFuel = math.max(0, fire.CoalFuel - dt * burnMult)
 			end
 			if fire.Fuel <= 0 then
 				fire.Lit = false
@@ -865,6 +867,15 @@ function WorldBuilder:UpdateState(clock, temperature)
 	ReplicatedStorage:SetAttribute("PhaseEndsAt", workspace:GetServerTimeNow() + clock:GetSecondsLeft())
 	publish("Multiplier", clock:GetMultiplier())
 	publish("Weather", temperature:GetWeather())
+	publish("WeatherForecast", temperature:GetForecast())
+	local w2 = Config.Weather2
+	local weatherNow = temperature:GetWeather()
+	local atmo = Lighting:FindFirstChild("ArcticAtmosphere")
+	if atmo then
+		atmo.Density = w2.AtmosphereDensity[weatherNow] or 0.28
+	end
+	Lighting.FogStart = w2.FogStart[weatherNow] or 200
+	Lighting.FogEnd = w2.FogEnd[weatherNow] or 800
 	publish("AmbientTempC", math.floor(temperature:GetAmbientTempC(clock:GetPhase())))
 	local litCount = 0
 	for _, fire in ipairs(self.Fires) do

@@ -351,20 +351,28 @@ function Gameplay:Start()
 		self._sprinting[player] = value == true
 	end)
 	self.Clock.OnPhaseChanged:Connect(function(phase, day)
-		if day < Config.Temperature.FirstWeatherDay then
-			self.Temperature:SetWeather("Clear")
-			print(("[Arctic] %s of day %d - weather: %s"):format(phase, day, self.Temperature:GetWeather()))
-			return
+		local function rollWeather(forDay)
+			if forDay < Config.Temperature.FirstWeatherDay then
+				return "Clear"
+			end
+			local roll = math.random()
+			if roll < Config.Temperature.WeatherChance.Blizzard then
+				return "Blizzard"
+			elseif roll < Config.Temperature.WeatherChance.Blizzard + Config.Temperature.WeatherChance.Storm then
+				return "Storm"
+			end
+			return "Clear"
 		end
-		local roll = math.random()
-		if roll < Config.Temperature.WeatherChance.Blizzard then
-			self.Temperature:SetWeather("Blizzard")
-		elseif roll < Config.Temperature.WeatherChance.Blizzard + Config.Temperature.WeatherChance.Storm then
-			self.Temperature:SetWeather("Storm")
-		else
-			self.Temperature:SetWeather("Clear")
-		end
+		self.Temperature:SetWeather(rollWeather(day))
 		print(("[Arctic] %s of day %d - weather: %s"):format(phase, day, self.Temperature:GetWeather()))
+		local nextDay = phase == "Night" and day + 1 or day
+		local forecast = rollWeather(nextDay)
+		self.Temperature:SetForecast(forecast)
+		if forecast == "Blizzard" or forecast == "Storm" then
+			for _, player in ipairs(Players:GetPlayers()) do
+				self:Notify(player, forecast .. " incoming next phase -- stock up on wood!")
+			end
+		end
 	end)
 	Players.PlayerAdded:Connect(function(player)
 		self:_setupPlayer(player)

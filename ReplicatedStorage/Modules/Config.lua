@@ -24,6 +24,12 @@ Config.Survival = {
 	WalkSpeed = 16,
 	SprintSpeed = 22,
 }
+Config.Weather2 = {
+	WindFuelMult = 0.5,
+	FogStart = { Clear = 200, Storm = 80, Blizzard = 30 },
+	FogEnd = { Clear = 800, Storm = 350, Blizzard = 150 },
+	AtmosphereDensity = { Clear = 0.28, Storm = 0.45, Blizzard = 0.65 },
+}
 Config.Temperature = {
 	DayAmbientC = -12,
 	NightAmbientC = -24,
