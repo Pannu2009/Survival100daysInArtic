@@ -18,6 +18,7 @@ function Treasury.DefaultProfile()
 		Flakes = 0,
 		OwnedClasses = {},
 		EquippedClass = "",
+		Discoveries = {},
 	}
 end
 function Treasury.GetProfile(player)

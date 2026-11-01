@@ -53,7 +53,7 @@ Config.Sickness = {
 	CoughInvestigateSeconds = 12,
 }
 Config.World = {
-	Radius = 950,
+	Radius = 1850,
 	MinSeedLength = 5,
 	MaxSeedLength = 8,
 	DevSeed = "",

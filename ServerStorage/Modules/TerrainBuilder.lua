@@ -30,5 +30,15 @@ function TerrainBuilder.Build(layout)
 	terrain:FillBlock(CFrame.new(lake.X, -13, lake.Z), Vector3.new(lake.Radius * 2, 2, lake.Radius * 2), Enum.Material.Rock)
 	terrain:FillBlock(CFrame.new(lake.X, -7.5, lake.Z), Vector3.new(lake.Radius * 2, 9, lake.Radius * 2), Enum.Material.Water)
 	terrain:FillBlock(CFrame.new(lake.X, -2.5, lake.Z), Vector3.new(lake.Radius * 2, 1, lake.Radius * 2), Enum.Material.Glacier)
+	local river = layout.River or {}
+	for i = 1, #river - 1 do
+		local a = river[i]
+		local b = river[i + 1]
+		local mid = (a + b) / 2
+		local len = (b - a).Magnitude
+		local cf = CFrame.lookAt(Vector3.new(mid.X, -1, mid.Y), Vector3.new(b.X, -1, b.Y))
+		terrain:FillBlock(cf, Vector3.new(34, 5, len + 8), Enum.Material.Ice)
+		terrain:FillBlock(cf * CFrame.new(0, -3, 0), Vector3.new(22, 3, len), Enum.Material.Water)
+	end
 end
 return TerrainBuilder
