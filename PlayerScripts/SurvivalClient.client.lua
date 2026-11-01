@@ -2519,7 +2519,7 @@ do
 			local dir = ReplicatedStorage:GetAttribute("WindDir") or 0.8
 			local strength = ReplicatedStorage:GetAttribute("WindStrength") or 0.2
 			local windVec = Vector3.new(math.sin(dir), 0, math.cos(dir))
-			snow.Rate = 30 + 300 * strength
+			snow.Rate = math.min(30 + 300 * strength, UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and 55 or 190)
 			snow.Acceleration = windVec * (10 + 34 * strength) + Vector3.new(0, -3, 0)
 			collectSway()
 			local camera = workspace.CurrentCamera

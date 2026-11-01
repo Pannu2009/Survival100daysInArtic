@@ -131,6 +131,17 @@ if milestone3Ok then
 else
 	warn("[Arctic] Milestone 3 wilderness visuals failed:", milestone3Result)
 end
+local ArcticMilestone8 = require(ServerModules:WaitForChild("ArcticMilestone8"))
+local milestone8Ok, milestone8Result = pcall(function()
+	return ArcticMilestone8.Build(layout, function(x, z)
+		return world:GroundY(x, z)
+	end)
+end)
+if milestone8Ok then
+	print("[Arctic] Milestone 8 visual accents built")
+else
+	warn("[Arctic] Milestone 8 visuals failed:", milestone8Result)
+end
 ReplicatedStorage:SetAttribute("WorldSeed", layout.SeedString)
 print("[Arctic] World seed: " .. layout.SeedString)
 local gameplay = Gameplay.new(world, clock, temperature)
@@ -157,6 +168,13 @@ if milestone5Ok then
 	print("[Arctic] Milestone 5 expeditions initialized")
 else
 	warn("[Arctic] Milestone 5 initialization failed:", milestone5Result)
+end
+local ArcticMilestone6 = require(ServerModules:WaitForChild("ArcticMilestone6"))
+local milestone6Ok, milestone6Result = pcall(function()
+	return ArcticMilestone6.Start(gameplay, world, layout)
+end)
+if not milestone6Ok then
+	warn("[Arctic] Milestone 6 events failed to start:", milestone6Result)
 end
 DragSystem.InitServer()
 local sleds = SledService.new(world, gameplay)
