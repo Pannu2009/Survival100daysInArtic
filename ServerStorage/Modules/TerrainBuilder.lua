@@ -18,9 +18,6 @@ function TerrainBuilder.Build(layout)
 	local radius = layout.WorldRadius
 	local diameter = radius * 2
 	terrain:FillBlock(CFrame.new(0, -12, 0), Vector3.new(diameter, 24, diameter), Enum.Material.Snow)
-	for _, hill in ipairs(layout.BroadHills or {}) do
-		terrain:FillBall(Vector3.new(hill.X, -(hill.Radius - hill.Height), hill.Z), hill.Radius, Enum.Material.Snow)
-	end
 	for _, hill in ipairs(layout.Hills or {}) do
 		terrain:FillBall(Vector3.new(hill.X, -(hill.Radius - hill.Height), hill.Z), hill.Radius, Enum.Material.Snow)
 	end

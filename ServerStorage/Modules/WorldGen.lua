@@ -39,7 +39,6 @@ function WorldGen.Generate(seedString)
 			Height = hill.h,
 		})
 	end
-	layout.BroadHills = {}
 	layout.Peaks = {}
 	for _, peak in ipairs(ArcticLayout.Terrain.Peaks) do
 		table.insert(layout.Peaks, {
