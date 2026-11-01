@@ -136,6 +136,28 @@ print("[Arctic] World seed: " .. layout.SeedString)
 local gameplay = Gameplay.new(world, clock, temperature)
 gameplay:Start()
 DiscoveryService.Init(gameplay, layout)
+local ArcticMilestone4 = require(ServerModules:WaitForChild("ArcticMilestone4"))
+local milestone4Ok, milestone4Result = pcall(function()
+	return ArcticMilestone4.Build(layout, function(x, z)
+		return world:GroundY(x, z)
+	end)
+end)
+if milestone4Ok then
+	print("[Arctic] Milestone 4 research facility built")
+else
+	warn("[Arctic] Milestone 4 build failed:", milestone4Result)
+end
+local ArcticMilestone5 = require(ServerModules:WaitForChild("ArcticMilestone5"))
+local milestone5Ok, milestone5Result = pcall(function()
+	ArcticMilestone5.Init(gameplay, layout, function(x, z)
+		return world:GroundY(x, z)
+	end)
+end)
+if milestone5Ok then
+	print("[Arctic] Milestone 5 expeditions initialized")
+else
+	warn("[Arctic] Milestone 5 initialization failed:", milestone5Result)
+end
 DragSystem.InitServer()
 local sleds = SledService.new(world, gameplay)
 sleds:Start()
