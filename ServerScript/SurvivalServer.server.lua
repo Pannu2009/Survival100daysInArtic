@@ -109,6 +109,17 @@ end
 local layout = WorldGen.Generate(seedString)
 local world = WorldBuilder.new(layout)
 world:Build()
+local ArcticMilestone2 = require(ServerModules:WaitForChild("ArcticMilestone2"))
+local milestone2Ok, milestone2Result = pcall(function()
+	return ArcticMilestone2.Build(layout, function(x, z)
+		return world:GroundY(x, z)
+	end)
+end)
+if milestone2Ok then
+	print("[Arctic] Milestone 2 landmark visuals built")
+else
+	warn("[Arctic] Milestone 2 landmark visuals failed:", milestone2Result)
+end
 ReplicatedStorage:SetAttribute("WorldSeed", layout.SeedString)
 print("[Arctic] World seed: " .. layout.SeedString)
 local gameplay = Gameplay.new(world, clock, temperature)
