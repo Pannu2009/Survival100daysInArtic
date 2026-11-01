@@ -5,6 +5,23 @@ local Config = require(Modules:WaitForChild("Config"))
 local TrackMarks = require(script.Parent.Parent:WaitForChild("TrackMarks"))
 local Navigation = {}
 local W = Config.Wolves
+local function horizontalDir(v)
+	local h = Vector3.new(v.X, 0, v.Z)
+	if h.Magnitude < 0.001 then
+		return Vector3.new(0, 0, -1)
+	end
+	return h.Unit
+end
+local function yawOf(dir)
+	return math.atan2(-dir.X, -dir.Z)
+end
+local function yawLerp(a, b, t)
+	local d = (b - a) % (math.pi * 2)
+	if d > math.pi then
+		d -= math.pi * 2
+	end
+	return a + d * math.clamp(t, 0, 1)
+end
 function Navigation:_pushOutOfFire(position)
 	local x, z = position.X, position.Z
 	for _, fire in ipairs(self.Gameplay.World.Fires or {}) do
