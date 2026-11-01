@@ -42,7 +42,7 @@ function WorldBuilder.new(layout)
 	return self
 end
 function WorldBuilder:GroundY(x, z)
-	local result = workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0), self._groundParams)
+	local result = workspace:Raycast(Vector3.new(x, 600, z), Vector3.new(0, -1200, 0), self._groundParams)
 	if result then
 		return result.Position.Y
 	end
@@ -136,7 +136,7 @@ function WorldBuilder:FireRadius(_fire)
 	return Config.Campfire.WarmthRadius
 end
 function WorldBuilder:TerrainRaycastDown(x, z)
-	return workspace:Raycast(Vector3.new(x, 300, z), Vector3.new(0, -600, 0), self._groundParams)
+	return workspace:Raycast(Vector3.new(x, 600, z), Vector3.new(0, -1200, 0), self._groundParams)
 end
 function WorldBuilder:AddFuel(fire, burnUnits)
 	fire.Fuel += burnUnits * Config.Campfire.FuelPerBurnUnit

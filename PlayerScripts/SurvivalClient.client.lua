@@ -2405,7 +2405,7 @@ RunService.RenderStepped:Connect(function(dt)
 		table.insert(exclude, treesFolder)
 	end
 	dragSurfaceParams.FilterDescendantsInstances = exclude
-	local hit = workspace:Raycast(Vector3.new(anchor.X, 300, anchor.Z), Vector3.new(0, -600, 0), dragSurfaceParams)
+	local hit = workspace:Raycast(Vector3.new(anchor.X, 600, anchor.Z), Vector3.new(0, -1200, 0), dragSurfaceParams)
 	local minY = pos.Y
 	if hit then
 		minY = hit.Position.Y + halfY + 0.05
