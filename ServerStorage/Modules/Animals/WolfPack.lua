@@ -118,4 +118,5 @@ function Pack:_packBonusMult(wolf)
 		end
 	end
 	return 1 + math.min(W.PackBonusCap, mates * W.PackBonusPerMate)
-endreturn Pack
+end
+return Pack

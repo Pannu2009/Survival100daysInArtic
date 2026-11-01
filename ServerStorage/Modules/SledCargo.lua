@@ -5,7 +5,8 @@ local DragSystem = require(Modules:WaitForChild("DragSystem"))
 local Cargo = {}
 local function getLogPart(log)
 	return log:FindFirstChild("Log", true) or log:FindFirstChildWhichIsA("BasePart", true)
-endlocal function lengthAxis(size)
+end
+local function lengthAxis(size)
 	if size.Y >= size.X and size.Y >= size.Z then
 		return Vector3.yAxis, size.Y
 	elseif size.X >= size.Z then
@@ -13,7 +14,8 @@ endlocal function lengthAxis(size)
 	else
 		return Vector3.zAxis, size.Z
 	end
-endlocal function layoutCargo(box, dimsList)
+end
+local function layoutCargo(box, dimsList)
 	local placements = {}
 	local layers = {}
 	local order = {}
