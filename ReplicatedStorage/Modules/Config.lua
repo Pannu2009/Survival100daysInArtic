@@ -120,11 +120,12 @@ Config.Sled = {
 	RopeDamp = 1.4,
 	Friction = 2.2,
 	LateralGrip = 5.5,
-	SlopeGravity = 30,
+	SlopeGravity = 22,
 	StaticHold = 5,
 	MaxSpeed = 30,
 	YawResponse = 6,
-	TowTorque = 0.03,
+	TowTorque = 0.045,
+	BrakeRampSeconds = 1.2,
 	YawDamp = 5,
 }
 Config.Tracks = {

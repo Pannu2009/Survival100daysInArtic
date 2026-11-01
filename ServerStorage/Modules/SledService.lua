@@ -10,7 +10,7 @@ local SledService = {}
 SledService.__index = SledService
 local SURFACE_PROFILES = {
 	[Enum.Material.Snow] = { friction = 1.35, grip = 0.75, sink = -0.12 },
-	[Enum.Material.Glacier] = { friction = 0.4, grip = 0.28, sink = 0 },
+	[Enum.Material.Glacier] = { friction = 0.4, grip = 0.45, sink = 0 },
 	[Enum.Material.Rock] = { friction = 1.1, grip = 1.15, sink = 0 },
 }
 local DEFAULT_PROFILE = { friction = 1, grip = 1, sink = 0 }
@@ -1030,13 +1030,13 @@ function SledService:_stepSled(dt)
 		if root.AssemblyLinearVelocity.Magnitude > 1 then
 			self._brake = 0
 		else
-			self._brake = math.min(1, (self._brake or 0) + dt / 0.7)
+			self._brake = math.min(1, (self._brake or 0) + dt / (Config.Sled.BrakeRampSeconds or 1.2))
 		end
 	elseif self._team then
 		if self._team.HasInput then
 			self._brake = 0
 		else
-			self._brake = math.min(1, (self._brake or 0) + dt / 0.7)
+			self._brake = math.min(1, (self._brake or 0) + dt / (Config.Sled.BrakeRampSeconds or 1.2))
 		end
 	else
 		self._brake = 0
