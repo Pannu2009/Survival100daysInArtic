@@ -1,14 +1,5 @@
 local L = {}
-L.Config = { WorldRadius = 1850, BaseY = 0, TerrainThickness = 96, Seed = 100 }
-L.Spawn = Vector3.new(0, 8, 0)
-L.Regions = {
-	{ Id = "StartingWilderness", Name = "Starting Wilderness", Center = Vector2.new(0, 0), Radius = 430 },
-	{ Id = "FrozenHighlands", Name = "Frozen Highlands", Center = Vector2.new(650, -900), Radius = 600 },
-	{ Id = "GlacierFields", Name = "Glacier Fields", Center = Vector2.new(1150, -1250), Radius = 450 },
-	{ Id = "NorthernCoast", Name = "Northern Coast", Center = Vector2.new(-1300, 650), Radius = 500 },
-	{ Id = "DeepTaiga", Name = "Deep Taiga", Center = Vector2.new(-650, 1050), Radius = 550 },
-	{ Id = "AbandonedZone", Name = "Abandoned Research Zone", Center = Vector2.new(1250, 650), Radius = 450 },
-}
+L.Config = { WorldRadius = 1850 }
 L.Terrain = {
 	Hills = {
 		{ x = -1050, z = 0, r = 300, h = 38 },

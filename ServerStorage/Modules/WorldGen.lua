@@ -14,8 +14,6 @@ function WorldGen.Generate(seedString)
 	local layout = {}
 	layout.SeedString = master.String
 	layout.WorldRadius = ArcticLayout.Config.WorldRadius
-	layout.Spawn = { X = 0, Z = 0 }
-	layout.Regions = ArcticLayout.Regions
 	layout.Landmarks = ArcticLayout.Landmarks
 	layout.River = ArcticLayout.Terrain.River
 	local mountain = ArcticLayout.Terrain.Mountain

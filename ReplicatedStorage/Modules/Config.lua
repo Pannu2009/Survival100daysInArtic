@@ -8,7 +8,6 @@ Config.DayCycle = {
 }
 Config.Multiplier = {
 	Base = 1,
-	MaxBaseGame = 10,
 	MaxAbsolute = 20,
 }
 Config.Survival = {
@@ -147,7 +146,6 @@ Config.Lighter = {
 }
 Config.Digging = {
 	Radius = 2.6,
-	Reach = 4,
 	AimRange = 9,
 	Cooldown = 0.35,
 	SafeRadius = 5,
