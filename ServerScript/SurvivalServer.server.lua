@@ -143,6 +143,17 @@ if milestone8Ok then
 else
 	warn("[Arctic] Milestone 8 visuals failed:", milestone8Result)
 end
+local AAAWorldOverhaul = require(WorldGeneration:WaitForChild("AAAWorldOverhaul"))
+local aaaOk, aaaResult = pcall(function()
+	return AAAWorldOverhaul.Build(layout, function(x, z)
+		return world:GroundY(x, z)
+	end)
+end)
+if aaaOk then
+	print("[Arctic] AAA world art pass complete")
+else
+	warn("[Arctic] AAA world art pass failed:", aaaResult)
+end
 ReplicatedStorage:SetAttribute("WorldSeed", layout.SeedString)
 print("[Arctic] World seed: " .. layout.SeedString)
 local gameplay = Gameplay.new(world, clock, temperature)
