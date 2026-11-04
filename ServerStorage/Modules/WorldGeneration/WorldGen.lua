@@ -8,6 +8,48 @@ local function distanceTo(x1, z1, x2, z2)
 	local dz = z1 - z2
 	return math.sqrt(dx * dx + dz * dz)
 end
+local function blockedByWaterPeakRiver(layout, x, z)
+	for _, pond in ipairs(layout.Ponds or {}) do
+		if distanceTo(x, z, pond.X, pond.Z) < pond.Radius + 6 then
+			return true
+		end
+	end
+	for _, peak in ipairs(layout.Peaks or {}) do
+		if distanceTo(x, z, peak.X, peak.Z) < peak.Radius * 0.8 then
+			return true
+		end
+	end
+	local river = layout.River or {}
+	for i = 1, #river - 1 do
+		local a = river[i]
+		local b = river[i + 1]
+		local dx = b.X - a.X
+		local dz = b.Y - a.Y
+		local len2 = dx * dx + dz * dz
+		local t = 0
+		if len2 > 0 then
+			t = ((x - a.X) * dx + (z - a.Y) * dz) / len2
+			if t < 0 then t = 0 end
+			if t > 1 then t = 1 end
+		end
+		if distanceTo(x, z, a.X + dx * t, a.Y + dz * t) < 25 then
+			return true
+		end
+	end
+	return false
+end
+local function spotClear(layout, x, z)
+	if distanceTo(x, z, layout.Lake.X, layout.Lake.Z) < layout.Lake.Radius + 40 then return false end
+	if distanceTo(x, z, layout.Mountain.X, layout.Mountain.Z) < layout.Mountain.Radius * 0.8 then return false end
+	if blockedByWaterPeakRiver(layout, x, z) then return false end
+	for _, landmark in ipairs(layout.Landmarks or {}) do
+		if landmark.Position and distanceTo(x, z, landmark.Position.X, landmark.Position.Z) < 80 then return false end
+	end
+	for _, cabin in ipairs(layout.Cabins or {}) do
+		if distanceTo(x, z, cabin.X, cabin.Z) < 100 then return false end
+	end
+	return true
+end
 function WorldGen.Generate(seedString)
 	local master = Seed.new(seedString)
 	local world = Config.World
@@ -92,7 +134,7 @@ function WorldGen.Generate(seedString)
 		local z = math.sin(angle) * dist
 		local inLake = distanceTo(x, z, layout.Lake.X, layout.Lake.Z) < layout.Lake.Radius + 6
 		local inMountain = distanceTo(x, z, layout.Mountain.X, layout.Mountain.Z) < layout.Mountain.Radius * 0.7
-		if not inLake and not inMountain then
+		if not inLake and not inMountain and not blockedByWaterPeakRiver(layout, x, z) then
 			table.insert(layout.Tufts, { X = x, Z = z, R = rng:Next() * math.pi })
 		end
 	end
@@ -106,7 +148,14 @@ function WorldGen.Generate(seedString)
 			local z = cluster.z + math.sin(angle) * offset
 			local inLake = distanceTo(x, z, layout.Lake.X, layout.Lake.Z) < layout.Lake.Radius
 			local inMountain = distanceTo(x, z, layout.Mountain.X, layout.Mountain.Z) < layout.Mountain.Radius * 0.75
-			if not inLake and not inMountain then
+			local inLandmark = false
+			for _, landmark in ipairs(layout.Landmarks or {}) do
+				if landmark.Position and distanceTo(x, z, landmark.Position.X, landmark.Position.Z) < 40 then
+					inLandmark = true
+					break
+				end
+			end
+			if not inLake and not inMountain and not inLandmark and not blockedByWaterPeakRiver(layout, x, z) then
 				local region = ArcticLayout.RegionAt(x, z)
 				local biome = ArcticLayout.Biomes[region] or ArcticLayout.Biomes.StartingWilderness
 				if rng:Next() <= biome.TreeMult then
@@ -130,16 +179,29 @@ function WorldGen.Generate(seedString)
 	layout.Cabins = {}
 	local cabinCount = rng:NextInteger(world.CabinsMin, world.CabinsMax)
 	for _ = 1, cabinCount do
-		local angle = rng:Next() * math.pi * 2
-		local dist = rng:NextNumber(150, layout.WorldRadius)
-		local x = math.cos(angle) * dist
-		local z = math.sin(angle) * dist
-		table.insert(layout.Cabins, { X = x, Z = z, Rotation = rng:NextNumber(0, 360) })
+		for _try = 1, 20 do
+			local angle = rng:Next() * math.pi * 2
+			local dist = rng:NextNumber(150, layout.WorldRadius)
+			local x = math.cos(angle) * dist
+			local z = math.sin(angle) * dist
+			if spotClear(layout, x, z) then
+				table.insert(layout.Cabins, { X = x, Z = z, Rotation = rng:NextNumber(0, 360) })
+				break
+			end
+		end
 	end
 	rng = master:Fork("coal")
-	local coalAngle = rng:Next() * math.pi * 2
-	local coalDist = rng:NextNumber(600, layout.WorldRadius)
-	layout.CoalSpot = { X = math.cos(coalAngle) * coalDist, Z = math.sin(coalAngle) * coalDist }
+	layout.CoalSpot = { X = 0, Z = 1200 }
+	for _try = 1, 50 do
+		local coalAngle = rng:Next() * math.pi * 2
+		local coalDist = rng:NextNumber(600, layout.WorldRadius)
+		local x = math.cos(coalAngle) * coalDist
+		local z = math.sin(coalAngle) * coalDist
+		if spotClear(layout, x, z) then
+			layout.CoalSpot = { X = x, Z = z }
+			break
+		end
+	end
 	local toSpawnX = -layout.Mountain.X
 	local toSpawnZ = -layout.Mountain.Z
 	local toSpawnLength = math.sqrt(toSpawnX * toSpawnX + toSpawnZ * toSpawnZ)

@@ -62,11 +62,14 @@ local function heightAt(x, z, layout, seed)
 	if m then
 		h = h + m.Height * falloff(dist2(x, z, m.X, m.Z), m.Radius)
 	end
+	if h < 2 then
+		h = 2
+	end
 	local r = layout.WorldRadius or 1850
 	local d = math.sqrt(x * x + z * z)
 	if d > r * 0.85 then
 		local t = (d - r * 0.85) / (r * 0.15)
-		h = h * (1 - smooth(t)) - t * 14
+		h = h * (1 - smooth(t)) - t * 4
 	end
 	return h
 end
@@ -103,6 +106,9 @@ local function columnInfo(x, z, layout, seed)
 				water = true
 			end
 		end
+	end
+	if h < 0 then
+		water = true
 	end
 	local region = ArcticLayout.RegionAt(x, z)
 	local biome = ArcticLayout.Biomes[region] or ArcticLayout.Biomes.StartingWilderness

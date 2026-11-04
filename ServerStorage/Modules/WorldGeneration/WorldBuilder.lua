@@ -388,20 +388,31 @@ function WorldBuilder:_plantTrees()
 	if not self.TreeTemplate then
 		return
 	end
-	for _, spot in ipairs(self.Layout.Trees) do
-		local model = self.TreeTemplate:Clone()
-		model.Name = "Tree"
-		for _, part in ipairs(model:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.Anchored = true
+	local seedText = self.Layout.SeedString or "arctic"
+	local seedNum = 7
+	for i = 1, #seedText do
+		seedNum = (seedNum * 31 + string.byte(seedText, i)) % 100000
+	end
+	local rng = Random.new(seedNum + 99)
+	local trees = self.Layout.Trees or {}
+	for chunkStart = 1, #trees, 32 do
+		for chunkIdx = chunkStart, math.min(chunkStart + 31, #trees) do
+			local spot = trees[chunkIdx]
+			local model = self.TreeTemplate:Clone()
+			model.Name = "Tree"
+			for _, part in ipairs(model:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Anchored = true
+				end
 			end
+			model.Parent = treesFolder
+			CollectionService:AddTag(model, "ArcticTree")
+			scaleModel(model, spot.T or 1, spot.H or 1, spot.T or 1)
+			model:SetAttribute("Health", Config.Tree.Health)
+			model:PivotTo(model:GetPivot() * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0))
+			self:SnapToGround(model, spot.X, spot.Z)
 		end
-		model.Parent = treesFolder
-		CollectionService:AddTag(model, "ArcticTree")
-		scaleModel(model, spot.T or 1, spot.H or 1, spot.T or 1)
-		model:SetAttribute("Health", Config.Tree.Health)
-		model:PivotTo(model:GetPivot() * CFrame.Angles(0, math.random() * math.pi * 2, 0))
-		self:SnapToGround(model, spot.X, spot.Z)
+		task.wait()
 	end
 end
 function WorldBuilder:_placeHorizon()
