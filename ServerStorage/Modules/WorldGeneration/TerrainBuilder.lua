@@ -1,65 +1,201 @@
+local ArcticLayout = require(script.Parent:WaitForChild("ArcticLayout"))
 local TerrainBuilder = {}
-local function paintHill(terrain, x, z, radius, height)
-	local seed = math.abs(x * 31 + z * 17) % 100 / 100
-	local angle = seed * math.pi * 2
-	local dx, dz = math.cos(angle), math.sin(angle)
-	local stops = { { -0.45, 0.7, 0.65 }, { 0, 1.0, 1.0 }, { 0.45, 0.7, 0.65 } }
-	for _, stop in ipairs(stops) do
-		local r = radius * stop[2]
-		local top = height * stop[3]
-		terrain:FillBall(Vector3.new(x + dx * stop[1] * radius, top - r, z + dz * stop[1] * radius), r, Enum.Material.Snow)
+local VOXEL = 4
+local CHUNK = 128
+local BASE_Y = -24
+local WATER_Y = 0
+local function hashSeed(s)
+	local h = 0
+	for i = 1, #s do
+		h = (h * 31 + string.byte(s, i)) % 1000003
 	end
+	return h
 end
-local function paintPeak(terrain, x, z, radius, height)
-	local seed = math.abs(x * 31 + z * 17) % 100 / 100
-	local angle = seed * math.pi * 2
-	local dx, dz = math.cos(angle), math.sin(angle)
-	local px, pz = -dz, dx
-	local ridge = { { -0.6, 0.55 }, { -0.3, 0.75 }, { 0, 0.95 }, { 0.3, 0.75 }, { 0.6, 0.55 } }
-	for _, stop in ipairs(ridge) do
-		local r = radius * stop[2]
-		terrain:FillBall(Vector3.new(x + dx * stop[1] * radius, -radius * 0.25, z + dz * stop[1] * radius), r, Enum.Material.Rock)
+local function smooth(t)
+	if t <= 0 then return 0 end
+	if t >= 1 then return 1 end
+	return t * t * (3 - 2 * t)
+end
+local function falloff(dist, radius)
+	if dist >= radius then return 0 end
+	local t = 1 - (dist / radius)
+	return t * t
+end
+local function dist2(x, z, px, pz)
+	local dx = x - px
+	local dz = z - pz
+	return math.sqrt(dx * dx + dz * dz)
+end
+local function segDist(x, z, ax, az, bx, bz)
+	local dx = bx - ax
+	local dz = bz - az
+	local len2 = dx * dx + dz * dz
+	if len2 == 0 then return dist2(x, z, ax, az) end
+	local t = ((x - ax) * dx + (z - az) * dz) / len2
+	if t < 0 then t = 0 end
+	if t > 1 then t = 1 end
+	return dist2(x, z, ax + dx * t, az + dz * t)
+end
+local function riverDist(x, z, river)
+	local best = 100000
+	for i = 1, #river - 1 do
+		local a = river[i]
+		local b = river[i + 1]
+		local d = segDist(x, z, a.X, a.Y, b.X, b.Y)
+		if d < best then best = d end
 	end
-	for _, side in ipairs({ -0.4, 0.4 }) do
-		terrain:FillBall(Vector3.new(x + px * side * radius, -radius * 0.25, z + pz * side * radius), radius * 0.6, Enum.Material.Rock)
+	return best
+end
+local function heightAt(x, z, layout, seed)
+	local sx = seed % 1000
+	local sz = math.floor(seed / 1000) % 1000
+	local base = math.noise(x * 0.001 + sx, z * 0.001 + sz) * 9
+	local ridge = (1 - math.abs(math.noise(x * 0.004 + sx, z * 0.004 + sz))) * 7
+	local h = base + ridge
+	for _, hill in ipairs(layout.Hills or {}) do
+		h = h + hill.Height * falloff(dist2(x, z, hill.X, hill.Z), hill.Radius)
 	end
-	terrain:FillBall(Vector3.new(x, height * 0.5, z), radius * 0.35, Enum.Material.Rock)
-	terrain:FillBall(Vector3.new(x, height * 0.85, z), radius * 0.18, Enum.Material.Rock)
-	terrain:FillBall(Vector3.new(x, height * 0.92, z), radius * 0.12, Enum.Material.Snow)
+	for _, peak in ipairs(layout.Peaks or {}) do
+		h = h + peak.Height * falloff(dist2(x, z, peak.X, peak.Z), peak.Radius)
+	end
+	local m = layout.Mountain
+	if m then
+		h = h + m.Height * falloff(dist2(x, z, m.X, m.Z), m.Radius)
+	end
+	local r = layout.WorldRadius or 1850
+	local d = math.sqrt(x * x + z * z)
+	if d > r * 0.85 then
+		local t = (d - r * 0.85) / (r * 0.15)
+		h = h * (1 - smooth(t)) - t * 14
+	end
+	return h
+end
+local function columnInfo(x, z, layout, seed)
+	local h = heightAt(x, z, layout, seed)
+	local water = false
+	local glacier = false
+	local lake = layout.Lake
+	if lake and dist2(x, z, lake.X, lake.Z) < lake.Radius then
+		h = -9
+		water = true
+	end
+	for _, pond in ipairs(layout.Ponds or {}) do
+		if dist2(x, z, pond.X, pond.Z) < pond.Radius then
+			h = 0
+			glacier = true
+		end
+	end
+	local riverPath = layout.RiverPath
+	if riverPath and #riverPath > 0 then
+		for _, seg in ipairs(riverPath) do
+			if segDist(x, z, seg.AX, seg.AZ, seg.BX, seg.BZ) < seg.Width then
+				h = -3
+				water = true
+				break
+			end
+		end
+	else
+		local river = layout.River or {}
+		if #river > 1 then
+			local d = riverDist(x, z, river)
+			if d < 17 then
+				h = -3
+				water = true
+			end
+		end
+	end
+	local region = ArcticLayout.RegionAt(x, z)
+	local biome = ArcticLayout.Biomes[region] or ArcticLayout.Biomes.StartingWilderness
+	local top = biome.Top
+	local sub = biome.Sub
+	local neighbor = ArcticLayout.RegionAt(x + 80, z)
+	if neighbor ~= region then
+		local hash = math.abs(x * 31 + z * 17) % 100
+		if hash < 30 then
+			local nb = ArcticLayout.Biomes[neighbor]
+			if nb then top = nb.Top end
+		end
+	end
+	return h, water, glacier, top, sub
 end
 function TerrainBuilder.Build(layout)
 	local terrain = workspace:WaitForChild("Terrain")
 	terrain:Clear()
-	local radius = layout.WorldRadius
-	local diameter = radius * 2
-	terrain:FillBlock(CFrame.new(0, -12, 0), Vector3.new(diameter, 24, diameter), Enum.Material.Snow)
-	for _, hill in ipairs(layout.Hills or {}) do
-		paintHill(terrain, hill.X, hill.Z, hill.Radius, hill.Height)
+	local radius = layout.WorldRadius or 1850
+	local seed = hashSeed(layout.SeedString or "arctic")
+	local start = math.floor(-radius / VOXEL) * VOXEL
+	local stop = math.ceil(radius / VOXEL) * VOXEL
+	local chunkCount = 0
+	local totalChunks = 0
+	for cx = start, stop, CHUNK do
+		for cz = start, stop, CHUNK do
+			if math.sqrt(cx * cx + cz * cz) < radius + CHUNK then
+				totalChunks = totalChunks + 1
+			end
+		end
 	end
-	for _, peak in ipairs(layout.Peaks or {}) do
-		paintPeak(terrain, peak.X, peak.Z, peak.Radius, peak.Height)
+	for cx = start, stop, CHUNK do
+		for cz = start, stop, CHUNK do
+			if math.sqrt(cx * cx + cz * cz) < radius + CHUNK then
+				chunkCount = chunkCount + 1
+				local cols = {}
+				local maxH = 0
+				for vx = 0, (CHUNK / VOXEL) - 1 do
+					cols[vx + 1] = {}
+					for vz = 0, (CHUNK / VOXEL) - 1 do
+						local x = cx + vx * VOXEL + VOXEL / 2
+						local z = cz + vz * VOXEL + VOXEL / 2
+						local h, water, glacier, top, sub = columnInfo(x, z, layout, seed)
+						cols[vx + 1][vz + 1] = { h = h, water = water, glacier = glacier, top = top, sub = sub }
+						if h > maxH then maxH = h end
+					end
+				end
+				local topY = math.floor(maxH / VOXEL) * VOXEL
+				if topY < 0 then topY = 0 end
+				local yCount = math.floor((topY - BASE_Y) / VOXEL) + 1
+				local materials = {}
+				local occupancy = {}
+				for vx = 1, CHUNK / VOXEL do
+					materials[vx] = {}
+					occupancy[vx] = {}
+					for vy = 1, yCount do
+						materials[vx][vy] = {}
+						occupancy[vx][vy] = {}
+						for vz = 1, CHUNK / VOXEL do
+							local col = cols[vx][vz]
+							local y = BASE_Y + (vy - 1) * VOXEL
+							local mat = Enum.Material.Air
+							local occ = 0
+							if y <= col.h then
+								occ = 1
+								if col.h >= 60 then
+									mat = Enum.Material.Rock
+								elseif col.glacier then
+									mat = Enum.Material.Glacier
+								elseif y > col.h - VOXEL then
+									mat = col.top or Enum.Material.Snow
+								else
+									mat = col.sub or Enum.Material.Snow
+								end
+							elseif col.water and y <= WATER_Y then
+								occ = 1
+								mat = Enum.Material.Water
+							end
+							materials[vx][vy][vz] = mat
+							occupancy[vx][vy][vz] = occ
+						end
+					end
+				end
+				local region = Region3.new(Vector3.new(cx, BASE_Y, cz), Vector3.new(cx + CHUNK, topY + VOXEL, cz + CHUNK))
+				terrain:WriteVoxels(region, VOXEL, materials, occupancy)
+				if chunkCount % 20 == 0 then
+					print("[Arctic] Terrain noise chunks " .. chunkCount .. "/" .. totalChunks)
+				end
+				task.wait()
+			end
+		end
 	end
-	local mountain = layout.Mountain
-	paintPeak(terrain, mountain.X, mountain.Z, mountain.Radius, mountain.Height)
-	for _, pond in ipairs(layout.Ponds or {}) do
-		terrain:FillBall(Vector3.new(pond.X, 0.6, pond.Z), pond.Radius, Enum.Material.Air)
-		terrain:FillBlock(CFrame.new(pond.X, -4, pond.Z), Vector3.new(pond.Radius * 2, 4.4, pond.Radius * 2), Enum.Material.Snow)
-		terrain:FillBlock(CFrame.new(pond.X, -1.15, pond.Z), Vector3.new(pond.Radius * 2, 1.5, pond.Radius * 2), Enum.Material.Glacier)
-	end
-	local lake = layout.Lake
-	terrain:FillBall(Vector3.new(lake.X, -8, lake.Z), lake.Radius, Enum.Material.Air)
-	terrain:FillBlock(CFrame.new(lake.X, -13, lake.Z), Vector3.new(lake.Radius * 2, 2, lake.Radius * 2), Enum.Material.Rock)
-	terrain:FillBlock(CFrame.new(lake.X, -7.5, lake.Z), Vector3.new(lake.Radius * 2, 9, lake.Radius * 2), Enum.Material.Water)
-	terrain:FillBlock(CFrame.new(lake.X, -2.5, lake.Z), Vector3.new(lake.Radius * 2, 1, lake.Radius * 2), Enum.Material.Glacier)
-	local river = layout.River or {}
-	for i = 1, #river - 1 do
-		local a = river[i]
-		local b = river[i + 1]
-		local mid = (a + b) / 2
-		local len = (b - a).Magnitude
-		local cf = CFrame.lookAt(Vector3.new(mid.X, -1, mid.Y), Vector3.new(b.X, -1, b.Y))
-		terrain:FillBlock(cf, Vector3.new(34, 5, len + 8), Enum.Material.Ice)
-		terrain:FillBlock(cf * CFrame.new(0, -3, 0), Vector3.new(22, 3, len), Enum.Material.Water)
-	end
+	print("[Arctic] Terrain noise build done, chunks " .. chunkCount)
 end
+TerrainBuilder.HeightAt = heightAt
 return TerrainBuilder

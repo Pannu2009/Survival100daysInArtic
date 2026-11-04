@@ -210,9 +210,91 @@ function WorldBuilder:Build()
 		warn("[Arctic] Assets.BonFire not found - campfire stays code-built")
 	end
 	self:_plantTrees()
+	self:_placeDecor()
 	self:_plantTufts()
 	self:_placeHorizon()
 	self:_placeLakeSign()
+end
+function WorldBuilder:_placeDecor()
+	local folder = Instance.new("Folder")
+	folder.Name = "Decor"
+	folder.Parent = workspace
+	local decor = self.Layout.Decor or {}
+	for chunkStart = 1, #decor, 32 do
+		for chunkIdx = chunkStart, math.min(chunkStart + 31, #decor) do
+			local spot = decor[chunkIdx]
+			local gy = self:GroundY(spot.X, spot.Z)
+			local rot = CFrame.Angles(0, math.rad(spot.Rot or 0), 0)
+			if spot.Kind == "Boulder" then
+				local part = Instance.new("Part")
+				part.Name = "Boulder"
+				part.Size = Vector3.new(4 * spot.Scale, 2.5 * spot.Scale, 3.5 * spot.Scale)
+				part.Material = Enum.Material.Slate
+				part.Color = Color3.fromRGB(104, 116, 134)
+				part.Anchored = true
+				part.Parent = folder
+				part.CFrame = CFrame.new(spot.X, gy + part.Size.Y / 2 - 0.5, spot.Z) * rot
+			elseif spot.Kind == "SnowMound" then
+				local part = Instance.new("Part")
+				part.Name = "SnowMound"
+				part.Shape = Enum.PartType.Ball
+				part.Size = Vector3.new(5 * spot.Scale, 2 * spot.Scale, 5 * spot.Scale)
+				part.Material = Enum.Material.Snow
+				part.Anchored = true
+				part.CanCollide = false
+				part.Parent = folder
+				part.CFrame = CFrame.new(spot.X, gy + part.Size.Y / 4, spot.Z) * rot
+			elseif spot.Kind == "IceShard" then
+				local part = Instance.new("Part")
+				part.Name = "IceShard"
+				part.Size = Vector3.new(1 * spot.Scale, 4 * spot.Scale, 1 * spot.Scale)
+				part.Material = Enum.Material.Ice
+				part.Color = Color3.fromRGB(170, 210, 235)
+				part.Anchored = true
+				part.Parent = folder
+				part.CFrame = CFrame.new(spot.X, gy + part.Size.Y / 2, spot.Z) * rot
+			elseif spot.Kind == "IceFloe" then
+				local part = Instance.new("Part")
+				part.Name = "IceFloe"
+				part.Shape = Enum.PartType.Cylinder
+				part.Size = Vector3.new(0.8, 6 * spot.Scale, 6 * spot.Scale)
+				part.Material = Enum.Material.Glacier
+				part.Anchored = true
+				part.Parent = folder
+				part.CFrame = CFrame.new(spot.X, gy + 0.4, spot.Z) * rot * CFrame.Angles(0, 0, math.pi / 2)
+			elseif spot.Kind == "DeadTree" then
+				local model = Instance.new("Model")
+				model.Name = "DeadTree"
+				local trunk = Instance.new("Part")
+				trunk.Name = "Trunk"
+				trunk.Shape = Enum.PartType.Cylinder
+				trunk.Size = Vector3.new(8 * spot.Scale, 0.6, 0.6)
+				trunk.Material = Enum.Material.Wood
+				trunk.Color = Color3.fromRGB(60, 48, 38)
+				trunk.Anchored = true
+				trunk.CFrame = CFrame.new(0, 4 * spot.Scale, 0) * CFrame.Angles(0, 0, math.pi / 2)
+				trunk.Parent = model
+				model.Parent = folder
+				self:SnapToGround(model, spot.X, spot.Z)
+			elseif spot.Kind == "FallenLog" then
+				local model = Instance.new("Model")
+				model.Name = "FallenLog"
+				local trunk = Instance.new("Part")
+				trunk.Name = "Trunk"
+				trunk.Shape = Enum.PartType.Cylinder
+				trunk.Size = Vector3.new(6 * spot.Scale, 0.8, 0.8)
+				trunk.Material = Enum.Material.Wood
+				trunk.Color = Color3.fromRGB(70, 56, 44)
+				trunk.Anchored = true
+				trunk.CFrame = CFrame.new(0, 0.4, 0)
+				trunk.Parent = model
+				model.Parent = folder
+				model:PivotTo(model:GetPivot() * rot)
+				self:SnapToGround(model, spot.X, spot.Z)
+			end
+		end
+		task.wait()
+	end
 end
 function WorldBuilder:_plantTufts()
 	local folder = Instance.new("Folder")

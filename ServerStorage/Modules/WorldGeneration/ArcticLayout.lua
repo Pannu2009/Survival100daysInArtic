@@ -43,6 +43,44 @@ L.Forests = {
 	{ x = -1400, z = -950, r = 190, count = 75 },
 	{ x = 650, z = -1350, r = 180, count = 70 },
 }
+L.Biomes = {
+	StartingWilderness = { Top = Enum.Material.Snow, Sub = Enum.Material.Snow, TreeMult = 1.0, Decor = { "Boulder", "SnowMound" } },
+	FrozenHighlands = { Top = Enum.Material.Rock, Sub = Enum.Material.Slate, TreeMult = 0.7, Decor = { "Boulder" } },
+	GlacierFields = { Top = Enum.Material.Glacier, Sub = Enum.Material.Ice, TreeMult = 0.3, Decor = { "IceShard", "SnowMound" } },
+	NorthernCoast = { Top = Enum.Material.Ice, Sub = Enum.Material.Glacier, TreeMult = 0.5, Decor = { "IceFloe", "Boulder" } },
+	DeepTaiga = { Top = Enum.Material.Snow, Sub = Enum.Material.Ground, TreeMult = 1.5, Decor = { "DeadTree", "FallenLog", "Boulder" } },
+	AbandonedZone = { Top = Enum.Material.Rock, Sub = Enum.Material.Ground, TreeMult = 0.6, Decor = { "Boulder", "SnowMound" } },
+}
+function L.RegionAt(x, z)
+	local dCenter = math.sqrt(x * x + z * z)
+	if dCenter > 1500 then
+		return "NorthernCoast"
+	end
+	if math.sqrt((x - 1250) * (x - 1250) + (z - 650) * (z - 650)) < 450 then
+		return "AbandonedZone"
+	end
+	if math.sqrt((x - 1150) * (x - 1150) + (z + 1450) * (z + 1450)) < 500 then
+		return "GlacierFields"
+	end
+	for _, cluster in ipairs(L.Forests) do
+		local dx = x - cluster.x
+		local dz = z - cluster.z
+		if dx * dx + dz * dz < cluster.r * cluster.r then
+			return "DeepTaiga"
+		end
+	end
+	if math.sqrt((x - 650) * (x - 650) + (z + 900) * (z + 900)) < 450 then
+		return "FrozenHighlands"
+	end
+	for _, peak in ipairs(L.Terrain.Peaks) do
+		local dx = x - peak.x
+		local dz = z - peak.z
+		if dx * dx + dz * dz < 450 * 450 then
+			return "FrozenHighlands"
+		end
+	end
+	return "StartingWilderness"
+end
 L.Landmarks = {
 	{ Id = "ResearchOutpost", Name = "Northern Research Outpost", Region = "AbandonedZone", Position = Vector3.new(1250, 0, 650), Kind = "Outpost" },
 	{ Id = "RadioTower", Name = "Highland Radio Tower", Region = "FrozenHighlands", Position = Vector3.new(1050, 0, -250), Kind = "Tower" },
